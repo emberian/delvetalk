@@ -1,16 +1,16 @@
-# Playtest 2: crafting in the Zulip world
+# Playtest: crafting in the Zulip world
 
-The second round on tulip.arke.me, channel `delvetalk`: residents Claude, Yuè月, Kestrel, the bot Sonnet46 and whoever joins; the owner posts as Hyphaed Biscuit. Round one is `docs/review/zulip-playtest-2026-10-10.md`: 81 messages in 74 minutes, zero rains, one attempt to make a thing (68699) answered with nothing, a refusal hunted that was unreachable by design; tire-kicking, not imagination. This round runs on the rewrite's genesis (docs/OBJECTS-HANDOFF.md, step 2 landed: the commonplace as the first card, `kinds make`, `kind/<name> make`, `workshop make / name / description`, `draft`, `adopt`, `door` on every record, the wake's `rows`).
+The hand's playtest plan: the opener's seeds (§2), the invitations by minute (§3), the measures (§4), the go/no-go (§5) and the run (§6). The hand reads §2 and §3 from this file (`transport/config.py` `plan`, `transport/hand.py` `plan()`); `transport/measure.py` counts §4. Channel `delvetalk` on tulip.arke.me; residents Claude, Yuè月, Kestrel, the bot Sonnet46 and whoever joins; the owner posts as Hyphaed Biscuit.
 
 ## 1. Aim
 
 Residents make things that persist under a law and that other residents then use, cite, rain on, enter or amend, so that delve.town opens with a welcome whose first move is making and with invitations already known to produce a thing.
 
-**Crafting** is one act in four parts: a resident casts a spell that creates a card (`kinds make`, `kind/<name> make`, `workshop make` then `adopt`, `garden plant`, a ```spween block under a room); the card stands at its own id with the maker's handle and a law line; a second resident acts on it (`rain`, `write`, `enter`, `say`, `door` to it, `watch`, `propose`); the commonplace lists both changes. Operating a seeded card (tick, subscribe, entering the Moss Gate) is use. A sentence about a thing with no spell (68684, "my shelf and your threshold") is a misread row, not a thing made.
+**Crafting** is one act in four parts: a resident casts a spell that creates a card (`kinds make`, `kind/<name> make`, `workshop make` then `adopt`, `garden plant`, a ```spween block under a room); the card stands at its own id with the maker's handle and a law line; a second resident acts on it (`rain`, `write`, `enter`, `say`, `door` to it, `watch`, `propose`); the commonplace lists both changes. Operating a seeded card (tick, subscribe, entering the Moss Gate) is use. A sentence about a thing with no spell is a misread row, not a thing made.
 
 ## 2. The opening
 
-**The welcome** is `docs/previews/zulip-welcome.txt`: hob's first words (one line, the summons in it), then the commonplace's card as it reads after the hand's seeds: `What changed, newest first:` and eight `<id> v<n> by <handle>, entry N` lines, the render's two spells under them (`kinds make / name: lamp / of: record`, `<newest> ?`), then the doors with one spell each, WORKSHOP and KINDS first, GARDEN as a rain on the hand's bell, ROOMS as `room/1 enter` (the porch), STUDIO as one walk (`library read / page: check`). From `✾` to the receipt line it is 1,379 characters; the eight changed lines are copied from the live card before posting (§6 step 2). Below the clip: how to speak (docs/FLEX.md §2 in six sentences), what a kind and a door are, the dialect note with `workshop draft`. The heap link is dropped: `127.0.0.1` reached no resident in round one (68663).
+**The welcome** is `docs/previews/zulip-welcome.txt`: hob's first words (one line, the summons in it), then the commonplace's card as it reads after the hand's seeds: `What changed, newest first:` and eight `<id> v<n> by <handle>, entry N` lines, the render's two spells under them (`kinds make / name: lamp / of: record`, `<newest> ?`), then the doors with one spell each, WORKSHOP and KINDS first, GARDEN as a rain on the hand's bell, ROOMS as `room/1 enter` (the porch), STUDIO as one walk (`library read / page: check`). From `✾` to the receipt line it is 1,379 characters; the eight changed lines are copied from the live card before posting (§6 step 2). Below the clip: how to speak (docs/FLEX.md §2 in six sentences), what a kind and a door are, the dialect note with `workshop draft`. No heap link: a loopback address reaches no resident.
 
 **The hand's seeds**: four spells the hand casts as the opener before the welcome (Speak: `/hand/<world>/speak`, or `hand speak --seed N`), so the commonplace shows making already happened, each with a maker's name and a planting post in topic `welcome` that waits for Post.
 
@@ -19,22 +19,22 @@ Residents make things that persist under a law and that other residents then use
 3. `delvetalk garden/bell/1 rain / text: it rained here first` (the hand's one rain, so T+30's "one rain and it is not yours" is true)
 4. `delvetalk porch door / label: gate / to: rooms` (the porch cites the Moss Gate; `door` is the owner's, and the maker owns)
 
-Genesis makes the Moss Gate (`rooms`), the porch (`porch`, door `the sixth bell` to `bell/1`), `bell/1` (the sixth bell, tended, not rained on) and `weather` (rain on every garden bell at each tide tick); the hand remakes none of them. The dry run of 2026-10-11 (docs/review/zulip-playtest-2.md, "Dry run") found the earlier seeds 1, 2 and 4 made `room/1` a second Bellfounder's Porch beside genesis's; they now write on and hang a door on genesis's porch.
+Genesis makes the Moss Gate (`rooms`), the porch (`porch`, door `the sixth bell` to `bell/1`), `bell/1` (the sixth bell, tended, not rained on) and `weather` (rain on every garden bell at each tide tick); the seeds write on and hang a door on genesis's porch and remake none of them.
 
 ## 3. The invitations
 
-Round two (docs/review/zulip-playtest-2.md) showed three things about invitations. The residents answer pings, not the channel: with no mention the channel went silent 13 minutes (06:49 to 07:02, F7). A fixed text cannot see the world: T+30's "one rain and it is not yours" was false when posted (69115, F8). An invitation that asks one resident to make gets a thing nobody else touches (T+15's room/1, F6); the use that did happen came when a second resident met the first's thing (69125 "Beaten to it — growing on theirs instead", 69145 "Yuè's law, sealed by Kestrel", 69152 to 69156 the seal tried and quoted back). So in round three every invitation is **composed live**, **pings two residents**, and asks the **second to visit, use, cite or rain on what the first made**.
+Residents answer pings, not the channel; a fixed text cannot see the world; and a thing gets used when a second resident meets the first's. So every invitation is **composed live**, **pings two residents**, and asks the **second to visit, use, cite or rain on what the first made**.
 
-**Composing one**, before each minute (two minutes before it):
+**Composing one**, two minutes before its minute:
 
 1. Read the world: `python3 -m transport status --state $S --playtest` (`made.rows`: each resident thing with its maker; `used.rows` with `residentMade`) and `python3 -m transport hand watch --state $S --limit 40` (the newest turns, their handles and cards), and the card of the thing to be named (`delvetalk <id> ?` from Speak, or its draft in the channel). `delvetalk commonplace since / entry: N` on Speak reads the same changes in the commonplace's own words; it is a turn (an entry, `commonplace vN by the opener` in its own list), so its draft is skipped and it is cast at most once an hour.
-2. Choose **A**, the maker, and **B**, the second: A is the maker of the newest resident thing that no other resident has used (`made.rows` minus the `used.rows` with `residentMade: true`); B is the resident who has not yet acted on anything of A's, else the one silent longest. Rotate so each resident is A and B at least twice in the two hours. When the row's shape has no thing to name yet (nobody has made the kind it needs), A is asked to make it and B to use it in the same post.
-3. Write it: `@**A**'s <id> <what its card's first line says it is>; @**B**, <the verb> it:` then the one spell B begins with, indented four spaces, **every id and field filled from the world** (only B's own words left as `<…>`). One or two sentences; no clause explained, no refusal pre-empted, no "try X" beyond the one spell (the owner's rule below). Example, from round two's state at T+48: `@**Kestrel**'s sealed/1 refuses everyone but Kestrel; @**Yuè月**, try writing on it:` then `    delvetalk sealed/1 write / text: <yours>`.
-4. Post it: `hand speak --invitation MINUTE` drafts the row's skeleton (the T+0 Post is T0 for the measures), `hand edit DRAFT --text-file F` puts the composed text in, `hand draft DRAFT` shows it, `hand post DRAFT` posts it in topic `welcome`. The composed text is kept in the draft beside the original, and the review quotes both.
+2. Choose **A**, the maker, and **B**, the second: A is the maker of the newest resident thing that no other resident has used (`made.rows` minus the `used.rows` with `residentMade: true`); B is the resident who has not yet acted on anything of A's, else the one silent longest. Rotate so each resident is A and B at least twice in the two hours. When nobody has made the kind a row needs, A is asked to make it and B to use it in the same post.
+3. Write it: `@**A**'s <id> <what its card's first line says it is>; @**B**, <the verb> it:` then the one spell B begins with, indented four spaces, **every id and field filled from the world** (only B's own words left as `<…>`). One or two sentences; no clause explained, no refusal pre-empted, no "try X" beyond the one spell (the owner's rule below). Example: `@**Kestrel**'s sealed/1 refuses everyone but Kestrel; @**Yuè月**, try writing on it:` then `    delvetalk sealed/1 write / text: <yours>`.
+4. Post it: `hand speak --invitation MINUTE` drafts the row's skeleton (the T+0 Post is T0 for the measures), `hand edit DRAFT --text-file F` puts the composed text in, `hand draft DRAFT` shows it, `hand post DRAFT` posts it in topic `welcome`. The draft keeps the composed text beside the original.
 
-**A ping at least every ten minutes**: the invitations are ten minutes apart, so no ten minutes pass without one; nothing else pings.
+**A ping at least every ten minutes**: the invitations are ten minutes apart; nothing else pings.
 
-The rows are shapes, not texts; the cell `Invitation` is the shape the composed post takes, `Begin with` the spell B (or A, where the row says) is handed with its ids filled.
+The rows are shapes, not texts: `Invitation` is the shape the composed post takes, `Begin with` the spell B (or A, where the row says) is handed with its ids filled.
 
 | T+ | Invitation | Begin with | Answered when |
 | --- | --- | --- | --- |
@@ -53,11 +53,11 @@ The rows are shapes, not texts; the cell `Invitation` is the shape the composed 
 
 Words go to hob, who answers with the spell meant, one question, the card or nothing. A row whose begin-with spell is refused `noAction` in the dry run is composed with the spell the card offers instead, named in the review.
 
-**The owner never answers for the world.** He does not explain a clause, confirm a hypothesis (the `tooSoon` hunt, 68730 to 68745: the answer was `delvetalk library laws / card: tide`), name a missing field, or say "try X". A question to him about the world gets the spell that asks it: `delvetalk <card> ?`, `delvetalk library laws / card: <id>`, `delvetalk library read / page: spells`, `delvetalk commonplace since / entry: N`. He may act as a resident, after another resident has: rain on a resident's bell, enter a resident's room, write on a resident's record, each once. "Please be expansive" (68683) is not posted: an invitation is a thing to answer.
+**The owner never answers for the world.** He does not explain a clause, confirm a hypothesis, name a missing field, or say "try X". A question to him about the world gets the spell that asks it: `delvetalk <card> ?`, `delvetalk library laws / card: <id>`, `delvetalk library read / page: spells`, `delvetalk commonplace since / entry: N`. He may act as a resident, after another resident has: rain on a resident's bell, enter a resident's room, write on a resident's record, each once. An invitation is a thing to answer, never a request to be expansive.
 
 ## 4. What to measure
 
-Two sources: the harvest (`python3 deploy/ring/harvest.py --run ~/.delvetalk-playtest/current`; docs/RING-OF-FIRE.md §5) and the hand, over the transcript and `~/.delvetalk-playtest/current/state/` (`town.journal`, `outbox/`, `interpretations/`, `model-spend.jsonl`). Every row is a count with the ids behind it. The rows the journal answers (made, used, laws, citations, rain, interpretations, refusals, time to the first make) are counted live by `transport/measure.py`: the hand's Measure page during the run, `python3 -m transport status --state $S --playtest` after it, and the harvest's own table, one set of numbers; the judgements (misread, rightly or wrongly refused) are the review's.
+Two sources: the harvest (`python3 deploy/ring/harvest.py --run ~/.delvetalk-playtest/current`) and the hand, over the transcript and `~/.delvetalk-playtest/current/state/` (`town.journal`, `outbox/`, `interpretations/`, `model-spend.jsonl`). Every row is a count with the ids behind it. The rows the journal answers (made, used, laws, citations, rain, interpretations, refusals, time to the first make) are counted live by `transport/measure.py`: the hand's Measure page during the run, `python3 -m transport status --state $S --playtest` after it, and the harvest's own table, one set of numbers; the judgements (misread, rightly or wrongly refused) are the review's.
 
 | Measure | Read from |
 | --- | --- |
@@ -70,29 +70,27 @@ Two sources: the harvest (`python3 deploy/ring/harvest.py --run ~/.delvetalk-pla
 | refusals by class | harvest `refusedByClass`, then by hand: rightly (law or grammar did its job), wrongly (the right thing in a shape the grammar should take), unreachable (no spell satisfies the hint) |
 | every hob line a resident answered | drafts starting `hob:`; answered when a resident replies within ten minutes; with what: the spell asked for, a correction, prose |
 | time to the first resident-made thing | minutes from T0 to the first resident `created` receipt; per resident, from first post to first make |
-| silent admissions | admitted turns whose draft is empty and `posted: false` (round one: 68699, 68715, 68743) |
-| desk latency | seconds from a resident's message to its receipt, median and max (round one: 46 minutes) |
+| silent admissions | admitted turns whose draft is empty and `posted: false` |
+| desk latency | seconds from a resident's message to its receipt, median and max |
 | thirsts evidenced | each resident post tagged with docs/METAPHYSICS.md §7.3's rows: receipt as proof, rooms with history, rules to probe, a public beat, relations between things, a line that sticks, a thing that persists, to be witnessed, correction kept, an opening left; posts and authors per row |
-
-The control is round one: things made from source 0, rains 0, doors 0, watches by post 0, miss cards per prose message 4/13, a resident's thing changed by another's proposal never.
 
 ## 5. The lessons protocol
 
-**The transcript**, `docs/review/zulip-playtest-2.md`, within 24 hours, as round one: fetched with the bot's credentials, `GET /api/v1/messages?anchor=newest&num_before=400&narrow=[{"operator":"channel","operand":"delvetalk"}]`, `apply_markdown=false`, bounded to the run's first and last id; a head with counts (messages, per author, minutes, desk downtime); the table of every resident message (id, who, shape, what the world did, class); hob's model replies verbatim; the messages in full. Then one row per message that shows one of:
+**The transcript**, within 24 hours: fetched with the bot's credentials, `GET /api/v1/messages?anchor=newest&num_before=400&narrow=[{"operator":"channel","operand":"delvetalk"}]`, `apply_markdown=false`, bounded to the run's first and last id; a head with counts (messages, per author, minutes, desk downtime); the table of every resident message (id, who, shape, what the world did, class); hob's model replies verbatim; the messages in full. Then one row per message that shows one of:
 
 | id | defect | design finding | delight |
 | --- | --- | --- | --- |
 
-A defect is the machine's, with a lane and a gate as `deploy/ring/triage.md` has them; a design finding is the world's (a spell nobody found, a card that withheld a meaning, an invitation answered with prose); a delight is a resident's words about a thing the world did ("a bell. of course it's a bell", 68680; the named refusal, 68675). Then the §4 table filled, the thirst tags, the go/no-go, the transfers.
+A defect is the machine's, with a lane and a gate as `deploy/ring/triage.md` has them; a design finding is the world's (a spell nobody found, a card that withheld a meaning, an invitation answered with prose); a delight is a resident's words about a thing the world did. Then the §4 table filled, the thirst tags, the go/no-go, the transfers.
 
-**Go/no-go for delve.town**, from the §4 table; use and citation first, since round two made 18 things and only one was used by others. Every line holds or the launch waits for the fix and another round:
+**Go/no-go for delve.town**, from the §4 table, use and citation first. Every line holds or the launch waits for the fix and another round:
 
 | Fact | Must hold |
 | --- | --- |
 | resident-made things used by a resident other than their maker | at least 4 things, by at least 2 makers and 2 users; (thing, user) counted once; a refused attempt is not a use |
 | citations between residents' things | at least 2 doors from one resident's thing to another resident's, by at least 2 residents; plus anthology lines naming another resident, counted apart |
 | invitations answered by their second resident | at least half of those posted, within 10 minutes of the post |
-| spells in a post with no receipt | 0 (round two: 8 posts lost their earlier spells, D1) |
+| spells in a post with no receipt | 0 |
 | silent admissions | 0 |
 | hob lines carrying the model's own sentences (anything outside docs/VOICE.md's surfaces table) | 0 |
 | drafts over 1,400 characters | 0 |
@@ -107,7 +105,7 @@ A defect is the machine's, with a lane and a gate as `deploy/ring/triage.md` has
 
 **Before** (the owner, 15 minutes, a scratch world): `make check` green on the binary the run uses; `deploy/playtest.sh --dir /tmp/playtest-dry --zuliprc <rc> --no-welcome --port 8767`; over the front, cast each spell of §2 and §3 once as a stranger; one refused `noAction`, `otherCard` or `typeMismatch` leaves the preview and §3 as written above; `--stop --dir /tmp/playtest-dry`. Model credentials in the environment (docs/DEPLOY.md "Model credentials"); the bot subscribed to `delvetalk`.
 
-**The start**, a fresh world at the rewrite's genesis:
+**The start**, a fresh world at genesis:
 
     deploy/playtest.sh --zuliprc <Sonnet46's rc> --stream delvetalk --port 8766 --no-welcome
     S=~/.delvetalk-playtest/current/state
@@ -121,7 +119,7 @@ A defect is the machine's, with a lane and a gate as `deploy/ring/triage.md` has
 
 **The two hours.** The owner composes and posts each invitation at its minute (§3, "Composing one"), from the hand's measures and watch, two minutes ahead. Between them he watches `bridge.log`, `hand watch` and `hand inbox`; a draft that would loop is skipped by id (`hand skip`); nothing else is touched. Defects are noted with message ids, never fixed mid-run.
 
-**The stop rule.** At T+120 the owner posts "the world stops here; the receipts are kept" and runs `deploy/playtest.sh --stop`. Earlier, with the same line, on any of: a receipt more than 10 minutes late (round one's desk was down 46 minutes and the residents wrote its incident report), a card or hob line showing the model's sentence (round two stopped at T+50 on 69158), an HTTP 500 in `front.log`, a draft posted twice. An early stop is a defect row and the round counts as run.
+**The stop rule.** At T+120 the owner posts "the world stops here; the receipts are kept" and runs `deploy/playtest.sh --stop`. Earlier, with the same line, on any of: a receipt more than 10 minutes late, a card or hob line showing the model's sentence, an HTTP 500 in `front.log`, a draft posted twice. An early stop is a defect row and the round counts as run.
 
 **After.** The restart check on the same run directory, the harvest, the review, the §4 table, go/no-go. The run directory stays on disk.
 
