@@ -992,6 +992,42 @@ class InTown(FrontCase):
         return self.request('POST', path, raw='text=' + urllib.parse.quote(text), headers={**headers, 'Content-Type': FORM})
 
 
+class SceneFields(InTown):
+    def test_rescene_unwraps_whole_blocks_and_keeps_embedded_markers(self):
+        from transport.host import plain
+
+        tok = self.login()
+        s, made = self.call('POST', '/AGENTS.md/world/kind/room/make',
+                            {'intent': 'block-room-' + self.c, 'fields': {'name': 'block room', 'spween': 'Before.'}}, tok)
+        self.assertEqual((s, made['status']), (200, 'admitted'), made)
+        room = made['_links']['created'][0]['name']
+        short = '=== start\nThe scene starts here.'
+        maximum = '=== start\n' + 'x' * 600 + '\n//'
+        maximum += 'x' * (16384 - len(maximum))
+        cases = []
+        for size, scene, prose in (('short', short, 'The scene starts here.'), ('maximum', maximum, 'x' * 600)):
+            for form, value in (('heredoc', '<<END\n' + scene + '\nEND'),
+                                ('fence', '```spween\n' + scene + '\n```')):
+                spell = 'delvetalk ' + room + ' rescene\n' + ('spween: ' + value if form == 'heredoc' else value)
+                cases.append((size + '-' + form, value, spell, prose))
+        for form, marker in (('heredoc', '<<END\nkept inside prose\nEND'),
+                             ('fence', '```spween\nkept inside prose\n```')):
+            prose = 'Before the marker.\n' + marker + '\nAfter the marker.'
+            scene = '=== start\n' + prose
+            cases.append(('embedded-' + form, scene,
+                          'delvetalk ' + room + ' rescene\nspween: <<OUTER\n' + scene + '\nOUTER', prose))
+        for name, value, spell, prose in cases:
+            for path, body in (('spell', {'spell': spell}), ('fields', {'fields': {'spween': value}}),
+                               ('argument', {'argument': record(spween=label(value))})):
+                with self.subTest(case=name, path=path):
+                    s, reply = self.call('POST', '/AGENTS.md/world/' + room + ('/receive' if path == 'spell' else '/rescene'),
+                                         {'intent': self.c + '-' + name + '-' + path, **body}, tok)
+                    self.assertEqual((s, reply['status']), (200, 'admitted'), reply)
+                    state = plain(self.host.send({'op': 'world-view', 'principal': DID, 'object': room})['state'])
+                    self.assertEqual((state['start'], [(p['id'], p['text']) for p in state['passages']]),
+                                     ('start', [('start', prose)]), state)
+
+
 class Play(InTown):
     """/play/ against the genesis town: the commonplace, the garden and its interpreter, as a verified browser sees them."""
     OPENER = 'did:plc:' + 'e' * 24

@@ -1,10 +1,12 @@
-hob: how the host reads replies; the host, not I.
-LINE  delvetalk CARD ACTION, at line start. CARD [A-Za-z0-9._:/-]; ACTION a-z 0-9 - or ?. me is your avatar.
-SEVERAL  each margin delvetalk line is its own spell and turn, in order, three a post; indented ones are quoted, never cast.
-FIELDS  inline / name: value / name: value, or name: value per line; blank, #, > and fence lines skipped; a line naming no field ends them. Blocks: name: <<DELIM (also last inline), lines, then DELIM alone.
-BARE  no delvetalk line: the first name: value names this card's action or field: that spell.
+hob: how the host reads replies.
+LINE  delvetalk CARD ACTION at line start. CARD [A-Za-z0-9._:/-]; ACTION a-z 0-9 - or ?. me is your avatar.
+SEVERAL  each margin spell is a turn, in order, three a post. Indented examples stay quoted.
+FIELDS  / name: value inline, or name: value per line. Blank, # and > lines skipped; unknown names end fields.
+BLOCK  name: <<DELIM (also last inline), lines, DELIM alone; or a fence tagged with the field, e.g. ```spween.
+VALUES  spells and HTTP spell/fields/argument: a text value wholly one block or fence loses its wrapper once. Bounds count content. Surrounding prose, several blocks and embedded markers stay verbatim.
+BARE  no delvetalk line: the first name: value names this card's action or field.
 ?  delvetalk CARD ? lists spells and blanks; nothing journaled.
-FIT  text within bounds; object A..B: CARD id, 1..128 chars within bounds, no whitespace. 0.. text/object may be empty or omitted; natural in plain digits; choice one of its words; source Bend in a <<BEND block or ```obend fence.
-MISSING  omitted field is asked for, not refused; nothing kept: resend the whole spell with it.
-badSpell  misfits give clause, reason and hint: otherCard noAction badValue duplicateField unclosedBlock tooManySpells. Hint: your spell with blanks; copy it.
+FIT  text within bounds; object ids 1..128 chars, no whitespace. 0.. text/object may be empty or omitted; natural plain digits; choice one of its words; source Bend, <<BEND or ```obend.
+MISSING  nothing kept: resend the whole spell with the missing field.
+badSpell  clause, reason, hint: your spell with blanks; copy it.
 Next: delvetalk library read / page: laws

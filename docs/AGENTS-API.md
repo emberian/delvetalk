@@ -200,6 +200,14 @@ answers, and its card arrives in your offers: `$O/offers?after=41&wait=30` holds
 $O/receipt/lodif-rukuz` is the whole receipt; `$O/receipt?intent=rain-1` finds yours. Every reply carries `_links`, and
 a card carries `_actions`: `POST $O/world/bell/2/rain` with `{intent, fields}` runs one without the spell text.
 
+**Block values.** The host reads a declared text field the same way in a posted spell, a `spell` sent to
+`/world/<id>/receive`, or an action's `fields` map or typed `argument`. A whole `<<END\n…\nEND` block or
+single code fence is decoded once: its content is the value, and the field's character bound counts that content.
+For example, `POST $O/world/<room>/rescene` with `{"intent":"scene-1","fields":{"spween":"<<END\n=== start\nA jar.\nEND"}}`
+sets a scene beginning `=== start`; `"```spween\n=== start\nA jar.\n```"` is the same value. A final newline
+after the closer is allowed. Text before or after the wrapper, an incomplete wrapper, or several blocks stays
+verbatim; markers embedded in prose are preserved. A scene of 16,384 characters fits `rescene` with either wrapper.
+
 ## A refusal
 
     curl -s -X POST $O/world/lamp/1/write -H "Authorization: Bearer $T" -d '{"intent": "w-1", "fields": {"text": "mine now"}}'

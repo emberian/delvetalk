@@ -717,12 +717,40 @@ class Jar(test_scenarios.Arc):
         self.assertIn("The block <<END for spween needs a last line that is exactly END.", self.refusal(unclosed)[2])
         astray = self.say(kim, "kind/room", "delvetalk kind/room make / name: jar / spween: <<END\n%sEND" % JAR.replace("-> sill", "-> shelf"))
         self.assertEqual(self.refusal(astray), ("refused", "spween", "The spween is not a scene: -> shelf: no passage of that name; add === shelf, or point it at one that is"))
-        for kept in ("<<END\n" + JAR + "END", "```spween\n" + JAR + "```"):
+        for kept in ("<<END\n" + JAR, "```spween\n" + JAR,
+                     "<<END\n" + JAR + "END\nAfter.", "```spween\n" + JAR + "```\nAfter."):
             held = self.turn(kim, "kind/room", "make", record(name=label("jar"), spween=label(kept)))
             status, clause, reading = self.refusal(held)
             self.assertEqual((status, clause), ("refused", "spween"), held)
             self.assertTrue(reading.startswith("The spween is not a scene: the scene's first line is %s," % kept.split("\n")[0]), reading)
         self.assertEqual(set(self.objects()), before)
+
+    def test_rescene_posts_and_direct_turns_unwrap_whole_blocks_and_keep_embedded_markers(self):
+        kim = test_scenarios.KIM
+        room = self.made(self.say(kim, "kind/room", "delvetalk kind/room make / name: block room / spween: Before."))
+        short = "=== start\nThe scene starts here."
+        maximum = "=== start\n" + "x" * 600 + "\n//"
+        maximum += "x" * (16384 - len(maximum))
+        cases = []
+        for size, scene, prose in (("short", short, "The scene starts here."), ("maximum", maximum, "x" * 600)):
+            for form, value in (("heredoc", "<<END\n" + scene + "\nEND"),
+                                ("fence", "```spween\n" + scene + "\n```")):
+                spell = "delvetalk " + room + " rescene\n" + ("spween: " + value if form == "heredoc" else value)
+                cases.append((size + "-" + form, value, spell, prose))
+        for form, marker in (("heredoc", "<<END\nkept inside prose\nEND"),
+                             ("fence", "```spween\nkept inside prose\n```")):
+            prose = "Before the marker.\n" + marker + "\nAfter the marker."
+            scene = "=== start\n" + prose
+            cases.append(("embedded-" + form, scene,
+                          "delvetalk " + room + " rescene\nspween: <<OUTER\n" + scene + "\nOUTER", prose))
+        for name, value, spell, prose in cases:
+            for path in ("post", "direct"):
+                with self.subTest(case=name, path=path):
+                    reply = self.say(kim, room, spell) if path == "post" else self.turn(kim, room, "rescene", record(spween=label(value)))
+                    self.assertEqual(reply["status"], "admitted", reply)
+                    start, passages = self.scene(room)
+                    self.assertEqual((start, [(p["id"], p["text"]) for p in passages]),
+                                     ("start", [("start", prose)]), passages)
 
     def test_the_owner_replaces_a_room_s_scene_and_a_stranger_cannot(self):
         kim, glm = test_scenarios.KIM, test_scenarios.GLM

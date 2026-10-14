@@ -280,6 +280,21 @@ def lastOpens (bs : List Binding) : Option (List Binding × String × T) := do
 def closesBlock (delimiter line : T) : Bool :=
   line == delimiter || (line.take (line.length - 1) == delimiter && line.drop (line.length - 1) == ['\r'])
 
+/-- The content of exactly one whole block or code fence; other text stays verbatim. -/
+def unwrap (value : String) : String := Id.run do
+  let lines := value.splitOn "\n"
+  let lines := if lines.getLastD "" == "" then lines.dropLast else lines
+  let opening := (lines.headD "").trimAscii.toString
+  let closer := match blockValue opening.toList with
+    | some delimiter => some (fun (line : String) => closesBlock delimiter line.toList)
+    | none => if opening.startsWith "```" && !(opening.drop 3).toString.contains '`' then
+        some (fun (line : String) => line.trimAscii.toString == "```") else none
+  let some closes := closer | return value
+  let body := lines.drop 1
+  let some stop := body.findIdx? closes | return value
+  if stop + 2 != lines.length then return value
+  return "\n".intercalate (body.take stop)
+
 mutual
 partial def fieldLines (text : T) : Fields2 :=
   if text.isEmpty then .found [] else spellLine text (span text [' ', '\t']) (brk text ['\n'])
@@ -342,7 +357,8 @@ partial def block (name : String) (delimiter rest : T) (lines : List T) : Fields
     let line := rest.take (brk rest ['\n'])
     let after := rest.drop (brk rest ['\n'] + 1)
     if closesBlock delimiter line then
-      consed ⟨name, "\n".intercalate (lines.reverse.map str)⟩ (fieldLines after)
+      let value := "\n".intercalate (s!"<<{str delimiter}" :: (lines.reverse.map str ++ [str line]))
+      consed ⟨name, unwrap value⟩ (fieldLines after)
     else block name delimiter after (line :: lines)
 end
 
@@ -936,6 +952,14 @@ private def plant : Form :=
   .spell "kind/room" "make" [⟨"name", "jar"⟩, ⟨"spween", "---\nid: jar\n---\n=== start\nHoney.\n* [Taste] -> start"⟩]
 #guard parse "delvetalk w c / a: 1 / b: <<B\nx\nB\nc: 2" == .spell "w" "c" [⟨"a", "1"⟩, ⟨"b", "x"⟩, ⟨"c", "2"⟩]
 #guard parse "delvetalk w c / b: <<B\nx\n" == .notASpell "The block <<B for b needs a last line that is exactly B." true
+#guard unwrap "<<END\n=== start\nHoney.\nEND\n" == "=== start\nHoney."
+#guard unwrap "```spween\n=== start\nHoney.\n```" == "=== start\nHoney."
+#guard unwrap "```\n lead\n\n```\n" == " lead\n"
+#guard unwrap "<<END\n```spween\nHoney.\n```\nEND" == "```spween\nHoney.\n```"
+#guard ["<<END", "<<END\nHoney.", "```spween\nHoney.", "Before <<END\nHoney.\nEND",
+  "<<END\nHoney.\nEND\nAfter", "<<END\nHoney.\nEND\n<<END\nMore.\nEND",
+  "Before\n```spween\nHoney.\n```", "```spween\nHoney.\n```\nAfter",
+  "```spween\nHoney.\n```\n```spween\nMore.\n```"].all fun v => unwrap v == v
 #guard segments "delvetalk w c / b: <<B\ndelvetalk p q\nB\ndelvetalk r s" == ["delvetalk w c / b: <<B\ndelvetalk p q\nB", "delvetalk r s"]
 #guard (renderChecked "me" "note" [⟨"text", "<<END"⟩]).isSome
 #guard ["", " lead", "trail ", "a\nb", "END", "END\nEND_0\nEND_1", "<<END", "x\ndelvetalk p s / o: e", "---", "# h", "> q", "```", "a, b: c", "/ x", "tab\tx", "r\r\nEND\r"].all fun v =>
