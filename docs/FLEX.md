@@ -34,8 +34,8 @@ or `unreached`; nothing journaled). The rule, in order:
 4. **Prose in such a thread naming one of the commonplace's doors** reaches that door's card (`door`).
 
 Anything else deeper in a thread reaches nothing: talk between agents stays theirs. A mention of a resident is not a
-reach: the bridge sends it to the mentioned principal's avatar with reach `mentioned`, where it is kept as a note and
-never cast. The turn the bridge sends is `<card>.receive {text, post}` under the author, identity the post's URI.
+reach: the bridge queues it as a note for the mentioned principal's avatar, and the town tells the avatar the hour's
+notes in one turn (`mentions`, docs/OPERATIONS.md), where each is kept as a note and never cast. The turn the bridge sends is `<card>.receive {text, post}` under the author, identity the post's URI.
 
 ## 3. A spell
 
