@@ -1702,13 +1702,37 @@ feed as the town.
 
 Refused at the carry-check 2026-10-14 (08:37 UTC), both towns, edition 17 to 19 (`20b09bec8fdd` to foundation ff5b20d2's
 `4894c8ff4519179fd95a010f86100cce6b5a29ad91458c14182d1e6c5f3ae600`, transport image `75b8e2b7…1d7a`, both boxes; lane/deploy19
-renders v19 and v4). carry-check on the workhorse as edition 17's (`/var/tmp/delvetalk-deploy19/carrycheck19.sh`, the switch
-`switch19.sh` beside it): gsb at 5243 with 304 objects, obend at 1773 with 147, each `check {problems: []}` (obend
+renders v19 and v4). carry-check on the workhorse as edition 17's (`carrycheck19.sh`, the switch `switch19.sh`, both now in
+the workhorse's `/root/deploy19-scripts/` with every check's output): gsb at 5243 with 304 objects, obend at 1773 with 147, each `check {problems: []}` (obend
 `cardless: [beacon-jar]`), but each exited 1 on five refresh rows: `kind/weather`, `kind/lantern`, `kind/bond`,
 `kind/errand` and `kind/front` `.form` `refused shaped: Its code over Kind is not the make its form laid`. 8ddb1ba6 made
 `Kind.layerSource`'s place `id` an `object 1..64` (was `text 1..64`), and `reshape` compares a kind's installed layer with
 `layerSource` of its old form under the new code, so every carried kind whose form changed is refused. Nothing was stopped
-or announced; both towns serve v18 and v3 as before.
+or announced; both towns served v18 and v3 as before.
+
+Carried 2026-10-14 (09:00 UTC), both towns, edition 17 to 19 (`20b09bec8fdd` to `4894c8ff4519…e600`, the same binary as the
+refused check; transport image `87241b13…fb23`, both boxes), on foundation 0aca4752: lane/deploy19's `reshape` knows a
+kind's make by where it sits, the one layer over Kind (HOST-HANDOFF 5.230; suite on hbox 2116 tests, 0 failed classes).
+carry-check again: gsb exit 0, 116 s, `check {objects: 304, problems: []}`, refresh 64 `current` and 48 `refreshed` (the
+five kinds' `.form` and `kinds`' among them, `mending` and `mending/drawer` placed); obend exit 0, 81 s, `check {objects: 147,
+rendered: 146, cardless: [beacon-jar], problems: []}`, refresh 81 `current`, 35 `refreshed`. The residents' line before
+(`deploy19-before`, obend's feed, 08:59:52) and after (`deploy19-back`, 09:13:09), as the town. obend: stopped 08:59:57, v3 at
+1801 with 147 objects (twice), closing backup `delvetalk-20261014T090007Z` (also in hbox's open `closing/`); carry 77 s, exit 0,
+receipt `lodah-jamot`; up 09:02:19 (down 2 m 22 s). gsb: stopped 09:07:45, v18 at 5290 with 304 objects (twice), closing
+backup `delvetalk-20261014T090755Z` (also in `closing/`); carry 114 s, exit 0, `check {objects: 304, rendered: 304, problems:
+[]}`, receipt `padil-fuduj`; up 09:10:30 (down 2 m 45 s). Each census after: every id, owner and law, want and rule line as
+before, plus `mending` and `mending/drawer` (and on gsb an avatar the bridge made for ahmet.delve.town at 5344): obend 149
+objects (60 residents'), gsb 307. `genesis refresh` after each carry: all `current` (obend 115, gsb 111 with
+`--with-gas-station`); the carry's own refresh had placed the basket. Every card renders as the opener (`world-card`: gsb 307
+of 307, obend 148 of 149, `beacon-jar` `noCard` as before). `hand limits` on obend (`tigut-zipiz`: cardRoom 8000, objectQuota
+96, turnQuota 300). `smoke.sh` passes on both with the new pin; `/town`, `/library`, `/lib`, `/kinds`, `/inspect/<room>` and
+`/inspect/mending` 200, `/inspect/mending/drawer` 404 to the public; `/hand/town/overview` and `/hand/town/reports` 200 behind
+the password, 401 without; `https://<site>/hand/town/reports.json?since=0` answers `{counts: {open: 0, ...}, cursor: 0,
+reports: []}` on both. Automod read on past each head (gsb `glm: ok`, a call after the carry); watch and backup timers active.
+Old receipts resolve (`sijap-buhaz` 4762 of v18 and `solag-tunon` 4634 of v17; obend `lugis-razuh` 1142 of v3, `hakis-pohiv`
+846 of v2). Backups and `verify.sh --full` ok (gsb 5345, obend 1845); both of hbox's `pull.env` name
+`delvetalk-host:4894c8ff4519` and their pulls replayed them. Memory under the new limits (3,200 MiB a stack): each host
+about 550 MiB of 2 GiB, every other service under 60 MiB.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
