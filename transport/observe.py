@@ -1,5 +1,16 @@
 """Read-only watcher: pages #gsb search and the feed and stores each post once with its canonical observation, which
 the bridge reads. It classifies by surface form only.
+
+What `observe.sqlite` keeps. A new observation is held whole until the bridge has answered it, then:
+  - a post the host's `world-reach` skipped is dropped SKIP_MINUTES after it was written: its URI as an 8-byte hash
+    (`gone`, so the next page of the feed never shows it again) and, if it is a reply, its (uri, author, replyTo) as a
+    `chain` stub for CHAIN_DAYS, which is all `reach` needs of an ancestor (past that the host falls back to the root);
+  - a post that reached a card, was turned or was answered is kept whole RETAIN_DAYS after it was written (the hand
+    reads it, `reach` of its replies and the mention retry read it), then dropped to its hash;
+  - a post still awaiting an interpretation, a draft or a mention turn is kept whole until it is answered.
+Every author seen stays in `authors` (a mention resolves an @handle through it long after the author's posts are
+gone). Nothing else of a post is kept: not the record (`posts.body` only repeated the observation). Ages are measured on
+the town's own timeline (`timeline`).
 """
 import hashlib
 import re
@@ -11,6 +22,10 @@ from transport import delve
 from transport.delve import Failure, canonical
 
 MAX_TEXT = 64 * 1024
+RETAIN_DAYS = 7  # an answered observation is kept whole this long after it was written
+SKIP_MINUTES = 15  # a skipped one this long: the hand lists, retries and replies to it by hand while it is fresh; then its hash
+CHAIN_DAYS = 3  # a dropped reply's chain stub is kept this long: `reach` walks 32 hops, and past the stub the host falls back to the root
+VERSION = 1  # observe.sqlite's user_version once migrated
 SUMMON_TAG = 'gsb'
 EDIT = re.compile(r'edit:\s*(.+?)\s*›\s*(.+)')
 DECISION = re.compile(r'(?:merge|reject)\b.*')
@@ -19,6 +34,15 @@ TAG = re.compile(r'(?<![\w#])#([^\W\d_][\w-]*)')
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS posts(uri TEXT PRIMARY KEY, cid TEXT, hash TEXT, body TEXT);
 CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, uri TEXT UNIQUE, json TEXT);
+CREATE TABLE IF NOT EXISTS gone(h BLOB PRIMARY KEY) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS chain(uri TEXT PRIMARY KEY, author TEXT, reply_to TEXT, created REAL) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS authors(did TEXT PRIMARY KEY, handle TEXT, seen INTEGER) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS owed(uri TEXT PRIMARY KEY) WITHOUT ROWID;
+CREATE TRIGGER IF NOT EXISTS observed_author AFTER INSERT ON observations
+WHEN json_extract(new.json,'$.author.did') IS NOT NULL BEGIN
+  INSERT INTO authors(did,handle,seen) VALUES(json_extract(new.json,'$.author.did'), json_extract(new.json,'$.author.handle'), new.seq)
+  ON CONFLICT(did) DO UPDATE SET handle=excluded.handle;
+END;
 '''
 
 
@@ -127,14 +151,151 @@ def start_cursor(st, explicit=None, now=None):
     return path.read_text().strip() if path.exists() else None
 
 
+def uri_key(uri):
+    return hashlib.sha256(uri.encode()).digest()[:8]
+
+
+def connect(st):
+    """The store, created and migrated: schema, then (once, idempotently) what an older store lacks. The old store held
+    each post twice (`observations.json` and `posts.body`) and no author table: the authors are rebuilt from the
+    observations (the first-seen order of the dids, the latest handle of each), the bodies emptied and the file compacted. The version is set
+    only after the compaction, so a compaction the lock refused is tried again at the next open."""
+    st.home.mkdir(parents=True, exist_ok=True, mode=0o700)
+    db = sqlite3.connect(st.observed, isolation_level=None, timeout=10)
+    db.execute('PRAGMA journal_mode=WAL')
+    db.execute('PRAGMA synchronous=NORMAL')
+    db.executescript(SCHEMA)
+    if db.execute('PRAGMA user_version').fetchone()[0] < VERSION:
+        db.execute('BEGIN IMMEDIATE')
+        for did, handle, seq in db.execute("SELECT json_extract(json,'$.author.did'), json_extract(json,'$.author.handle'), seq "
+                                           "FROM observations ORDER BY seq").fetchall():
+            if did is not None:
+                db.execute('INSERT INTO authors VALUES(?,?,?) ON CONFLICT(did) DO UPDATE SET handle=excluded.handle', (did, handle, seq))
+        db.execute("UPDATE posts SET body='' WHERE body!=''")
+        db.execute('COMMIT')
+        try:
+            db.execute('VACUUM')
+            db.execute(f'PRAGMA user_version={VERSION}')
+        except sqlite3.OperationalError:  # another process holds the file: the next open compacts
+            pass
+    return db
+
+
+def read(st, sql, *args):
+    """Rows of a read of the store; none when it does not exist or predates the table (the bridge also runs on stores
+    other code wrote)."""
+    if not st.observed.exists():
+        return []
+    db = sqlite3.connect(st.observed)
+    try:
+        return db.execute(sql, args).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        db.close()
+
+
+def authors(st):
+    """[(did, handle)] of every author ever observed, with the handle of their latest observation, in the order they were first observed."""
+    return read(st, 'SELECT did, handle FROM authors ORDER BY seen')
+
+
+def stubs(st):
+    """{uri: observation-shaped stub} of the replies pruned within CHAIN_DAYS: the ancestor `reach` asks of an observation."""
+    return {u: {'uri': u, 'author': {'did': a}, 'replyTo': r} for u, a, r in read(st, 'SELECT uri, author, reply_to FROM chain')}
+
+
+def owed(st):
+    """The URIs of posts the host's reach answered `reached` whose mention turns are not all sent."""
+    return {u for (u,) in read(st, 'SELECT uri FROM owed')}
+
+
+def owe(st, uri):
+    """Record that a reached post's mention turns are owed (of a store that exists: a bridge run on rows read elsewhere
+    sends them once)."""
+    if st.observed.exists():
+        db = connect(st)
+        try:
+            db.execute('INSERT OR IGNORE INTO owed VALUES(?)', (uri,))
+        finally:
+            db.close()
+
+
+def pay(st, uri):
+    """The post's mention turns are all sent (or it has none to send)."""
+    if st.observed.exists():
+        db = connect(st)
+        try:
+            db.execute('DELETE FROM owed WHERE uri=?', (uri,))
+        finally:
+            db.close()
+
+
+def timeline(rows, now=None):
+    """The instant ages are measured at: the newest post observed, never later than the clock (`now`, else the wall
+    clock; a post dated in the future must not age everything out). A quiet town ages slowly, and a replayed one by its own
+    time."""
+    stamps = []
+    for o in rows:
+        try:
+            stamps.append(instant(o['createdAt']))
+        except (KeyError, ValueError):
+            pass
+    return min(max(stamps, default=0), time.time() if now is None else now)
+
+
+def prune(st, skipped, answered, at, keep=()):
+    """Drop what the bridge has answered, per the module docstring, as of `at` (`timeline`): `skipped` observations once
+    written SKIP_MINUTES before it (an unparseable time is old), `answered` ones once written RETAIN_DAYS before it (an
+    unparseable time is never old: only a request record can lack one). Each leaves its URI hash in `gone`; a skipped
+    reply leaves its chain stub too; a URI in `keep` (the feed's, which `feed.waiting` asks the `posts` table about)
+    keeps its emptied `posts` row. Stubs older than CHAIN_DAYS go. The file is compacted when a fifth of it is free.
+    -> the count dropped."""
+    if not st.observed.exists():
+        return 0
+
+    def written(o):
+        try:
+            return instant(o['createdAt'])
+        except (KeyError, ValueError):
+            return None
+
+    older = lambda o, seconds, unknown: (unknown if written(o) is None else written(o) < at - seconds)
+    drop = [(o, True) for o in skipped if older(o, SKIP_MINUTES * 60, True)] + \
+           [(o, False) for o in answered if older(o, RETAIN_DAYS * 86400, False)]
+    db = connect(st)
+    try:
+        db.execute('BEGIN IMMEDIATE')
+        for o, skip in drop:
+            uri = o['uri']
+            db.execute('DELETE FROM observations WHERE uri=?', (uri,))
+            db.execute('DELETE FROM owed WHERE uri=?', (uri,))
+            db.execute('INSERT OR IGNORE INTO gone VALUES(?)', (uri_key(uri),))
+            if uri in keep:
+                db.execute("UPDATE posts SET cid='', hash='', body='' WHERE uri=?", (uri,))
+            else:
+                db.execute('DELETE FROM posts WHERE uri=?', (uri,))
+            if skip and o.get('replyTo') and written(o) is not None and written(o) >= at - CHAIN_DAYS * 86400:
+                db.execute('INSERT OR REPLACE INTO chain VALUES(?,?,?,?)', (uri, o['author']['did'], o['replyTo'], written(o)))
+        db.execute('DELETE FROM chain WHERE created < ?', (at - CHAIN_DAYS * 86400,))
+        db.execute('COMMIT')
+        free, pages = db.execute('PRAGMA freelist_count').fetchone()[0], db.execute('PRAGMA page_count').fetchone()[0]
+        if free * 5 >= pages and free * db.execute('PRAGMA page_size').fetchone()[0] >= 1 << 20:
+            db.execute('VACUUM')
+        db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    except sqlite3.OperationalError:  # locked by a reader or the hand: the same drops are made next run
+        if db.in_transaction:
+            db.execute('ROLLBACK')
+        return 0
+    finally:
+        db.close()
+    return len(drop)
+
+
 class Observer:
     def __init__(self, st, client, since=None, requests=None):
-        st.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.since = instant(since) if since else None  # posts created before it are not observed
-        self.db = sqlite3.connect(st.observed, isolation_level=None)
-        self.db.execute('PRAGMA journal_mode=WAL')
-        self.db.execute('PRAGMA synchronous=NORMAL')
-        self.db.executescript(SCHEMA)
+        self.db = connect(st)
         self.client, self.summon = client, st.config.summon_handle
         self.requests, self.problems = requests, []  # a requests.Poller: residents' request records, proven
 
@@ -153,18 +314,19 @@ class Observer:
         return self.insert(obs, post['record'])
 
     def seen(self, uri):
-        return bool(self.db.execute('SELECT 1 FROM posts WHERE uri=?', (uri,)).fetchone())
+        """Whether `uri` was observed, here or before the bridge dropped it."""
+        return bool(self.db.execute('SELECT 1 FROM posts WHERE uri=? UNION ALL SELECT 1 FROM gone WHERE h=?', (uri, uri_key(uri))).fetchone())
 
     def insert(self, obs, record):
-        """Keep `obs` and the record it was read from, once per uri. True if new."""
+        """Keep `obs` once per uri (the record it was read from is not kept: it only repeated `obs`). True if new."""
         body = canonical({'uri': obs['uri'], 'cid': obs['cid'], 'author': obs['author'], 'record': record})
         digest = hashlib.sha256(body.encode()).hexdigest()
         self.db.execute('BEGIN IMMEDIATE')
         try:
-            if self.db.execute('SELECT 1 FROM posts WHERE uri=?', (obs['uri'],)).fetchone():
+            if self.seen(obs['uri']):
                 self.db.execute('COMMIT')
                 return False
-            self.db.execute('INSERT INTO posts VALUES(?,?,?,?)', (obs['uri'], obs['cid'], digest, body))
+            self.db.execute("INSERT INTO posts VALUES(?,?,?,'')", (obs['uri'], obs['cid'], digest))
             self.db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (obs['uri'], canonical(obs)))
             self.db.execute('COMMIT')
         except BaseException:

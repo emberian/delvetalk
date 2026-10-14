@@ -557,7 +557,10 @@ class SeveralSpells(BridgeCase):
 
 
 class Mentions(BridgeCase):
+    """A mention is turned on the mentioned avatar only for a post the host's reach answered `reached`, with the post's URI
+    and the first NOTE_TEXT characters, once; a turn the host gave no receipt for is sent again without asking reach again."""
     GLM, KIMI = 'did:plc:' + 'b' * 24, 'did:plc:' + 'c' * 24
+    REACHED = {'status': 'reached', 'object': 'commonplace', 'how': 'mention'}
 
     def facet(self, text, handle, did):
         start = text.index('@' + handle)
@@ -568,15 +571,18 @@ class Mentions(BridgeCase):
         p['author'] = {'did': did, 'handle': handle}
         return p
 
+    def mentions(self, stub):
+        return [o for o in stub.ops if o['op'] == 'world-turn' and o.get('reach') == 'mentioned']
+
     def test_a_post_mentioning_two_handles_is_a_receive_on_each_mentioned_avatar_under_the_author(self):
-        stub = Stub()
         glm = mk(1, 'glm here')
         glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
         text = 'hello @glm.delve.town and @kimi.delve.town'  # glm by a known author's handle, kimi by facet
         post = mk(2, text, facets=[self.facet(text, 'kimi.delve.town', self.KIMI)])
+        stub = Stub({post['uri']: self.REACHED})
         self.observe([glm, self.seen(3, self.KIMI, 'kimi.delve.town'), post])
         r = bridge.run(self.state, stub)
-        turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['method'] == 'receive']
+        turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['method'] == 'receive' and o['reach'] == 'mentioned']
         self.assertEqual([(t['object'], t['principal'], t['reach'], t['identity']) for t in turns],
                          [(d, DID, 'mentioned', f"{post['uri']}#mention:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
         fields = {f['name']: f['value']['value'] for f in turns[0]['argument']['fields']}
@@ -586,6 +592,107 @@ class Mentions(BridgeCase):
         self.assertNotIn('mentioned', bridge.run(self.state, stub))  # once per post
         self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
 
+    def test_a_post_that_reaches_no_card_journals_no_mention_turn(self):
+        """Refuted by a mention turned for a post the host's reach answered `unreached` (the live gsb: 1,531 silent turns)."""
+        glm = mk(1, 'glm here')
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        stub = Stub()
+        self.observe([glm, mk(2, 'hello @glm.delve.town, any news?')])
+        r = bridge.run(self.state, stub)
+        self.assertEqual([o['op'] for o in stub.ops].count('world-turn'), 0)
+        self.assertNotIn('mentioned', r)
+        self.assertEqual(self.state.words(self.state.mentioned), set())
+        self.assertEqual(observe.owed(self.state), set())
+
+    def test_the_mention_turn_for_a_reached_post_carries_the_uri_and_only_the_first_280_characters(self):
+        """Refuted by the whole 40 KB post in the argument (the live gsb stored 3.7 KB a mention, up to 40 KB)."""
+        glm = mk(1, 'glm here')
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        text = '@glm.delve.town ' + 'y' * 40_000
+        post = mk(2, text)
+        stub = Stub({post['uri']: self.REACHED})
+        self.observe([glm, post])
+        bridge.run(self.state, stub)
+        (turn,) = self.mentions(stub)
+        size = len(json.dumps(turn['argument']))
+        fields = {f['name']: f['value']['value'] for f in turn['argument']['fields']}
+        self.assertEqual((fields['text'], fields['post']), (text[:bridge.NOTE_TEXT], post['uri']))
+        self.assertEqual(bridge.NOTE_TEXT, 280)
+        self.assertLess(size, 1024)
+
+    def test_the_clip_never_splits_a_character(self):
+        """Refuted by a clip in bytes or UTF-16 units: the 280th character is an astral emoji or a multibyte letter, and
+        the note is its first 280 characters whole, as `textTake` counts scalars."""
+        glm = mk(1, 'glm here')
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        head = '@glm.delve.town '
+        for name, last in (('astral', '\U0001F600'), ('two-byte', 'é'), ('three-byte', '\u2603')):
+            with self.subTest(name):
+                text = head + 'a' * (279 - len(head)) + last + 'tail' * 50
+                post = mk(10 + len(name), text)
+                stub = Stub({post['uri']: self.REACHED})
+                self.observe([post] if name != 'astral' else [glm, post])
+                bridge.run(self.state, stub)
+                (turn,) = self.mentions(stub)
+                note = turn['argument']['fields'][0]['value']['value']
+                self.assertEqual((len(note), note[-1]), (280, last))
+                self.assertEqual(note.encode('utf-8').decode('utf-8'), note)
+        past = head + 'a' * (280 - len(head)) + '\U0001F600' + 'tail'  # the emoji is the 281st: it is left out whole
+        post = mk(30, past)
+        stub = Stub({post['uri']: self.REACHED})
+        self.observe([post])
+        bridge.run(self.state, stub)
+        self.assertEqual(self.mentions(stub)[0]['argument']['fields'][0]['value']['value'], past[:280])
+
+    def test_a_post_naming_fifty_residents_turns_only_the_hosts_first_addressed(self):
+        """Refuted by a turn per name: the bound is the host's `mentionsAddressed`, however many a post names."""
+        dids = [f'did:plc:{i:024d}' for i in range(50)]
+        names = [f'r{i}.delve.town' for i in range(50)]
+        text = ' '.join('@' + n for n in names)
+        post = mk(1, text)
+        stub = Stub({post['uri']: self.REACHED}, mentions=4)
+        self.observe([post] + [self.seen(10 + i, d, n) for i, (d, n) in enumerate(zip(dids, names))])
+        bridge.run(self.state, stub)
+        self.assertEqual([o['object'] for o in self.mentions(stub)], dids[:4])
+
+    def test_a_mention_the_host_gave_no_receipt_for_is_sent_again_without_asking_reach_again(self):
+        """Refuted by a lost mention (no retry once the post has a draft) or a second `world-reach` for the post."""
+        glm = mk(1, 'glm here')
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        post = mk(2, 'hello @glm.delve.town')
+        stub = Stub({post['uri']: self.REACHED})
+        send, failing = stub.send, [True]
+        stub.send = lambda req: {'status': 'error', 'message': 'busy'} if req.get('reach') == 'mentioned' and failing else send(req)
+        self.observe([glm, post])
+        bridge.run(self.state, stub)
+        self.assertEqual((self.state.words(self.state.mentioned), observe.owed(self.state)), (set(), {post['uri']}))
+        failing.clear()
+        reaches = sum(o['op'] == 'world-reach' for o in stub.ops)
+        r = bridge.run(self.state, stub)
+        self.assertEqual(r['mentioned'], [post['uri']])
+        self.assertEqual(sum(o['op'] == 'world-reach' for o in stub.ops), reaches)
+        self.assertEqual((self.state.words(self.state.mentioned), observe.owed(self.state)), ({post['uri']}, set()))
+        sent = len(self.mentions(stub))
+        bridge.run(self.state, stub)
+        self.assertEqual(len(self.mentions(stub)), sent)
+
+    def test_a_resident_whose_posts_were_dropped_is_still_mentioned_by_handle(self):
+        """Refuted by the author map read from the kept observations: the handle of a dropped author would not resolve."""
+        glm = mk(1, 'glm only chats')
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        stub = Stub()
+        self.observe([glm])
+        bridge.run(self.state, stub)  # skipped
+        (gone,) = self.state.observations()
+        observe.prune(self.state, [gone], [], at=observe.instant(gone['createdAt']) + 7200)
+        self.assertEqual(self.state.observations(), [])
+        post = mk(2, 'hello @glm.delve.town')
+        post['record']['createdAt'] = '2026-10-12T11:00:00Z'
+        stub.reaches[post['uri']] = self.REACHED
+        self.observe([post])
+        bridge.run(self.state, stub)
+        self.assertEqual([o['object'] for o in self.mentions(stub)], [self.GLM])
+
     def test_a_mention_through_the_bridge_is_admitted_on_the_mentioned_avatar_of_a_real_host(self):
         """The v8 deploy's lost mentions: the bridge sends `{text, post}`, and the avatar's `receive` takes `fields` and
         `spell` too, which the host fills (empty, and no cast: a mention is heard, never cast)."""
@@ -594,7 +701,7 @@ class Mentions(BridgeCase):
         host = type('TownHost', (), {'send': lambda _, req: town.send(**req)})()
         glm = mk(1, 'glm here')
         glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
-        post = mk(2, 'a bell for @glm.delve.town')
+        post = mk(2, 'a bell for @glm.delve.town #gsb')  # a summons: the host reaches it
         self.observe([glm, post])
         r = bridge.run(self.state, host)
         self.assertEqual((r['mentioned'], r['failed']), ([post['uri']], []), r)
@@ -602,16 +709,16 @@ class Mentions(BridgeCase):
         self.assertEqual((got['status'], got['receipt']['outcome']['tag']), ('receipt', 'admitted'), got)
 
     def test_a_never_seen_handle_gets_no_turn_and_an_observed_author_is_arrived_and_reached(self):
-        stub = Stub()
         glm = mk(1, 'glm only chats')  # an author whose post is no spell, reply or mention
         glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
         text = 'hello @glm.delve.town and @ghost.delve.town'
         post = mk(2, text, facets=[self.facet(text, 'ghost.delve.town', self.KIMI)])  # kimi was never observed
+        stub = Stub({post['uri']: self.REACHED})
         self.observe([glm, post])
         r = bridge.run(self.state, stub)
         arrivals = [o['did'] for o in stub.ops if o['op'] == 'world-arrive']
         self.assertEqual(sorted(arrivals), sorted([DID, self.GLM]))  # every observed author, once; never the unseen kimi
-        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [self.GLM])
+        self.assertEqual([o['object'] for o in self.mentions(stub)], [self.GLM])
         self.assertIn(f"{post['uri']}#mention:{self.KIMI}", (self.state.skipped).read_text().split())
         self.assertEqual(r['failed'], [])
         before = len(stub.ops)
@@ -621,13 +728,71 @@ class Mentions(BridgeCase):
     def test_only_the_first_mentions_the_host_addresses_are_turned(self):
         # How many mentions of a post are addressed is the host's bound (`bounds.host.mentionsAddressed`), never the bridge's.
         self.assertEqual(self.host.send({'op': 'bounds'})['host']['mentionsAddressed'], 4)
-        stub = Stub(mentions=3)
         dids = ['did:plc:' + c * 24 for c in 'defgh']
         text = ' '.join(f'@u{i}.delve.town' for i in range(5))
         post = mk(1, text, facets=[self.facet(text, f'u{i}.delve.town', d) for i, d in enumerate(dids)])
+        stub = Stub({post['uri']: self.REACHED}, mentions=3)
         self.observe([post] + [self.seen(10 + i, d, f'u{i}.delve.town') for i, d in enumerate(dids)])
         bridge.run(self.state, stub)
-        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], dids[:3])
+        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn' and o['object'] != 'commonplace'], dids[:3])
+
+
+class Forgetting(BridgeCase):
+    """What the bridge answers the observer's store forgets (observe.py's docstring): never a post twice asked, never an
+    ancestor reach needs."""
+    def test_a_skipped_post_is_dropped_to_its_hash_and_never_asked_again(self):
+        """Refuted by a dropped post that the next page of the feed inserts and asks again."""
+        post = mk(1, 'chatter')
+        stub = Stub()
+        self.observe([post])
+        bridge.run(self.state, stub)
+        (obs,) = self.state.observations()
+        observe.prune(self.state, [obs], [], at=observe.instant(obs['createdAt']) + 2 * 3600)
+        self.assertEqual(self.state.observations(), [])
+        self.observe([post])  # the feed shows it again
+        self.assertEqual(self.state.observations(), [])
+        bridge.run(self.state, stub)
+        self.assertEqual(sum(o['op'] == 'world-reach' for o in stub.ops), 1)
+
+    def test_a_dropped_replys_stub_still_stands_in_the_chain_reach_is_shown(self):
+        """Refuted by a chain that stops at a dropped skipped ancestor: the host walks it to find the recorded post."""
+        u = lambda n: f'at://{DID}/town.delve.feed.post/{n}'
+        a, b, c = mk(1, 'plan', parent=u('card')), mk(2, 'chatter', parent=u(1)), mk(3, 'more', parent=u(2))
+        for i, p in enumerate((a, b, c), 1):
+            p['uri'] = u(i)
+            p['record']['createdAt'] = f'2026-10-09T10:00:0{i}Z'
+        stub = Stub({u(1): {'status': 'reached', 'object': 'garden-1', 'how': 'reply'}})
+        self.observe([a, b])
+        bridge.run(self.state, stub)
+        rows = {o['uri']: o for o in self.state.observations()}
+        observe.prune(self.state, [rows[u(2)]], [], at=observe.instant(rows[u(2)]['createdAt']) + 2 * 3600)
+        self.assertEqual(set(o['uri'] for o in self.state.observations()), {u(1)})
+        self.observe([c])
+        bridge.run(self.state, stub)
+        asked = [o for o in stub.ops if o['op'] == 'world-reach' and o['uri'] == u(3)]
+        self.assertEqual([x['uri'] for x in asked[0]['chain']], [u(2), u(1)])
+        self.assertEqual(asked[0]['chain'][0], {'uri': u(2), 'author': DID, 'replyTo': u(1)})
+
+    def test_an_answered_post_is_kept_until_it_is_old_and_a_pending_one_is_never_dropped(self):
+        """Refuted by a draft's post dropped within the window, or a post with no answer dropped at any age."""
+        done, waiting = mk(1, 'delvetalk garden-1 plant\nseed: a\ncolour: amber'), mk(2, 'delvetalk garden-1 plant\nseed: b\ncolour: amber')
+        stub = Stub()
+        self.observe([done, waiting])
+        stub.suspending.add('nowhere')
+        bridge.run(self.state, stub)
+        rows = self.state.observations()
+        self.assertEqual(len(rows), 2)
+        start = observe.instant(rows[0]['createdAt'])
+        self.assertEqual(observe.prune(self.state, [], rows, at=start + 6 * 86400), 0)
+        self.assertEqual(observe.prune(self.state, [], rows, at=start + 8 * 86400), 2)
+        self.assertEqual(self.state.observations(), [])
+        # a post the host gave no receipt for has no draft, so the bridge does not call it answered
+        failing = mk(3, 'delvetalk garden-1 plant\nseed: c\ncolour: amber')
+        send = stub.send
+        stub.send = lambda req: {'status': 'error', 'message': 'busy'} if req['op'] == 'world-turn' else send(req)
+        self.observe([failing])
+        self.assertEqual(bridge.run(self.state, stub)['failed'][0]['uri'], failing['uri'])
+        self.assertEqual([o['uri'] for o in self.state.observations()], [failing['uri']])
 
 
 class Unaddressed(BridgeCase):
