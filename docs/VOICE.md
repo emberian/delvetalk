@@ -432,7 +432,7 @@ The reply line is `refused <clause>: <reading>` (`transport/http.py` `turn_line`
 | budget | `the turn ran out of {ticks, heap, stack, nodes, bytes or law ticks} while {object} {method} ran (or judging {object}'s law); the same spell runs out the same way: make that part do less, or split it.` |
 | evaluation | the host's or kernel's words for a turn it could not run |
 | lawRefused, cardRefused | `refused {clause}: {reading}`; a card's own refusal (`refuse(line)`, `Card.refusing`) refuses its turn |
-| capacity | `the host's {limit} is full; try later.` |
+| capacity | a bound that drains (pending readings and waits): `the host's {limit} is full; it drains as readings and waits settle: try later.`; any other names what frees it and never says later: `objectsPerPrincipal: you keep {used} of the {quota} things a hand keeps in this town; retire one of yours …`, `placedPerHand: you hold 4 … on {object}, a hand's most; take one of yours off it …` |
 | quota | `the interpreter has read {n} this hour; reply with the spell itself, or wait.`, with `next` |
 | typeMismatch | `not what {method} takes; reply delvetalk {object} ? for its spell.` |
 | unknownObject | `no card {object} that you may see; the commonplace lists the doors.` |

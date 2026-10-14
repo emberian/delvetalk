@@ -19,6 +19,7 @@ the model's spell not reaching the garden.
 """
 import json
 import os
+import re
 import unittest
 
 from deploy import genesis
@@ -292,8 +293,9 @@ class CardsReadFieldLines(test_chain.Chain):
         self.bell()
         for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
-            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["reason"]),
-                             ("refused", "badSpell", "text takes 1 to 120 characters."), (rkey, r))
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "badSpell"), (rkey, r))
+            given = int(re.fullmatch(r"text takes 1 to 120 characters; this one is (\d+)\.", r["receipt"]["outcome"]["reason"])[1])
+            self.assertGreater(given, 120)  # the length given beside the bound (the live review's finding 6)
         self.assertEqual(self.rains(), [])
         short = self.turn("bell", "receive", record(text=label("```\nrain: a fine gray drizzle of expired invitations\n```"), post=label("at://x/short")), principal=KIMI)
         self.assertEqual((short["status"], short["result"]), ("admitted", nat(1)), short)

@@ -2001,6 +2001,14 @@ def selfWait (object : String) (sus : Json) : Bool :=
   let act := (outcome.getObjVal? "activity").toOption.getD Json.null
   (slot.getObjValAs? String "principal").toOption == some object && (act.getObjValAs? String "object").toOption == some object
 
+/-- What a value is, said in a refusal: its shape, never its words. -/
+def dataShape : Data → String
+  | .natural _ => "a number"
+  | .boolean _ => "true or false"
+  | .label _ => "text"
+  | .record _ => "a record"
+  | .variant l _ => if l == "cons" || l == "nil" then "a list" else s!"the case {l}"
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
@@ -2088,7 +2096,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .ok (.finished value _ _ usage, reads) =>
       held.note reads
       spend (usage.ticksUsed + usage.conversionNodes)
-      let .record fields := value | evaluation "a pure method must return the state record"
+      let .record fields := value | evaluation s!"{method} of {id} returned {dataShape value}, and a method with no Activity returns its State record (what it writes); one that answers a value is def {method}(state: State, …) -> Activity<T>"
       addWrite id caller (fields.map fun (k, v) => (⟨k, .set v⟩ : Edit))
       return value
 

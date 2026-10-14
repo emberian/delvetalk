@@ -256,6 +256,32 @@ class Authoring(unittest.TestCase):
         [resumed] = settled["resumed"]
         self.assertEqual((resumed["receipt"]["outcome"]["tag"], resumed["receipt"]["outcome"].get("writes", [])), ("admitted", []), resumed)  # nothing held
 
+    # The live review's finding 6, re-run: `lines` with no `from` (kestrel's four `from takes 1 to 1000000000`), a
+    # range refusal naming the value given, and "a pure method must return the state record" naming the method.
+    def test_lines_needs_no_from_and_the_refusals_name_what_was_given_and_which_method(self):
+        body = ("form hum:\ndef hum(state: State, context: Abi.Context) -> Nat:\n  1n\n"
+                "def actions(state: State, context: Abi.Context) -> Lists.List<String>:\n  Text.words(\"write lines hum\")\n")
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: pad / of: record / head: a pad\nbody: <<BEND\n%sBEND\n" % body)
+        self.admitted(YUE, "kind/pad", "delvetalk kind/pad make")
+        for n in range(1, 11):
+            self.admitted(KES, "pad/1", "delvetalk pad/1 write / text: line %d" % n)
+        newest = told(self.admitted(KES, "pad/1", "delvetalk pad/1 lines"))
+        self.assertIn("line 10", newest)
+        self.assertIn("line 3", newest)
+        self.assertNotIn("line 2\n", newest)
+        self.assertIn("line 1\n", told(self.admitted(KES, "pad/1", "delvetalk pad/1 lines / from: 1")))
+        def misfit(text):  # a misfit spell is hob's to read first: it reads nothing, and the refusal stands
+            r = self.say(KES, "pad/1", text)
+            if r["status"] == "suspended":
+                [item] = [i for i in self.town.send(op="world-interpretations")["pending"] if i["object"] == "pad/1"]
+                r = self.town.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "model": "m", "json": None, "raw": "none"})["resumed"][0]
+            return r["receipt"].get("reason") or outcome(r).get("reason")
+        self.assertEqual(misfit("delvetalk pad/1 lines / from: 1000000001"), "from takes 0 to 1000000000; this one is 1000000001.")
+        self.assertEqual(misfit("delvetalk pad/1 write / text: " + "x" * 1401), "text takes 1 to 1400 characters; this one is 1401.")
+        pure = self.say(KES, "pad/1", "delvetalk pad/1 hum")
+        self.assertEqual(outcome(pure).get("class"), "evaluation", pure)
+        self.assertIn("hum of pad/1 returned a number, and a method with no Activity returns its State record", outcome(pure).get("reason"))
+
     # §5 step 2: a layer checked over what it would be laid on.
     def test_a_layer_is_checked_over_a_kinds_things_or_over_a_thing(self):
         self.assertIn("Checked: it compiles.", self.check_over("kind/record", CLICKER))

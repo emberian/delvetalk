@@ -71,7 +71,7 @@ class Lenses(test_chain.Chain):
         # The host judges the value against the lens's kind (HOST-HANDOFF 5.54).
         over = self.misfit("delvetalk policy set\nmodel: " + "s" * 65)
         out = over["receipt"]["outcome"]
-        self.assertEqual((out["tag"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "badValue", "model takes 1 to 64 characters."), over)
+        self.assertEqual((out["tag"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "badValue", "model takes 1 to 64 characters; this one is 65."), over)
         self.assertEqual(self.version(), 1)
 
     def test_a_stranger_a_bad_value_two_fields_and_an_unlensed_field_change_nothing(self):

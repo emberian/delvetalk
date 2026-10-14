@@ -696,6 +696,20 @@ def kernelPrefix : String := "turn refused: "
 /-- A ledger field a chain of sends spent (`budgetExhausted`), as its reason says it. -/
 def exhaustedReason (field : String) : String := s!"the chain of sends spent its {field}."
 
+/-- The bounds that drain of themselves (pending readings and waits settle): only their refusal says "try later". -/
+def drainingBounds : List String := ["pendingInterpretationsPerObject", "pendingActivitiesPerObject", "maxSuspended"]
+
+/-- A bound that frees nothing by waiting, named with what frees it (the live review's finding 6: "the host's
+    objectsPerPrincipal is full; try later" where waiting freed nothing). The bound's name leads, for whoever counts. -/
+def standingBound (m obj : String) : String :=
+  match m with
+  | "placedPerHand" => s!"placedPerHand: you hold {Limits.placedPerHand} rules, wants or verbs on {obj}, a hand's most; take one of yours off it (unrule, unwant or ungrow) to place another. Waiting frees nothing."
+  | "placedByOthers" | "verbsByOthers" => s!"{m}: the other hands' lines on {obj} fill their share; its owner holds the rest. Waiting frees nothing."
+  | "rulesPerObject" | "wantsPerObject" | "verbsPerObject" | "placedOnTownThing" =>
+    s!"{m}: {obj} carries as many as it holds; one comes off before another goes on. Waiting frees nothing."
+  | "maxObjects" => "maxObjects: the town holds as many things as it keeps; nothing new is made until one is retired. Waiting frees nothing."
+  | _ => s!"the host's {m} is at its bound; waiting frees nothing."
+
 /-- A refusal's `reason` as the town reads it (docs/VOICE.md, "The host's refusals"), from what the
     refusal names: the class, the object, the limit or resource, the clause. Classes whose reason the
     site writes (lawRefused, quota, noMethod, badSpell) keep it. Applied once, where `commit`
@@ -714,8 +728,10 @@ def Refusal.voiced (r : Refusal) : Refusal :=
 
     | "evaluation" => given
     | "capacity" => match given with
-      | some m => if m.any (· == ' ') then some m else some s!"the host's {m} is full; try later."
-      | none => some s!"the host's {if obj.isEmpty then "capacity" else obj} is full; try later."
+      | some m => if m.any (· == ' ') then some m
+          else if drainingBounds.contains m then some s!"the host's {m} is full; it drains as readings and waits settle: try later."
+          else some (standingBound m obj)
+      | none => some s!"the host's {if obj.isEmpty then "capacity" else obj} is at its bound; waiting frees nothing."
     | "typeMismatch" =>
       let method := ((r.expected.bind fun e => (e.getObjValAs? String "method").toOption)).getD "it"
       let pointer := s!"reply delvetalk {obj} ? for its spell."
@@ -2559,7 +2575,8 @@ def objectCapacity (w : World) (updates : List (String × Object)) : Option Refu
     if principal == w.opener then continue
     let count := fun (os : Std.HashMap String Object) => os.toList.filter (fun (_, o) => hand o.maker == principal && !objectRetired o) |>.length
     if count objects > w.objectQuota && count objects > count w.objects then
-      return some { cls := "capacity", object := some "objects", reason := some "objectsPerPrincipal" }
+      return some { cls := "capacity", object := some "objects", clause := some "objectsPerPrincipal",
+                    reason := some s!"objectsPerPrincipal: you keep {count w.objects} of the {w.objectQuota} things a hand keeps in this town; retire one of yours (delvetalk <thing> retire), or ask the town's hand for room. Waiting frees nothing." }
   return none
 
 mutual
