@@ -45,6 +45,7 @@ class BrowserSecurity(unittest.TestCase):
         self.front._feed.recent.return_value = 0
         self.front._feed.post.return_value = ROW
         self.front._feed.threads.return_value = ([], None)
+        self.front._feed.newest.return_value = []  # a place's side column on a wide screen
         self.front._feed.get.return_value = None
         self.addCleanup(mock.patch.stopall)
         mock.patch('transport.http.place', return_value={'status': 'place', 'card': 'hello', 'view': {}, 'paint': None, 'wants': []}).start()

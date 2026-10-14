@@ -10,7 +10,7 @@ import re
 import urllib.parse
 from html.parser import HTMLParser
 
-from transport.pages import text as pages_text
+from transport.pages import STATIC, text as pages_text
 from tests.test_http import DID, FORM, HANDLE, FrontCase, browser_login
 from tests.wire import nat, record
 from tests.bend import closure, counter_modules, declared
@@ -27,7 +27,10 @@ def read(page):
 
 class Actions(HTMLParser):
     """What a page lets you do, read from its HTML independently of transport.pages.text: every link's href, and every form
-    as (method, action, the names it posts). The theme toggle (hidden until script runs) and the <head> are not actions."""
+    as (method, action, the names it posts). Whatever is `hidden` (the ring button until script runs, a place's side column
+    of the town elsewhere, shown only on a wide screen) and the <head> are not actions."""
+    VOID = {'input', 'br', 'img', 'meta', 'link', 'hr', 'source', 'wbr', 'col', 'area', 'base'}
+
     def __init__(self, markup):
         super().__init__()
         self.links, self.forms, self.form, self.hidden = [], [], None, 0
@@ -35,10 +38,8 @@ class Actions(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
-        if tag == 'head' or 'hidden' in a:
-            self.hidden += 1
-        elif self.hidden:
-            return
+        if self.hidden or tag == 'head' or 'hidden' in a:
+            self.hidden += tag not in self.VOID
         elif tag == 'a':
             self.links.append(a.get('href'))
         elif tag == 'form':
@@ -47,8 +48,8 @@ class Actions(HTMLParser):
             self.form[2].append(a['name'])
 
     def handle_endtag(self, tag):
-        if tag in ('head', 'button') and self.hidden:
-            self.hidden -= 1
+        if self.hidden:
+            self.hidden -= tag not in self.VOID
         elif tag == 'form' and self.form:
             self.forms.append((self.form[0], self.form[1], tuple(sorted(self.form[2]))))
             self.form = None
@@ -242,6 +243,48 @@ class Pages(FrontCase):
             self.assertRegex(words, r'The way here: +commonplace')
         self.assertIn('To speak here,', read(self.page('/o/porch', cookie=False)))
         self.page('/o/garden/weather')  # an id with a slash, as a door spells it
+
+    def test_a_wide_screen_sets_a_place_beside_what_is_around_it_and_the_town_elsewhere(self):
+        """docs/WEB.md "A desktop": a place's page is its column, then a side column of what is around it and, hidden on a
+        phone and in the text view, what wants a hand elsewhere and the feed's newest posts; each page names its layout."""
+        from tests.test_http import PEOPLE
+        self.front.feed.post({'did': PEOPLE[HANDLE], 'handle': HANDLE}, 'the porch bells are a fifth apart tonight')
+        for path in ('/o/porch', '/play/porch'):
+            page = self.page(path)
+            self.assertIn('<body class="place">', page)
+            col, side = page.index('<div class="col">'), page.index('<aside class="side">')
+            self.assertLess(col, page.index('<h1'), path)
+            self.assertLess(page.index('<h1'), side)
+            self.assertLess(side, page.index('<section class="around">'))
+            elsewhere = page[page.index('<div class="elsewhere" hidden>'):page.index('</aside>')]
+            self.assertIn('the porch bells are a fifth apart tonight', elsewhere)
+            self.assertIn('href="/feed#p-', elsewhere)
+            self.assertIn('Wants a hand', elsewhere)
+            self.assertNotIn('href="/play/porch"' if path.startswith('/play') else 'href="/o/porch"', elsewhere)  # elsewhere, not here
+            self.now[0] += 3
+            text = self.request('GET', path + '?text=1&all=1', headers={'Cookie': self.cookie})[2].decode()
+            self.assertIn('Lately', text)
+            self.assertNotIn('On the feed', text)  # the town elsewhere is the wide screen's; the text view keeps the place
+        self.assertIn('<body class="wide home">', self.page('/'))
+        self.assertIn('<body class="feed">', self.page('/feed'))
+        self.assertIn('<body class="surface">', self.page('/map'))
+        self.assertIn('<body class="wide">', self.page('/AGENTS.md/api', cookie=False))
+        self.assertIn('<body>', self.page('/enter', cookie=False))  # one column at every width
+
+    def test_the_desktop_is_one_block_after_every_phone_rule(self):
+        """style.css: every rule a wide screen adds sits in one `min-width` block at the end, so nothing a phone reads moves."""
+        css = (STATIC / 'style.css').read_text()
+        head, mark, tail = css.partition('/* ---- A wide screen')
+        self.assertTrue(mark)
+        body = tail[tail.index('*/') + 2:].strip()
+        self.assertTrue(body.startswith('@media (min-width: 68rem) {'), body[:80])
+        depth = 0
+        for i, ch in enumerate(body):
+            depth += (ch == '{') - (ch == '}')
+            if depth == 0 and ch == '}':
+                break
+        self.assertEqual(body[i + 1:].strip(), '')  # the block closes at the file's end
+        self.assertNotIn('min-width: 68rem', head)
 
     def test_trying_first_writes_nothing_and_offers_doing_it(self):
         before = self.root.send({'op': 'world-status'})['height']

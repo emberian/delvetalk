@@ -198,6 +198,11 @@ class Feed:
         with self.lock:
             return self.db.execute('SELECT * FROM feed WHERE seq>? ORDER BY seq', (after,)).fetchall()
 
+    def newest(self, n=4):
+        """The residents' newest `n` posts, newest first (a place's side column, beside it on a wide screen)."""
+        with self.lock:
+            return self.db.execute('SELECT * FROM feed WHERE town=0 ORDER BY seq DESC LIMIT ?', (n,)).fetchall()
+
     def threads(self, before=None, limit=PAGE, thread=None, replies_before=None):
         """SQL keyset pages, newest activity first; each thread has a root, newest replies in sequence order, and an
         earlier-replies cursor. `limit` counts every post. Text costs six bytes per raw UTF-8 byte (HTML entities and
