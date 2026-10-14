@@ -102,7 +102,7 @@ class HistoryBound(unittest.TestCase):
 
 
 class StartLines(unittest.TestCase):
-    """The hand's and the front's containers say they started (docs/review/live-2026-10-14.md R5): one line, the world and the
+    """The hand's and the front's containers say they started: one line, the world and the
     port, no token. Refuted by an empty log, a second line, or the token in it."""
 
     def started(self, run):
@@ -989,7 +989,7 @@ class Measure(unittest.TestCase):
 
 class PlaytestTwo(unittest.TestCase):
     """The second Zulip playtest's state (run-20261011-063034, trimmed to what the measures read: the journal whole, the
-    drafts, observations and readings slimmed) measured as docs/review/zulip-playtest-2.md D12 found it should be."""
+    drafts, observations and readings slimmed) measured as that playtest found it should be."""
 
     @classmethod
     def setUpClass(cls):

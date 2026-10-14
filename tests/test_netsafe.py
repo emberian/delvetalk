@@ -1,4 +1,4 @@
-"""ATPROTO L5 finding 3: attacker-selected HTTPS destinations cannot reach internal networks.
+"""ATPROTO §2(b): attacker-selected HTTPS destinations cannot reach internal networks.
 
 Refuted by any private/translated address connecting; a second DNS lookup selecting loopback; a TLS identity or
 Host header naming the pinned IP; a redirect being followed; or a response read beyond limit + 1. No network.

@@ -51,7 +51,7 @@ class Arrive(HostCase):
                               argument=record(text=label(text), post=label("")))
 
     def test_me_is_the_speakers_own_avatar(self):
-        # docs/GROUND.md §6 change 2: a card may print `delvetalk me note` without a DID.
+        # docs/VOICE.md "The offering": a card may print `delvetalk me note` without a DID.
         self.assertEqual(self.arrive()["status"], "arrived")
         usage = self.say("delvetalk me ?", identity="u1")
         self.assertEqual(usage["status"], "usage", usage)

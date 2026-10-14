@@ -1,4 +1,4 @@
-"""A card's own refusal refuses its turn (playtest 2's D6; KERNEL-HANDOFF section 26).
+"""A card's own refusal refuses its turn (playtest 2's D6; KERNEL-HANDOFF §8, `refuse(line)`).
 
 `refuse(line)` takes any String the card computes. The turn is refused with class `cardRefused`,
 the clause and reading parsed from `refused <clause>: <reading>` (else clause `card` and the line

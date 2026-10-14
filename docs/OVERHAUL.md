@@ -224,8 +224,7 @@ newest town backup or does not merge.
 | 6 | the docs: FOUNDATION, LAW, VOICE, OBJECTS-HANDOFF, GENESIS, SEEDING as rules; the designs folded in | every exact card text in VOICE equals a fresh genesis's render (`test_previews`); the contract's forbidden list is one table the verifier reads |
 | 7 | a carried world measured over a week by the journal's `fired`, `grown`, `wanted` (`transport/measure.py`) | §6's table filled |
 
-Open: step 4's kind `relay` (lays the current body over every instance that follows it) is not built; step 7 waits on
-the playtest (FOUNDATION §12).
+Open: step 4's kind `relay` (lays the current body over every instance that follows it) is not built.
 
 **Decision:** nothing after step 1 ever requires a genesis.
 

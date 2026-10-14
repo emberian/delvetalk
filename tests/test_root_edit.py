@@ -1,4 +1,4 @@
-"""`delvetalk-obend root-edit` (docs/ROOT.md §1.5; HOST-HANDOFF §7 item 1, 5.135): the offline edits of a
+"""`delvetalk-obend root-edit` (docs/ROOT.md §1.5; HOST-HANDOFF §5 "Carry and root-edit"): the offline edits of a
 closed journal, each a new file, the old kept, the first re-sealed entry marked `rootEdit {command, reason,
 oldHead, at}`, every re-sealed entry's hash in the printed table, and the result replayed before it is
 written.

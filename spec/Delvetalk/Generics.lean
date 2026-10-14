@@ -1205,7 +1205,7 @@ def moduleNames (m : ObjectiveBendSurface.Module) (names : Std.TreeSet String) :
   let names := m.imports.foldl (fun acc i => addNames (addNames acc i.path) i.importAlias) names
   m.decls.foldl (fun acc d => (declStrings d).foldl addNames acc) names
 
-/-! ## Edits and `keep()` derived from the State (KERNEL-HANDOFF §16 item 8a)
+/-! ## Edits and `keep()` derived from the State (KERNEL-HANDOFF §10)
 
 A module that declares `State` (a record, or a type naming one) and imports Plan.obend (alias
 `P`), and declares neither `Edits` nor `keep`, gets both, at the end of the module, as the source
@@ -1305,7 +1305,7 @@ def relationItem (g : GType) : M (Option GType) := do
 def derivedRefusal (module message : String) (tag := "derived-edits") : String :=
   "refused (" ++ tag ++ "): " ++ message ++ " (module " ++ module ++ ")"
 
-/-- A derivation refusal at the source line that occasions it (KERNEL-HANDOFF §16 item 9). -/
+/-- A derivation refusal at the source line that occasions it (KERNEL-HANDOFF §10). -/
 def derivedAt {α : Type} (module : String) (span : Span) (message : String) (tag := "derived-edits") : M α :=
   throwThe Refusal (refusalAt module span (derivedRefusal module message tag))
 
@@ -1531,7 +1531,7 @@ def preamble : M Unit := do
   for source in (← get).sources do aliases := aliases ++ [(← fresh, source.module.name)]
   modify fun s => { s with generatedModule := moduleName, generatedAlias := moduleAlias, aliases }
 
-/-! ## Form blocks: the method's input and `forms()` (KERNEL-HANDOFF §16 item 8c)
+/-! ## Form blocks: the method's input and `forms()` (KERNEL-HANDOFF §10)
 
 `form plant as planting:` declares, beside the Form value the parser wrote in place, the record
 `PlantInput` of its fields (`text` and `source` a String, `natural` a Nat, `a | b | c` the

@@ -83,7 +83,7 @@ def keyLess (a b : String) : Bool :=
   if a.utf8ByteSize != b.utf8ByteSize then a.utf8ByteSize < b.utf8ByteSize else a < b
 
 /-- Bytewise order, a proper prefix first: the order of canonical encodings, and so of a relation's
-keys (RELATIONAL §2). -/
+keys (FOUNDATION §9). -/
 def bytesLt (a b : ByteArray) : Bool := go 0
 where
   go (i : Nat) : Bool :=

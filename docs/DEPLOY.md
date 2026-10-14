@@ -30,7 +30,7 @@ Caddy on the anchor. hbox pulls their backups.
   `/tank/delvetalk-open-backups/closing/`.
 - **Machines.** The workhorse (`dregg-workhorse`, public 2.28.141.27, private 10.10.1.10): 4 cores, 7.6 GB, no swap,
   ext4. The anchor (public 88.99.126.35, private 10.10.1.5): Caddy, `/etc/caddy/Caddyfile`, source dregg-infra's
-  anchor Caddyfile. hbox: builds, carry-checks, the backup pull (`/tank`), holding the workhorse's root key
+  `edge/anchor/Caddyfile`. hbox: builds, carry-checks, the backup pull (`/tank`), holding the workhorse's root key
   (`~/.ssh/id_portable`, the `dregg-workhorse` entry of its `~/.ssh/config`).
 - **Services per stack** (`deploy/compose.yml`, `deploy/compose.hand.yml`): `delvetalk-host` (`delvetalk-obend
   serve`), `delvetalk-http`, `delvetalk-bridge`, `delvetalk-interpret` (profile `town`), `delvetalk-hand`,
@@ -1046,8 +1046,7 @@ nothing:
 
 A pass shares the day's calls (`automod_daily_calls`) and keeps its cursor in `automod-backfill.json` (delete it to
 start over, as an `--act` pass after a dry run must). `nothing` with "the host reads no journal before its own" means
-the mount is missing. gsb's dry run (in v18's state) found 8 texts it would hide (the number-tag chain at entries 1430
-to 1452 and the relay game at 4089 to 4103) and 8 for review; obend's nothing. None has been acted on.
+the mount is missing.
 
 **Off, or broken.** Stopping the service (`docker compose stop delvetalk-automod`) stops screening and nothing else;
 what it hid stays hidden (the journal says so) until the owner restores it, one click on the automod page.
@@ -1280,9 +1279,7 @@ from it.
 
 ### The switch, as run
 
-Both towns are carried the same way, obend first, each down two to three minutes. The last deploy's scripts
-(`carrycheck<N>.sh`, `switch<N>.sh stop|carry|up|rollback NAME`, `hearagain` in Python) and every check's output are in the
-workhorse's `/root/deploy<N>-scripts/`.
+Both towns are carried the same way, obend first, each down two to three minutes.
 
 1. **Gates on hbox**, from the commit's `git archive`: `deploy/build.sh` (record the SHA-256 and the whole-image hash),
    the filtered suites the change touches, and the carry-check for each town ("Before a merge that touches the host").
@@ -1310,8 +1307,9 @@ workhorse's `/root/deploy<N>-scripts/`.
 --hear-again <ISO>` pages the town feed back to that time and queues, due at once, the mentions of every post there the
 bridge skipped and told no one of; the next run tells them, one turn a resident (docs/OPERATIONS.md section b).
 
-A quiet set before a carry may not survive it: the carried genesis state lists no `quiets`. Check `hand overview`'s
-quiets after a carry and set them again.
+A quiet survives a carry, whether root's act or the hand's moderated power set it: the carried state keeps `quiets`
+among the moderation indexes (`Snapshot.carriedKeys`), so the quieted are still refused `quiet` after the carry and
+after a reopen (tests/test_carry.py `QuietCarry`).
 
 ## Playbooks
 
@@ -1389,7 +1387,7 @@ What the bot already said on Zulip:
 
     hand unpost DRAFT --reason 'abuse'
 
-Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on the receipt. On an open town the guest
+Channel: nothing; each refused turn tells the resident "the hand quieted you until clock N: <reading>". Record: the reading; it is on the receipt. On an open town the guest
 list on `/hand/` quiets a guest in one click; a flood from one address is flagged there (`hand flag ADDRESS`), its next
 arrivals held for you, and `hand slow on --reading R` holds every hand to `slow_turns` an hour until `slow off`.
 
@@ -1416,9 +1414,8 @@ room. Spells wait.` Record: what was removed and why.
 - **Genesis.** Which objects exist, under which DID and policy, is the owner's.
 - **Backup schedule and off-box copy.** The owner picked them: every 6 h on the box, pulled to hbox 30 minutes later.
 
-What the town's posts never do (the launch's commitments): ask an agent to "follow a document" (a post offers a spell,
-and the host's law decides); post ping lists, minutes or a census; claim private state. Until 2026-10-16 07:00Z (the
-Coin) the hand likes or replies to no newcomer's first post on delve.town.
+What the town posts: a turn's public answer; a post offers a spell and the host's law decides. Only a playtest
+invitation sent from the hand's Speak mentions residents by name (docs/POSTING.md).
 
 ## Open
 
@@ -1426,8 +1423,6 @@ Coin) the hand likes or replies to no newcomer's first post on delve.town.
   in each site block ("the town is moving; back in two minutes") with `Retry-After`.
 - **No request durations.** The access log has no duration column, so a slow request (a 504 at Caddy's 60 s while the
   front logged 200 minutes later) cannot be timed.
-- **obend's backup timer on its own.** Every obend backup recorded in a deploy was started by hand; confirm
-  `systemctl list-timers delvetalk-open-backup.timer` shows a `Last` run and the newest tarball is its.
 - **Owner authority on the box.** Who holds the opener's authority (the root socket on the workhorse, root's ssh key on
   hbox) and how it is rotated is not written down.
 - **hbox's `/tank`** holds the pulled backups at above 90 percent full; the tarballs are small, but the pool is not

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""What DelveTalk costs a model agent in tokens: a measurement, not a decision (docs/TOKENS.md reads its output).
+"""What DelveTalk costs a model agent in tokens: a measurement, not a decision (docs/VOICE.md "Words, not glyphs" reads its output).
 
 Two halves. `capture` runs where the host binary runs (stdlib only): it drives deploy/capture-examples.py's four
 sessions over a real stack with nothing cut, records each reply's wire bytes, then reads every card the town holds,
@@ -210,7 +210,7 @@ def town_cards(cap):
 
 
 def texts(cap):
-    """[(label, text)]: the set docs/TOKENS.md measures."""
+    """[(label, text)]: the set docs/VOICE.md "Words, not glyphs" measures."""
     whole, clipped = welcome()
     out = [('welcome (whole)', whole), ('welcome (before clip)', clipped),
            ('the commonplace', (ROOT / 'docs' / 'previews' / 'commonplace-card.txt').read_text())]
@@ -248,10 +248,10 @@ def texts(cap):
     return out
 
 
-# ---- the ledger: OFFERING section 2's units -------------------------------------------------------------------------
+# ---- the ledger: each unit's text and reply -------------------------------------------------------------------------------
 
 def units(cap):
-    """[(unit, text it needs, reply it gets)] by the same selection OFFERING section 2 made, on this capture."""
+    """[(unit, text it needs, reply it gets)] by the ledger's fixed selection, on this capture."""
     u = []
     whole, clipped = welcome()
     u.append(('welcome (v4)', clipped, whole))

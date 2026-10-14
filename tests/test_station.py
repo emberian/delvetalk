@@ -1,5 +1,5 @@
 """The all-night station (genesis `--with-gas-station`): the town's first fantasy scene, stitched from the replies to
-ember's #delve-room call of 2026-10-12 (docs/review/station-trawl-2026-10-12.md) and braided out into the town. Its
+ember's #delve-room call of 2026-10-12 and braided out into the town. Its
 thirty-eight passages are stitched a wing a turn (a turn's ticks read about eight thousand characters of spween); its
 door and its mirror ring mimo's bell; its counter, hook, cooler, mirror and tape hand things into the reader's hands;
 a wall clock moves only when wound, and twelve windings open what the town keyed to it; the register holds only what

@@ -56,7 +56,7 @@ structure Entry where
   value : Value
   deriving Repr, BEq
 
-/-- Why a spell was refused: WHOLENESS.md section 2. -/
+/-- Why a spell was refused: FOUNDATION §5 "Spell grammar". -/
 inductive Clause where
   | otherCard | noAction | unknownField | duplicateField | badValue | unclosedBlock | quotation | unclear
   deriving Repr, BEq
@@ -99,7 +99,7 @@ def str (v : T) : String := String.mk v
 def lit (s : String) : T := s.toList
 
 /-- ASCII letters folded to lower case: actions and field names are read in any case
-    (docs/FLEX.md §4 host 2); a card's name is kept as written and folded where it is compared. -/
+    (docs/FLEX.md §3); a card's name is kept as written and folded where it is compared. -/
 def foldT (v : T) : T := v.map Char.toLower
 def fold (s : String) : String := str (foldT s.toList)
 
@@ -325,7 +325,7 @@ partial def spellLine (text : T) (indent stop : Nat) : Fields2 :=
 partial def fieldLine (text : T) (stop : Nat) : Fields2 :=
   if stop == 0 then afterBlank (text.drop 1) else lineParts (text.take stop) (text.drop (stop - 1))
 
-/-- After a blank line a value without a name is prose: the fields end at it (docs/FLEX.md §4 host 3). -/
+/-- After a blank line a value without a name is prose: the fields end at it (docs/FLEX.md §3). -/
 partial def afterBlank (rest : T) : Fields2 :=
   let next := trimEnd (trimStart (rest.take (brk rest ['\n'])))
   if next.isEmpty || next.any (· == ':') || ["#", ">", "`"].any (lit · == next.take 1) || isSpellAt next 0
@@ -357,7 +357,7 @@ partial def binding (line rest : T) : Fields2 :=
   let colon := brk line [':']
   let name := line.take colon
   -- A line is a field only when it looks like one (`name: value`, the name an identifier), as
-  -- `bareT` reads them: prose with a colon after the fields ends them (docs/FLEX.md §4 host 1).
+  -- `bareT` reads them: prose with a colon after the fields ends them (docs/FLEX.md §3).
   -- A line with no colon in the field lines is a value without a name, bound by type at fit.
   if !line.any (· == ':') then consed ⟨"", str line⟩ (loose rest)
   else if colon == 0 || name == line || !looksLikeField line then .stray [] rest
@@ -601,7 +601,7 @@ def planProbe (line : String) : String :=
     | n :: rest => (acc.1 ++ "made-" ++ n ++ "}".intercalate rest, true)
     | [] => (acc.1 ++ part, true)) ("", false) |>.1
 
-/-- A plan's head (docs/HOST-HANDOFF.md 5.203): `delvetalk plan` at the margin, in any case, a trailing `:` or `.`
+/-- A plan's head (HOST-HANDOFF §5 "Plans and try"): `delvetalk plan` at the margin, in any case, a trailing `:` or `.`
     allowed, nothing after it. -/
 def isPlanHead (line : String) : Bool :=
   let f := fold line.trimAsciiEnd.toString
@@ -610,7 +610,7 @@ def isPlanHead (line : String) : Bool :=
 /-- A code fence tagged `plan` opens a plan as its head does. -/
 def isPlanFence (line : String) : Bool := fold line.trimAscii.toString == "```plan"
 
-/-- The acts of a plan, when the post is one (docs/HOST-HANDOFF.md 5.203): a post with a plan's head (`isPlanHead`)
+/-- The acts of a plan, when the post is one (HOST-HANDOFF §5 "Plans and try"): a post with a plan's head (`isPlanHead`)
     or a fence tagged `plan` (`isPlanFence`) outside any other fence. Its acts are every spell of the post, as
     `segments` splits them, the plan fence's lines read as written at the margin (dedented by its first line's
     indent) and the head dropped: one plan is the post's spells, run as one turn (`runPlan`). Lines before the first
@@ -664,7 +664,7 @@ partial def bareT (text : T) : List Binding :=
 
 def bare (text : String) : List Binding := bareT text.toList
 
-/-- On a reply addressed to `card` (docs/FLEX.md §4 host 2), the text with its first line written as a
+/-- On a reply addressed to `card` (docs/FLEX.md §3), the text with its first line written as a
     spell line when that line names one of `actions` (or `?`), alone or after the card's name, with
     nothing after it but inline fields (`/ name: value`); a field line, a `>` quotation or a sentence is
     not one. -/
@@ -771,7 +771,7 @@ def isNatural : Kind → Bool
   | .natural .. => true
   | _ => false
 
-/-- Values without a name (docs/FLEX.md §4 host 3), bound in order to the open field they fit: a
+/-- Values without a name (docs/FLEX.md §3), bound in order to the open field they fit: a
     choice whose option the value is (folded; the option as the form writes it), else digits to the one
     open natural, else the one open text field. A value that fits none, or more than one natural or text,
     is dropped: fit then names what is still missing. -/

@@ -1,4 +1,4 @@
-"""The town unfolded and every thing inspected, for people (docs/WEB.md "The town unfolded"): the walking graph of every
+"""The town unfolded and every thing inspected, for people (docs/WEB.md "The town at a glance", "The inspector"): the walking graph of every
 room and door the reader may see, each room unfolding in place; an inspector for any object or kind (its Bend, its
 fields, its kind chain, its law, rules, wants and verbs, who may do what, its receipts, and the workshop to amend it);
 the library's pages and modules; the kinds. The markup is static/atlas.html; Python fills it with escaped host facts.

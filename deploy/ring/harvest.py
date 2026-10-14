@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One playtest run -> the ring's harvest: the rehearsal's rows, then the ring's own, as Markdown (or one JSON document).
-Reads the run directory only: no network, no credentials. It counts and joins; it judges nothing (docs/RING-OF-FIRE.md 5, 6).
+Reads the run directory only: no network, no credentials. It counts and joins; it judges nothing.
 
     python3 deploy/ring/harvest.py --run ~/.delvetalk-playtest/current [--json]
 """

@@ -396,7 +396,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are `Delvetalk.Bounds`, KERNEL-HAN
   libraries then those sealed with `library-load` (at most 4 kept).
 - **Declared methods.** A State-first definition is public only when the entry module declares it: a form's `action`,
   a name `methods()` returns, a `views()` entry, or a conventional name (`conventionalMethods`: receive, render,
-  renderWanting, forms, lenses, set, publishPage, page, relations, methods, law, lawReads, views, actions, initial).
+  forms, lenses, set, publishPage, page, relations, methods, law, lawReads, views, initial).
   What a module declares is read from the artifact's `declares` (derived definitions included). A `methods()` entry
   written `~name` is public but offered to nobody (`unoffered: true`). The table marks other rows `helper: true` and
   conventional-only rows `protocol: true`. A direct turn or delivery naming a method the object does not offer is
@@ -816,8 +816,10 @@ the one process over a directory of worlds.
   `World.carriedIds`, never from a snapshot: a retry after the carry answers the old receipt; `Ops.boundEntry` the one
   lookup), `made [{object, identity, height}]` (each object's making, `Carry.makings`, from the old chain or its
   genesis's `made`), `left`, `moved`, `kept`, `dropped`, `rearmed`. J2 is replayed from its genesis and each state CID
-  compared before it is written. A genesis is written whole (`maxEntryBytes` bounds appends only). The receipt of an
-  old hash is read from the ancestor journals when they are on disk (`ancestry`).
+  compared before it is written. A genesis is written whole (`maxEntryBytes` bounds appends only). A pre-carry
+  `world-receipt` answers from the identity row the genesis kept; an old hash or slug resolves to its world and
+  height there (`receiptNamed`, `world-resolve`). The ancestor journals, attached when on disk (`ancestry`), serve
+  history reads (`historyEntry`: firsts, tellings, the moderation backfill).
 - *The no-wipe gate.* `deploy.genesis` refuses, naming each journal under `--towns` other than its own, unless
   `--wipe-with-the-owners-word R`. `deploy/carry-check.sh [--old-image I | --old-binary P] [--leave O]... BINARY
   BACKUP` replays the newest backup from genesis and carries it under the candidate: green, green-breaking (the deploy

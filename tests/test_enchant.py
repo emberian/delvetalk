@@ -3,7 +3,7 @@ which expands cited structured facts itself and guards the remaining imagery and
 which hands the strokes to the one model worker once per version and answers the exact card until a verified paint
 is cached.
 
-Evidence for HOST-HANDOFF 5.160 (layer: host). Refuted by: strokes that hold a line, handle or number the store
+Evidence for HOST-HANDOFF §5 "Enchantment" (layer: host). Refuted by: strokes that hold a line, handle or number the store
 does not; a strokes read that writes; a paint naming what the strokes do not hold that is cached; 69275's sentence
 admitted against the anthology's strokes; one version rendered twice costing two model calls; a world with no
 model showing anything but the exact card.

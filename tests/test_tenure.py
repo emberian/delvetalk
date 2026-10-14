@@ -1,5 +1,5 @@
 """Tenure: a thing's owner keeps it, whatever its kind's owner writes, and a rule a thing inherits lends nobody's
-authority (docs/review/astra-2026-10-12/world.md findings 1, 2, 3). A fresh genesis, three residents casting spells
+authority. A fresh genesis, three residents casting spells
 by `receive` as the bridge does, and the owner's ops (`world-amend`, `world-propose`) as the transport sends them.
 
 Evidence for FOUNDATION §4 (a thing's own text holds its owner's law; `under` adds to it, never replaces it, and

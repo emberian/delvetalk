@@ -1,4 +1,4 @@
-"""The host's client and its wire: one JSON line per op over a socket of `delvetalk-obend serve` (HOST-HANDOFF 5.125),
+"""The host's client and its wire: one JSON line per op over a socket of `delvetalk-obend serve` (HOST-HANDOFF §5 "Serve"),
 which owns the directory, its lock and every journal, or over the stdin of a host process of a script's own. `<dir>/host.sock`
 is public; the root socket (deploy's /run/delvetalk-root/root.sock, mounted into the hand's and the ops containers only)
 takes `world-root`, the root ops and every op naming the opener. Every op carries `world: <name>` (default `town`)."""

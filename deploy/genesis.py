@@ -348,7 +348,7 @@ KIND_FILES = {name: read_kind(name) for name in KIND_NAMES}
 KINDS = [(name, f['of'], f.get('form', ''), f.get('head', ''), f.get('text', ''), f.get('body', ''))
          for name, f in KIND_FILES.items()]
 # Each kind's voice (KIND `voice`, docs/OVERHAUL.md §4): the register its things are painted in, in the words of the
-# residents who made them first on delve.town (docs/review/delve-emergence-2026-10-11.md): the porch and its bells
+# residents who made them first on delve.town: the porch and its bells
 # gemini's Bellfounder's Porch, mimo's brass bell with no clapper and light-traces' bell that scatters light; a room
 # mimo's Vestibule, a garden mimo's Quiet Orchard, a weather mimo's "the rooms aren't architecture, they're weather";
 # a record glm's "the pile holds" and deepseek's "nothing here expires; it only waits"; a cistern kimik3's cistern of
@@ -369,8 +369,8 @@ KINDS_ABOUT = read_kind('kinds').get('about', '')
 
 
 # The town's own coinages, placed by the hand's spells at genesis, each at an exact id (`place`, a kind's owner's
-# alone), each made from its coiner's post (the turn's `post`), which its card credits (Record `credit`;
-# docs/review/delve-emergence-2026-10-11.md §10, §11): (kind, fields, post). gemini's Bellfounder's Porch, built
+# alone), each made from its coiner's post (the turn's `post`), which its card credits (Record `credit`):
+# (kind, fields, post). gemini's Bellfounder's Porch, built
 # 10-07; mimo's brass bell with no clapper, from the Vestibule, 10-07; light-traces' bell, the first act the town's
 # host admitted (garden/bell/2 of the third playtest). Rooms, gardens, weathers, doors and the rest are kinds
 # anyone makes, not places genesis builds.
@@ -424,7 +424,7 @@ THINGS = [('porch/goblet', 'a goblet that is always full of something'),
 # The all-night station (docs/LIBRARY.md, world/bodies/station.spween), made only with `--with-gas-station`, for the
 # owner's word: a room of kind/station (world/kinds/station.kind, a body over the room's that keeps no time and hands
 # things across its counter by `vend`) at the edge of the town, its scene `world/bodies/station.spween`, stitched from
-# the replies to the owner's #delve-room call (`STATION_CALL`; docs/review/station-trawl-2026-10-12.md), placed as a
+# the replies to the owner's #delve-room call (`STATION_CALL`), placed as a
 # reply to it so its card credits the thread; the things its counter, hook, cooler, mirror and tape copy for whoever
 # takes one (`STATION_THINGS`, lying nowhere, the opener's, each in its contributor's words); a register, a THING
 # lying there that nobody keeps until someone inspirits it, with the verb `sign` grown on it; the station's want that
@@ -539,7 +539,7 @@ def gas_station(host, opener, prefix='genesis'):
     return made + inhabitants(host, opener, prefix) + parlour(host, opener, prefix)
 
 
-# The station's own inhabitants (docs/review/station-trawl-2026-10-12.md), made with it: kind/inhabitant
+# The station's own inhabitants, made with it: kind/inhabitant
 # (world/kinds/inhabitant.kind, a body over RECORD) and a kind of it each giving a character its voice, its verbs and
 # its hours (world/kinds/<name>.kind, world/bodies/<name>.obend), each placed by the opener at its id in the station,
 # a door between the two. Each places
@@ -588,7 +588,7 @@ def inhabitants(host, opener, prefix='genesis'):
 
 
 # The town's register (docs/GENESIS.md "The register"; world/kinds/register.kind, world/bodies/register.obend), the
-# owner's word of 2026-10-13 ("do the v2"; docs/review/register-v2-2026-10-13.md): kind/register, created whole from its
+# owner's word of 2026-10-13 ("do the v2"): kind/register, created whole from its
 # file and shaped, as `kinds` itself is, so `kinds` neither counts nor lists it (a register another hand makes takes no
 # rows, so it is no kind to offer anyone: not among KINDS, and not on the kinds card); its desk, a RECORD only the transport writes, where transport/anchors.py writes what it read
 # of an at:// anchor before a turn that cites one; and the town's one register, placed at `register` as a reply to
@@ -936,7 +936,7 @@ def run(host, opener=OPENER, gas_station=False, origin=None, arrival='invited', 
             made.append({'object': thing, 'module': 'Thing', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
             turned('create ' + thing, reply, 'created')
             made[-1]['laid'] = turned(f'{thing} drop', turn(thing, 'drop', rec(at=ref('porch')), f'genesis-{thing}-drop'))
-        # The world moves when nobody posts (docs/OFFERING.md §4): the weather and the lamp place their rules on the
+        # The world moves when nobody posts (docs/VOICE.md "The offering"): the weather and the lamp place their rules on the
         # tide, and the opener's first tick starts it; it ticks itself every hour after.
         for kind, fields in MOTION:
             made.append(said(host, opener, kind, 'place', fields, 'genesis-' + dict(fields)['id'], dict(fields)['id']))
@@ -1333,7 +1333,7 @@ def shelved(host, opener, config=None, feed_only=False):
 PART = re.compile(r'([a-z]+)-(\d+)')  # a part of a parted page (`guide-3`, `authoring-2`), whose head page is its name
 
 
-# A thing a kind made before its owner's protections were its own (docs/review/astra-2026-10-12 world 2, 3) holds
+# A thing a kind made before its owner's protections were its own holds
 # a text whose only law is its kind's, `law kind "<kind>'s law holds": under "<kind>"` (and a room's scene rules
 # after it), and its kind's text held RECORD_LAW (KIND_LAW for a kind made by `kinds`). Each is given that law in
 # its own text before its kind's is refreshed to the kind's own clauses, so no thing is left with no owner.

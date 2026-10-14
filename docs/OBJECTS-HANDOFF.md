@@ -104,25 +104,19 @@ render and casts each seed post's spells.
 
 ## Open
 
-1. **The seal's want.** The host's `laws` and `refusedBy` facts exist; no kind carries the wants yet: a kind/seal
-   whose text has `want law "the seal holds no law of its own yet": laws(new) == <the record's clause count> asks
-   delvetalk {request.object} adopt` and `want tried "no second hand has tried the seal": refusedBy(new) == 0 asks
+1. **The seal's want.** The host's `request.laws` and `request.refusedBy` facts exist (`Host/Law.lean`); no kind
+   carries the wants yet: a kind/seal whose text has `want law "the seal holds no law of its own yet": request.laws == <the record's clause count> asks
+   delvetalk {request.object} adopt` and `want tried "no second hand has tried the seal": request.refusedBy == 0 asks
    delvetalk {request.object} write`. Check: a fresh seal lists both; an adoption and a stranger's refused write
    close them.
-2. **Several hob spells in one turn** each read their card as committed, not as the earlier spells left it. Check: a
-   two-spell hob answer whose second spell reads the first's write.
-3. **`test_http.Play`** shares one host across tests, and the interpretation quota with it: the prose test must sort
-   before the 49th-reply quota test. Isolate the quota test.
-4. **`workshop check / target:` of a layered card** (a bell) reports `import must name an earlier supplied module`:
-   `inspect`'s source is the layer alone. Host: give the closure, or check a target by its pin.
-5. **The register's trail** (R-trail): order an entry's trail snag-first (question, snags with their resolutions,
+2. **The register's trail** (R-trail): order an entry's trail snag-first (question, snags with their resolutions,
    failed attempts, then voices) and fold more than three disputes on one row into "N more disputes", so a flood
    cannot push the snags past page ten. Check: an entry's snags on page one after a 20-voice flood.
-6. **A walker for written anchors** (R-walker, transport): anchors are read before a turn (`transport/anchors.py`),
+3. **A walker for written anchors** (R-walker, transport): anchors are read before a turn (`transport/anchors.py`),
    but a row already written is never re-read; a walker that re-reads strong refs and writes a `recheck` row of its
    own where a CID no longer matches. Check: a forged CID gets a walker row on a fresh play.
-7. **Register capacity** (R2-scale): a volume holds 384 rows, then the next volume opens (`volume`). One-pass page
+4. **Register capacity** (R2-scale): a volume holds 384 rows, then the next volume opens (`volume`). One-pass page
    answers and per-entry counts in `vars` would lift the cap. Check: `Capacity` at the new number.
-8. **`Scenes.drawFor` hashes its varying part last** (`hashed("{draw} {what}")`): a caller drawing over a counter at
+5. **`Scenes.drawFor` hashes its varying part last** (`hashed("{draw} {what}")`): a caller drawing over a counter at
    the end of the text gets consecutive draws. The station's draws vary the leading part and are unaffected. Check:
    draws for `what` differing only in a trailing counter spread.

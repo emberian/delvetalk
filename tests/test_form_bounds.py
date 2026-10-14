@@ -1,4 +1,4 @@
-"""A spell is judged by the card's own form (HOST-HANDOFF 5.69): the kinds its `forms()` declares
+"""A spell is judged by the card's own form (HOST-HANDOFF §5.3 "Forms", §5.1 "Typed arguments"): the kinds its `forms()` declares
 override the defaults the method's input type gives, and a `source` field (`Form.Kind.source`) takes
 Bend source up to `Limits.formSourceMax` (`Bounds.maxPackageBytes`, 128 KiB), as a `<<BEND` block or as the reply's ```obend
 fenced block.

@@ -3,11 +3,11 @@ naming the fields it needs; there is no second attempt.
 
 Evidence for FOUNDATION §6 (layer: objects).
 
-The host reads prose at the commonplace with hob against its forms and its doors' (HOST-HANDOFF 5.163). The host resumes an
+The host reads prose at the commonplace with hob against its forms and its doors' (HOST-HANDOFF §5.4). The host resumes an
 interpretation whose reply carries no `{method, argument}` json by fitting the words: a spell that
 fits is the host's `proposal`; `ask: <question>` is `unclear {needs: [question]}` (so is a spell that
 does not fit, its reason the need), and `none` is `unclear: not addressed`. The host classifies these
-(HOST-HANDOFF 5.163): an ask, or none (not addressed, blank, or a `model:` need, a model that could not be asked).
+(HOST-HANDOFF §5.4): an ask, or none (not addressed, blank, or a `model:` need, a model that could not be asked).
 The host answers `ask` with hob's fixed line naming only the offered fields the need names, with the
 spells that take them (`hob: that still needs colour; send it filled:`, never the model's words), and
 `none` with silence, still one attempt (docs/OVERHAUL.md §2.7: the commonplace's words are the host's).

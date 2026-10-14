@@ -1,6 +1,6 @@
 """The journal's byte bound is met at append, as a receipt, not at the next restart (docs/OPERATIONS.md §c 1).
 
-Evidence for HOST-HANDOFF 5.124 (layer: host). `Limits.maxJournalBytes` was checked only when a journal
+Evidence for HOST-HANDOFF §3 (layer: host). `Limits.maxJournalBytes` was checked only when a journal
 opened, so a live host appended past it and the next restart refused the file. Now an append that would
 come within `Limits.journalHeadroom` (1 MiB) of the bound is refused `capacity` naming the bound, the
 refusal itself journaled (it fits the headroom), and past the bound nothing is appended at all. Refuted

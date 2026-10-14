@@ -489,7 +489,7 @@ structure Read where
   key : Data
   bytes : Nat
 
-/-- A segment's reads of its stored relations, as the host judges them (WHOLENESS §3a): the rows it
+/-- A segment's reads of its stored relations, as the host judges them (FOUNDATION §9 "Reads and roots"): the rows it
 forced; per field, the prefix of the key order a walk or a count observed (`spans`: through position
 `reach - 1`, `n + 1` the whole key set: a spine forced at `j` reaches `j + 1`, a count `n + 1`); the
 keys a lookup found (`found`, the row forced or not); and the gaps a lookup that missed observed

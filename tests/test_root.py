@@ -1,4 +1,4 @@
-"""Root and moderation (docs/ROOT.md §1, §2; HOST-HANDOFF 5.126).
+"""Root and moderation (docs/ROOT.md §1, §2; HOST-HANDOFF §5 "Root and moderation").
 
 Evidence (layer: host). Every root act is an entry marked `root` inside its hash, with the value it
 replaced (`before`) and the value it laid (`after`), whole to every reader, and replay checks `before`

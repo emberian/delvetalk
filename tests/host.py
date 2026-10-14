@@ -241,7 +241,7 @@ def serve(server):
 
 
 def served(state, *, cleanup, **settings):
-    """`delvetalk-obend serve` over `state` (its journals unsynced), a child of this test process (HOST-HANDOFF 5.125).
+    """`delvetalk-obend serve` over `state` (its journals unsynced), a child of this test process (HOST-HANDOFF §5 "Serve").
     `cleanup` is the test's addCleanup or addClassCleanup: it receives the stop before serve starts, so a failure
     anywhere after, the start's own included, still stops it."""
     from deploy.serve import Served
@@ -304,7 +304,7 @@ def addressed(host, uri):
 
 
 def posted(host, intent=None, source="test", **request):
-    """`world-posted` as the transport makes it (HOST-HANDOFF 5.107): the post's reservation first, under
+    """`world-posted` as the transport makes it (HOST-HANDOFF §5.5): the post's reservation first, under
     its intent (by default its uri; a source other than `delve` counts against no quota)."""
     intent = intent or request["uri"]
     principal = request.get("principal", "transport")

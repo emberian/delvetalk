@@ -403,7 +403,7 @@ def setLaw(state: State, input: {law: String}, context: Abi.Context) -> Activity
 
 
 class Atoms(Reflection):
-    """LAW §4 B, C, D, F over real objects (KERNEL-HANDOFF §25 item M): `under "O"` judges a write by the
+    """LAW §4 B, C, D, F over real objects (KERNEL-HANDOFF §11): `under "O"` judges a write by the
     `law` text O holds now, read as a root and only by a subject who may view O; a missing citation is
     refused at creation; `changed(...) by`, a cited relation's membership and a filtered count judge rows."""
     OWNER = 'law owner: request.kind == 0 or request.subject == "ember"\n'
@@ -468,7 +468,7 @@ class Atoms(Reflection):
         self.assertEqual(clause(put("ann", "ann", 6)), ("refused", "quorum"))
 
     def test_one_text_holds_laws_rules_and_wants_and_its_laws_judge(self):
-        """OVERHAUL §2 (KERNEL-HANDOFF §27): a thing's text holds law, rule and want lines in one grammar, and
+        """OVERHAUL §2 (KERNEL-HANDOFF §11): a thing's text holds law, rule and want lines in one grammar, and
         so does its kind's; the laws judge every write (`%`, `request.verb`, the kind's through `under`), the
         rules and wants stand beside them for the host to fire and pose, and a want reading past the thing
         as it stands refuses the text by name."""

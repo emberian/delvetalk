@@ -8,7 +8,7 @@ This drives the host's `send` machinery: `world-turn` answers a send with a
 delivery id, and the settling pass after every durable op runs pending deliveries
 (up to 64 per op; the reply carries them as `delivered`). `world-deliver {limit}`
 runs any that remain; `world-pending` lists them. The chain is wired with rules
-(HOST-HANDOFF 5.160): a rule on the bell knocks on the door, one on the door lights the lantern, each
+(HOST-HANDOFF §5 "Rules, wants and verbs"): a rule on the bell knocks on the door, one on the door lights the lantern, each
 fired delivery a turn of the rule's owner whose `context.sender` is the rule's object.
 """
 import unittest

@@ -4,7 +4,7 @@ sees `{text, post}`) sees it in its Context. A called frame inherits its caller'
 `receive {text, post}`; a delivered `receive` brings its own. A suspended activity journals it, so a call
 after the resumption and a stale re-run see it too.
 
-Evidence for HOST-HANDOFF 5.71 (layer: host). Refuted by a spell's method, a called method or a delivered
+Evidence for HOST-HANDOFF §5.1 (layer: host). Refuted by a spell's method, a called method or a delivered
 spell whose Context names another post, or none.
 
     python3 -W error -m unittest tests.test_input_post -v

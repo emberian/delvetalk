@@ -5,7 +5,7 @@ projection carries the reason and `next`, the clock at which the count starts ag
 {principal}` reports the cap and what the principal has left; the opener and the clock principal are
 exempt.
 
-Evidence for HOST-HANDOFF 5.60 (layer: host). Refuted by an interpretation past the cap that suspends,
+Evidence for HOST-HANDOFF §5.4 (layer: host). Refuted by an interpretation past the cap that suspends,
 one within it refused, a count that does not survive reopen or restart at the hour, a refusal that
 binds the identity, or an exempt principal refused.
 

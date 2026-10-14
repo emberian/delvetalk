@@ -1367,7 +1367,7 @@ class Play(InTown):
         self.assertIn(b'a bell for the owls', out['page'])  # the interpreter's proposal, as the offer to this turn
 
     def test_prose_at_a_card_on_the_play_page_is_hobs_with_that_cards_table(self):
-        """The owner's question on /play/kinds (2026-10-11): words at a card go to hob (HOST-HANDOFF 5.163), who is offered
+        """The owner's question on /play/kinds (2026-10-11): words at a card go to hob (HOST-HANDOFF §5.4), who is offered
         that card's table; the turn waits as a pending interpretation on kinds, and hob's `none` is silence."""
         words = 'what is a kind? what is the things in a cistern?'
         self.front.sleep = lambda seconds: None

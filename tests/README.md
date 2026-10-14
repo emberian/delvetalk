@@ -80,7 +80,7 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_interpret_object` (§6): An interpretation's proposal names the card whose form it fitted; up to three spells come back as `proposals {items}`.
 - `test_interpret_quota` (§6): `interpretQuota` (default 48) interpretations a principal may start per clock hour; the next is the transient `quota` with `next`.
 - `test_journal` (§2 Journal): A source module is journaled once and named by CID after, a journal opens in one process at a time, and two hundred bells replay from one copy of Bell.
-- `test_journal_bound` (HOST-HANDOFF 5.124): The journal's byte bound is met at append, as a `capacity` receipt, not at the next restart.
+- `test_journal_bound` (HOST-HANDOFF §3): The journal's byte bound is met at append, as a `capacity` receipt, not at the next restart.
 - `test_law` (§4): The two-tier law: the Bend predicate judges after the law text admits, reads the roots it declares, runs under its own budget, and can never seal out a reprogram or amendment.
 - `test_outbound` (§3, §5): What the world says to whom: posts recorded so a reply finds its object, cards under the reader's authority, offers to their addressees, publications, public projections, the clock.
 - `test_post_reserve` (§3 Time): Posting reservations and model retries are host facts: a delve.town post reserved against `postQuota`, Zulip uncounted, a transient model failure journaled `attempted` with a backoff.

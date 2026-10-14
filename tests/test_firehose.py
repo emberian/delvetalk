@@ -1,4 +1,4 @@
-"""ATPROTO L4: durable bytes, bounded replay, and sparse MST inversion, without a Lean host or signing.
+"""REPO "Live subscription": durable bytes, bounded replay, and sparse MST inversion, without a Lean host or signing.
 
 Refuted by a cursor changing bytes after compaction/restart, 201 ops or 2,000,001 CAR bytes becoming a
 commit, or an inverse needing a node absent from the event, including root shrink and neighbour merges.

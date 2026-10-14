@@ -395,7 +395,7 @@ def stored_cases(rng, count=32):
 
 def relation_cases(rng, count=16):
     """`relationCount` and `relationLookup` over a state's relation `r` of rows {k, v} sorted by k
-    (KERNEL-HANDOFF section 16 item 15): held stored and keyed {k}, the machine answers a count from
+    (KERNEL-HANDOFF §15 "The relation primitives"): held stored and keyed {k}, the machine answers a count from
     the handle and binary-searches a lookup, fetching only the row it reads; the evaluators walk the
     literal. Small relations from their own stream, then three over 2,048 rows (keys 0, 2, ..., 4094):
     a count, a hit and a miss. Both must agree; `reads` are the rows the machine forces."""
@@ -446,7 +446,7 @@ def relation_cases(rng, count=16):
 
 
 def refusal_cases():
-    """`refuse` with its reason a term (KERNEL-HANDOFF section 26): a literal, a reason computed
+    """`refuse` with its reason a term (KERNEL-HANDOFF §8, `refuse(line)`): a literal, a reason computed
     from literals, one computed from a bound value, one read from a stored row (the card's state, held
     stored by the machine), one past a yield, and a reason that is no String or never ends."""
     owner = ["binary", "textConcat", ["label", "refused owner: only "], ["get", ["bound", 0], "owner"]]

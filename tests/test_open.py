@@ -1,7 +1,7 @@
 """`open` writes one bridge row per world, starting nothing (docs/FEDERATION.md section 4); the bridge and `post` of
 that world read it.
 
-Evidence for FEDERATION §7 row 3 (layer: transport).
+Evidence for FEDERATION §4 (layer: transport).
 """
 import io
 import json

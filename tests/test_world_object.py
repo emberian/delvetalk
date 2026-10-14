@@ -1,9 +1,9 @@
-"""The world as an object (WHOLENESS §1, host day 1): a message activity's yield,
+"""The world as an object (FOUNDATION §3): a message activity's yield,
 `World.Message {object: {world: "", object: "world"}, method, argument}`, is answered by the method's
 name, with the arms the sum-Plan dialect answers by constructor; `write` is the running object's,
 `notWorld`/`noMethod` refuse what the world does not answer, and the id `world` is reserved.
 
-Evidence for HOST-HANDOFF 5.48 (layer: host). Refuted by a message activity that cannot write, view or
+Evidence for HOST-HANDOFF §5.3 (layer: host). Refuted by a message activity that cannot write, view or
 send through the world, a method outside the protocol answered, or an object created as `world`.
 
     python3 -W error -m unittest tests.test_world_object -v

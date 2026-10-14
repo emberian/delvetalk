@@ -21,7 +21,7 @@ namespace Limits
 def maxObjects : Nat := 10000
 def objectsPerPrincipal : Nat := 128
 def maxObjectIdBytes : Nat := 128
-/-- Spells one interpretation answers as `proposals` (MENU §2.2: the prompt asks for at most three). -/
+/-- Spells one interpretation answers as `proposals` (FLEX §4: the prompt asks for at most three). -/
 def spellsPerReply : Nat := 3
 /-- Acts one plan carries (`Spell.plan`, `runPlan`): one turn, judged once at its commit. -/
 def planActs : Nat := 8
@@ -86,15 +86,15 @@ def replayEdition : Nat := 20
 def modelQuota : Nat := 2000
 /-- Bytes of a root act's or a moderation power's `reason`/`reading`. -/
 def maxReasonBytes : Nat := 256
-/-- Model results one interpretation takes before a transient failure is its verdict (HOST-HANDOFF
-    5.107): the first `interpretAttempts - 1` transient failures are journaled `attempted`. -/
+/-- Model results one interpretation takes before a transient failure is its verdict (HOST-HANDOFF §5.4):
+    the first `interpretAttempts - 1` transient failures are journaled `attempted`. -/
 def interpretAttempts : Nat := 8
 /-- The characters of hob's question a misfit spell's refusal shows as its hint (one line; past it, the fixed line). -/
 def askLine : Nat := 160
 /-- The longest backoff between model attempts, in clock units. -/
 def interpretBackoffMax : Nat := 60
 def maxSourceBytes : Nat := 64
-/-- The one name rule (codex agent 14, docs 5): an object id, and the card a spell names, is
+/-- The one name rule: an object id, and the card a spell names, is
     1..`maxObjectIdBytes` of these (ASCII, so characters are bytes). `world/lib/Spell.obend`'s
     `cardAlphabet()` is the same string. -/
 def nameAlphabet : String := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-:/._"
@@ -151,8 +151,7 @@ def placedPerHand : Nat := 4
     name, #1440). On another's thing four stay, for the owner's room. -/
 def placedPerHandOnTownThing : Nat := 8
 /-- Of `rulesPerObject` (and `wantsPerObject`), what all other hands together may hold (the rest the owner's
-    alone): a stranger's lines never take the owner's room
-    (docs/review/astra-2026-10-12 world 6). -/
+    alone): a stranger's lines never take the owner's room. -/
 def placedByOthers : Nat := 24
 /-- Rules (and wants) on a thing the town's opener owns, its tide above all, where every hand's hourly rule lives: there
     the others' pool is not `placedByOthers` but each hand's own `placedPerHand`, so the room grows with the hands that
@@ -177,7 +176,7 @@ def clockDay : Nat := 1440
 /-- Lines one day's chronicle says before `and N more`. -/
 def chronicleLines : Nat := 48
 /-- Rules one commit's firings make deliverable at once, over every object it wrote; the rest are queued, each
-    following eight a clock minute later (`next`), never dropped (docs/review/astra-2026-10-12 world 7). -/
+    following eight a clock minute later (`next`), never dropped. -/
 def rulesPerCommit : Nat := 8
 /-- How many rule firings deep a chain goes: a turn a rule's spell delivered fires its own rules one
     level down, and past this depth a rule is `unfired` (a chain of rules ends sooner than `maxDepth`). -/
@@ -204,7 +203,7 @@ def maxCheckpointBytes : Nat := 524288
 /-- Suspended activities one settling pass resumes. -/
 def maxResumesPerCall : Nat := 1024
 /-- Source text of a package offered as a program (`reprogram`, `extend`, a `create` of source, `check`):
-    the kernel's `Bounds.maxPackageBytes` (128 KiB, KERNEL-HANDOFF §25 item 1). -/
+    the kernel's `Bounds.maxPackageBytes` (128 KiB, KERNEL-HANDOFF §4). -/
 def maxPackageBytes : Nat := Bounds.maxPackageBytes
 /-- Law text of an `amend`, and the clauses in it. -/
 def maxLawBytes : Nat := 4096
@@ -314,7 +313,7 @@ def Ledger.exhausted (l : Ledger) : Option String :=
   if l.depth == 0 then some "depth" else if l.work == 0 then some "work"
   else if l.storage == 0 then some "storage" else none
 
-/-- A post reserved against its source's hourly quota (HOST-HANDOFF 5.107), by intent: the source
+/-- A post reserved against its source's hourly quota (HOST-HANDOFF §5.5), by intent: the source
     (`delve` counts against `postQuota`; any other none), the clock hour it was reserved in, whether
     it was released (the post certainly did not leave) or posted, and how many times the intent was
     reserved before (a released intent may be reserved again). -/
@@ -329,7 +328,7 @@ structure Reservation where
   resident : String := ""
   deriving Inhabited
 
-/-- A rule or a want placed on a thing by a hand (docs/OVERHAUL.md §3; KERNEL-HANDOFF §27 item 1): its
+/-- A rule or a want placed on a thing by a hand (docs/OVERHAUL.md §3; KERNEL-HANDOFF §11): its
     name, unique across the thing's text and its placed lines; who placed it (a rule fires under them;
     they or the thing's owner remove it); the height of the entry that placed it; and the line as the
     one renderer writes it (`Clause.render`), with its parse. -/

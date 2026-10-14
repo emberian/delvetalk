@@ -104,7 +104,7 @@ def resolve(method, path):
         return {('GET', 'enter'): 'door', ('POST', 'enter'): 'comeIn', ('GET', 'leave'): 'leave', ('POST', 'leave'): 'signOut'}[method, parts[0]], {}
     if parts == ['feed'] and method in ('GET', 'POST'):  # the town's own feed, for people (transport/feed.py)
         return ('feed' if method == 'GET' else 'feedSay'), {}
-    if parts == ['live'] and method == 'GET':  # the town's own channel: the journal moved (docs/WEB.md "The town unfolded")
+    if parts == ['live'] and method == 'GET':  # the town's own channel: the journal moved (docs/WEB.md "The town at a glance")
         return 'liveTown', {}
     if method == 'GET' and parts in (['town'], ['kinds'], ['library'], ['lib']):  # the town unfolded, its kinds, its library and modules
         return {'town': 'town', 'kinds': 'kinds', 'library': 'library', 'lib': 'modules'}[parts[0]], {}
@@ -1815,7 +1815,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.html(403 if here['status'] == 'denied' else 404, pages.refusal(name, handle, here['view'], here['status']))
         seen = host.send({'op': 'world-inspect', 'principal': principal or PUBLIC, 'object': name})
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-        brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
+        brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (docs/VOICE.md "The offering")
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
                                  self.ways(host, principal, name) if here['card'] is not None else (), seen, here['wants'], brief, here['paint'], told,
@@ -1855,7 +1855,7 @@ class Handler(BaseHTTPRequestHandler):
         return host.send({'op': 'world-history', 'principal': principal or '', 'object': name, 'reverse': True, 'limit': limit}).get('entries') or []
 
 
-    # ---- the town unfolded, inspected and read (transport/atlas.py, docs/WEB.md "The town unfolded")
+    # ---- the town unfolded, inspected and read (transport/atlas.py, docs/WEB.md "The town at a glance")
 
     def reader(self):
         """-> (who, the principal reads go under)."""

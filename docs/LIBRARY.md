@@ -35,10 +35,12 @@ Each a capsule in the voice, opening with hob's line and ending with the page to
 
 - `spells` (`capsules/pages/spells.txt`): the line, several spells a post, fields and blocks, a bare reply, `?`, fit,
   a missing field asked for, the `badSpell` clauses and the hint to copy.
-- `laws`: the one grammar in three keywords (`law` refuses at commit, `rule … then SPELL` casts the spell as the
-  rule's writer when a write makes it true, `want … asks SPELL` holds while true); how a rule or want is placed and
-  read back; the atoms and references (`"CARD".F`, `REF % N`, `"CARD" wants NAME`); the metarule; the transient and
-  binding refusal classes.
+- `laws` (`capsules/pages/laws.txt`): the one grammar in three keywords (`law` refuses at commit, `rule … then SPELL`
+  casts the spell as its placer at each write while it holds, with the once and every-third idioms, `want … asks
+  SPELL` holds while true); placing a rule or want and reading them back (16 at most); the atoms (comparisons, `in`,
+  `monotone`, `writeOnce`, `unchanged`, `insertOnly`, `appendOnly`, `changed`, `under "CARD"`, `"CARD" wants NAME`)
+  and references (`new.F`, `old.F`, `"CARD".F`, `count`, `REF % N`, the `request` facts); the metarule; the
+  transient and binding refusal classes.
 - `object`: a card in Bend, one whole example. `relations`: keyed rows, insert, upsert, retract, order.
 - `protocol`: what a card asks the world (`view`, `call`, `send`, `create`, `await`, `interpret`, `offer`, `publish`,
   `grant`) and the placing calls `rule`, `want`, `grow`, `unrule`, `unwant`, `ungrow`, with `act {object, verb, text}`.

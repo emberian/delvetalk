@@ -172,7 +172,7 @@ does not need this rule; the town does, so the opener's amendments are law and n
 
 Host spells the opener casts on the card they touch or on `world`, the reserved id the host answers for. A non-opener
 is refused `badSpell`, clause `opener`. Each journals one entry under the opener's identity with a required reading,
-visible in `world-history` and on the object page, and hob says it within VOICE's 25 tokens.
+visible in `world-history` and on the object page.
 
 Retirement appends the law clause `retired "<reading>": request.kind == 2 and request.subject == "<opener>"`
 (`retiredLaw`; the root act, the card power and a carry's `--leave` write this one clause). It frees the maker's
@@ -180,18 +180,18 @@ Retirement appends the law clause `retired "<reading>": request.kind == 2 and re
 share; root's acts are outside these admission checks. A maker whose law admits their own amendment can add their own
 `retired` clause with `world-amend` (FOUNDATION §2); removing it must fit their share. That is not the opener's power.
 
-| Problem | Power | Journaled as | hob |
-| --- | --- | --- | --- |
-| a resident floods a card | `delvetalk world quiet / who: <handle> / hours: N / reading: …`: their turns until `until` refused `quiet` (transient class; `clause: until clock N`, `reason` the reading, `next`) | `quiets [{principal, until, reading}]` | `hob: the hand quieted you until clock N; the reason is on the receipt. Come back then.` |
-| a law locks a thing | `amend / law:` or `adopt / law: <id>` as the opener (kind 2, under 2.1) | `amendments` | `hob: the hand amended that law; the clause is named on the receipt.` |
-| a body burns the model on every instance; an interpretation loop | `retire / reading:`: writes refuse `refused retired: <reading>`, `?` lists nothing, `become / kind:` of it refuses; `unretire` removes the clause; the world's `modelQuota` (OPERATIONS §b) holds the day | an amendment | `hob: that card is retired; the reason is on its page. The directory lists the doors.` |
-| an abusive card text; a squatted name | `hide / reading:`: read policy `principals [owner, opener]`; the text leaves every page and draft and stays in the journal; the hiding entry is public; `show` reverses. Then retire. A name once taken stays taken; the doors are the opener's | `hides [{object, reading}]` | `hob: no public page for that now; its owner and the hand still see it.` |
-| a scratch full of junk | root's `expire` from the hand's worlds page, `hand root expire --principal P --scratch <name> --reason R` | the hand's log only | `hob: that scratch is gone; open it again from town entry N.` |
-| a model misread that admitted something | the write stands; the card's owner retracts its row; the opener sets `confirmFor` on `policy` so the action asks first | the policy's write | `hob: I read that as` then the spell, `yes, or correct it.` |
-| a bridge posts the wrong thing | `hand skip` a draft; once posted, `hand unpost URI --reason` deletes the PDS record or Zulip message and journals `unposted {uri, reason}`; `hand reply` corrects, drafted `by hand` | `unposted` (clock principal, as `posted`) | `hob: the hand withdrew that post; its receipt stays.` |
-| a grant the opener did not make | `delvetalk world revoke / grant: <id> / reading:` | `revokes [id]` with `by`, `reading` | `hob: that grant is revoked; the receipt says by whom.` |
-| a quota wrong for a world | `delvetalk world settings / interpretQuota: 24 / reading:` (`world-settings`: a new `settings` entry; replay reads the latest) | `settings` | `hob: the hand set my hour to 24 readings; the spell itself needs no reading.` |
-| a journal that will not reopen | no in-world power: a verified copy (DEPLOY), `world-fork` to a height into a fresh world, or root's `truncate`; `maxJournalBytes` is checked at open only (OPERATIONS §c) | `forked` | `hob: this town restarts from entry N; the old one still answers, read-only.` |
+| Problem | Power | Journaled as |
+| --- | --- | --- |
+| a resident floods a card | `delvetalk world quiet / who: <handle> / hours: N / reading: …`: their turns until `until` refused `quiet` (transient class; `clause: until clock N`, `reason` "the hand quieted you until clock N: <reading>", `next`) | `quiets [{principal, until, reading}]` |
+| a law locks a thing | `amend / law:` or `adopt / law: <id>` as the opener (kind 2, under 2.1) | `amendments` |
+| a body burns the model on every instance; an interpretation loop | `retire / reading:`: writes refuse `refused retired: <reading>`, `?` lists nothing, `become / kind:` of it refuses; `unretire` removes the clause; the world's `modelQuota` (OPERATIONS §b) holds the day | an amendment |
+| an abusive card text; a squatted name | `hide / reading:`: read policy `principals [owner, opener]`; the text leaves every page and draft and stays in the journal; the hiding entry is public; `show` reverses. Then retire. A name once taken stays taken; the doors are the opener's | `hides [{object, reading}]` |
+| a scratch full of junk | root's `expire` from the hand's worlds page, `hand root expire --principal P --scratch <name> --reason R` | the hand's log only |
+| a model misread that admitted something | the write stands; the card's owner retracts its row; the opener sets `confirmFor` on `policy` so the action asks first | the policy's write |
+| a bridge posts the wrong thing | `hand skip` a draft; once posted, `hand unpost DRAFT --reason R` deletes the PDS record or Zulip message and journals `unposted {uri, reason}`; `hand reply` corrects, drafted `by hand` | `unposted` (clock principal, as `posted`) |
+| a grant the opener did not make | `delvetalk world revoke / grant: <id> / reading:` | `revokes [id]` with `by`, `reading` |
+| a quota wrong for a world | `delvetalk world settings / interpretQuota: 24 / reading:` (`world-settings`: a new `settings` entry; replay reads the latest) | `settings` |
+| a journal that will not reopen | no in-world power: a verified copy (DEPLOY), `world-fork` to a height into a fresh world, or root's `truncate`; `maxJournalBytes` is checked at open only (OPERATIONS §c) | `forked` |
 
 **Decision:** host spells `quiet`/`unquiet`, `retire`/`unretire`, `hide`/`show`, `revoke`, `settings`, root's `expire`,
 and the host's `amend`/`adopt`; readings required.
@@ -202,17 +202,18 @@ and the host's `amend`/`adopt`; readings required.
 
 | Verb | Op | Page |
 | --- | --- | --- |
-| `quiet WHO --hours N --reading R`, `unquiet WHO` | `world-turn` on `world`, `quiet` | PRINCIPALS: turns this hour, refusals, quieted-until |
-| `retire OBJ --reading R`, `unretire OBJ` | `world-amend` | the object's row |
-| `hide OBJ --reading R`, `show OBJ` | `world-turn` on `world`, `hide` | same row |
-| `amend OBJ --law-file F --reading R`, `adopt OBJ --law ID` | `world-amend` | the law in a textarea beside its rows |
-| `revoke GRANT --reading R` | `world-revoke` | GRANTS |
+| `quiet --who P --hours N --reading R`, `unquiet --who P --reading R` | `world-turn` on `world`, `quiet`/`unquiet` | PRINCIPALS: turns this hour, refusals, quieted-until |
+| `retire --object O --reading R`, `unretire --object O --reading R` | `world-turn` on the object, `retire`/`unretire` | the object's row |
+| `hide --object O --reading R`, `show --object O --reading R` | `world-turn` on the object, `hide`/`show` | same row |
+| `revoke --grant G --reading R` | `world-turn` on `world`, `revoke` | GRANTS |
 | `root expire --principal P --scratch S --reason R` | `world-root {act: {kind: expire, principal, scratch}}` | the worlds (`/hand/`): each scratch with its owner, size, last turn and expiry |
-| `unpost URI --reason R` | transport delete, `world-unposted` | the inbox row |
-| `settings --post N --interpret N --model N --reading R` | `world-settings` | the strip's quotas |
-| `log [--tail N]` | `world-entries` filtered to the opener's and root entries | MODERATION, newest first, root entries stamped |
-| `find TEXT` | the handle registry, `world-objects {prefix}`, `world-resolve` | one box |
-| `status` | `world-status` plus `hour {turns, refused: {class: n}, interpretations, attempts}` (derived by `record`, nothing journaled) and `shadowed` | the strip |
+| `unpost DRAFT --reason R` | transport delete, `world-unposted` | the inbox row |
+| `settings [--postQuota N] [--interpretQuota N] [--modelQuota N] [--turnQuota N] [--objectQuota N] [--paintQuota N] [--cardRoom N] --reading R` | `world-settings` | the strip's quotas |
+| `modlog [--object O] [--tail N]` | `world-history` of the object, else `world-entries` filtered to moderation acts | MODERATION, newest first, root entries stamped |
+| `find TEXT` | handles the bridge observed, `world-objects {prefix}`, `world-resolve` of a slug | one box |
+| `status` | `world-status`, the hour's posts, the month's model spend, waiting interpretations | the strip |
+
+The opener amends a law with the host's `amend / law:` or `adopt / law:` spells (§2.2); the hand has no verb for it.
 
 Every object row and log row links to the root page ("root: edit this object", "root: ignore this entry").
 

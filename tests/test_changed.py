@@ -1,4 +1,4 @@
-"""What changed since a height, and the card listing (docs/METAPHYSICS.md §5; HOST-HANDOFF 5.129).
+"""What changed since a height, and the card listing (docs/METAPHYSICS.md §5; HOST-HANDOFF §5.3).
 
 Evidence for `changed` and `delvetalk objects ?` (layer: host).
 

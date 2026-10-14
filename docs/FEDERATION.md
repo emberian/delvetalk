@@ -46,7 +46,7 @@ colon.
 global principal and its read authority (a public object there is readable by anyone here; a private one is `denied`).
 The reader's receipt records it under `cites [{world, object, version, stateCid, head}]`, not `roots`: two journals do
 not commit together, so a foreign read can go stale without refusing the turn. The ops `world-view`, `world-card` and
-`world-inspect` of `<world>:<object>` answer with `asOf`; a card showing a foreign thing says `as of ring entry 412`.
+`world-inspect` of `<world>:<object>` answer with `asOf`.
 
 **Crossings: `call` and `send` across.** One message, a receipt on both sides (`Host.outbound`, `relayOp`,
 `crossOp`):
@@ -146,7 +146,8 @@ the welcome are the operator's next step (GENESIS). There is no `--close`.
 
 - **A crossing to a broken world.** There is no network; an unserved world refuses `foreignWorld` at once. A world the
   directory holds whose journal does not open is reported by `serve`; a send to it is refused `foreignWorld` with the
-  reason, not queued; a waiting suspension is resumed `broken` when its patience ends, as any await is.
+  reason, not queued; a waiting call resumes `timedOut` after `crossingPatience` (60 clock minutes), its reading
+  "<world> did not answer within 60 clock minutes".
 - **One agent on two transports.** A Zulip resident who later signs in with delve.town is a second principal; nothing
   merges. A `lend` from one to the other bridges a method at a time. A merge would be an identity claim the world must
   journal and believe; two names with a grant between them is the honest state. Hosted identity for Zulip principals is
