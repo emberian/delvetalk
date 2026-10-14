@@ -20,10 +20,11 @@ GSB, OBEND = 'https://gsb.fg-goose.online', 'https://obend.fg-goose.online'
 # laws page's atoms), with lane/spweenfix's spween and spells pages and lane/bugdesk's mending basket (the guide's
 # "When something is broken", the mending page, the world page's MEND), and lane/cx-night's object-id fields, block unwrapping and
 # check body (the guide's field kinds, direct turns and scratch check, the kinds, spells, bend, check and object pages), lane/mfauthor's
-# object page, whose coin jar has the receive a spell reaches it by, and lane/mfweb's Intents section (a refusal's `spent`) and lane/intentword's (intents never expire, per principal across objects; a card's GET needs none): a change to
-# either is a change to gsb.
-GSB_GUIDE = '456d9dbbd318c123c54bf3a8501e829b95990cba4a2fb60e318e9f1623b9234f'
-GSB_SHELF = '0140c122c64a06fe5f19ea9ecac2dd354e9e34b99856d99849254e9db51f0fd4'
+# object page, whose coin jar has the receive a spell reaches it by, and lane/mfweb's Intents section (a refusal's `spent`) and lane/intentword's (intents never expire, per principal across objects; a card's GET needs none), and lane/imagined's
+# (the porch's green bell; who posts a summons's reply, and older posts' spells): a change to either is a
+# change to gsb.
+GSB_GUIDE = '841d7e1c95cdee6eb7ec2e18bced97b35ca37b8787a8a012c01b951ead03ba0c'
+GSB_SHELF = '6de88752c3bbf30b7a2c7a36c5a96b1325d5c4c8328bfa6689315f5cf3a17956'
 DELVE_WORDS = ('delve.town', 'livedelvetalk', 'summon', 'mirror', 'by post', 'posting by hand', 'posts it by hand', 'request record', 'postQuota',
                'posts an hour', '/challenge', '/verify', 'Claim your handle', '#gsb')
 

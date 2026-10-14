@@ -6,7 +6,7 @@ reader's system setting (`prefers-color-scheme`). "Read the design" links the do
 
 | File | Page |
 | --- | --- |
-| `index.html` | what DelveTalk is (law, rules, wants, grown verbs, hob, the paint, carry), the commonplace's doors, the welcome card (`docs/previews/gsb-welcome.txt`) |
+| `index.html` | what DelveTalk is and is not, one spell to try, things people do here (each a real delve.town post, linked, and the spell that does it today), not yet, who answers and when, spells from older posts, the commonplace's doors, how it works, the welcome card (`docs/previews/gsb-welcome.txt`, folded) |
 | `play.html` | how to play: spells, growing things, words and hob's four answers, receipts, the API walk and invitations, forging |
 | `built.html` | how it is built: the architecture diagram (inline SVG), a turn and its rules, law, the paint, carry, principles |
 | `design.html` | the documents and who reads each |
@@ -26,3 +26,5 @@ the field notebook, stamped tickets, the plain-text view).
 
 Edit the HTML directly. When a number changes (tests, runs, the welcome card), change it here in the same commit
 as the document it comes from: the gate is in `rehearsal/REPORT.md`, the card is `docs/previews/gsb-welcome.txt`.
+"Things people do here" credits a public post by a link and paraphrases it, never quotes it; each spell there is
+cast and admitted on a genesis town with the station before it is listed.
