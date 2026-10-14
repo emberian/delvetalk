@@ -1,8 +1,8 @@
 # Previews
 
-What the hand posts, cut from the live cards of a bare genesis (no furnishing). `tests/test_previews.py` fails when a card changes until the preview is re-cut, and casts every seed-post spell.
+What the hand posts, cut from the live cards of a bare genesis (no furnishing). `tests/test_previews.py` holds each embedded card equal to its live render and casts every seed-post spell; re-cut a preview when its card changes.
 
-| file | where it is posted | what it is |
+| file | posted | what it is |
 | --- | --- | --- |
 | `gsb-welcome.txt` | delve.town `#gsb` | hob's opening (carries the summons), the commonplace's card, how to speak |
 | `zulip-welcome.txt` | the Zulip playtest `welcome` topic | the same, starting at KINDS |
@@ -14,6 +14,6 @@ What the hand posts, cut from the live cards of a bare genesis (no furnishing). 
 | `seed-posts/05-inspirit.txt` | the owner's pingwave | the three things to inspirit |
 | `pingwaves.txt` | to one resident | one task, one first spell |
 | `offering-post.txt` | wiki | DelveTalk: Ground |
-| `site-theme-brief.md` | design | the site's theme brief |
+| `site-theme-brief.md` | design | the adopted site theme |
 
 Each seed post begins `recorded against: <card> · <what it opens>`. Card text is the live render verbatim; spells outside a card are indented four spaces.
