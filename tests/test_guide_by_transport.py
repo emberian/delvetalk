@@ -75,7 +75,7 @@ class FeedOnlyGuide(unittest.TestCase):
     def test_its_shelf_is_the_same_text_within_the_library_bound_and_says_nothing_of_delve_town(self):
         shelf = genesis.shelf(OBEND, 'open', feed_only=True, room=8000)
         for name, _, title, body in shelf:
-            self.assertLessEqual(len(body), genesis.PAGE_LIMIT, name)
+            self.assertLessEqual(len(body), genesis.page_limit(8000), name)
             self.assertLessEqual(len(title), 80, name)
             if name in ('world', 'arrive') or name.startswith('guide-'):
                 for word in DELVE_WORDS:

@@ -130,3 +130,28 @@ class FeedAnswers(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LibraryRoom(unittest.TestCase):
+    """A library page holds what one reply of the library shows (`Card.limit`): 1,266 characters at one post's room,
+    the room less the receipt line where the world gives more. A page past it is refused `tooLong`, never cut."""
+
+    def test_a_page_is_bounded_by_the_worlds_room(self):
+        from deploy import genesis
+        from tests.town import Town
+        from tests.wire import nat
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        town = Town(tmp.name, cleanup=self.addCleanup, furnished=False)
+        shelve = lambda n, body: town.send(op='world-turn', principal=town.opener, object='library', method='shelve', identity=f'shelve-{n}',
+                                           argument=record(name=label(f'long-{n}'), kind={'tag': 'variant', 'label': 'page', 'payload': record()},
+                                                           title=label('a long page'), body=label(body)))
+        self.assertEqual(shelve(1, 'x' * genesis.page_limit()).get('status'), 'admitted')
+        over = shelve(2, 'x' * (genesis.page_limit() + 1))
+        self.assertEqual((over['status'], over['receipt']['outcome'].get('clause')), ('refused', 'tooLong'), over)
+        self.assertEqual(town.send(op='world-settings', principal=town.opener, reading='a feed-only town', cardRoom=8000)['status'], 'settings')
+        self.assertEqual(shelve(3, 'x' * genesis.page_limit(8000)).get('status'), 'admitted')
+        self.assertEqual(shelve(4, 'x' * (genesis.page_limit(8000) + 1))['status'], 'refused')
+        read = town.send(op='world-turn', principal='guest:t:wren', object='library', method='read', identity='read-3',
+                         argument=record(page=label('long-3')))
+        self.assertIn('x' * genesis.page_limit(8000), json.dumps(read))

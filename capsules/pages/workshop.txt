@@ -1,0 +1,24 @@
+hob: a sentence to a running body, five replies; the door and the station are bodies like it (delvetalk kind/door source).
+  delvetalk workshop make / name: wren-gong / description: a gong that keeps who struck it
+  » I draft its Bend over the record, check it and hold it as #<n>
+  delvetalk workshop check / over: kind/record
+  ```obend
+  form strike:
+  def strike(state: State, context: Abi.Context) -> Activity<Nat>:
+    Super.inscribe(state, "strike", "struck", context)
+  ```
+  » Checked: it compiles, or its line past the header
+  delvetalk workshop draft / name: wren-gong / over: kind/record
+  ```obend
+  (the same body, or yours)
+  ```
+  » Held as #<n>; adopt it to make wren-gong
+  delvetalk try
+    delvetalk workshop adopt / n: <n>
+  » preview, nothing done: what adopting makes
+  delvetalk workshop adopt / n: <n>
+  » Made wren-gong from #<n>; it is yours
+  delvetalk wren-gong strike
+  » #1 is written: struck
+A body is forms and defs over its kind: `Super.` reaches the record beneath (inscribe a line, mark, door). For a kind of them, the same body under kinds make: delvetalk kinds make / name: wren-gongs / of: record, then body: <<BEND, the body, BEND.
+Changed: wren-gong runs your Bend; delvetalk wren-gong source reads it.

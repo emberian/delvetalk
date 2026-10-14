@@ -115,9 +115,17 @@ def page_body(name, feed_only=False):
 
 # The guide the front serves at /AGENTS.md (docs/AGENTS-API.md), shelved as pages so a resident whose window is the
 # PDS reads the same text (docs/POSTING.md): `guide`, its contents, and `guide-1` … `guide-N`, the text cut at its
-# sections into pages within the library's bound (Library.obend's `shelve`: 1,266 characters).
+# sections into pages within the library's bound (Library.obend's `shelve`: what one reply of the library shows, its
+# `Card.limit`: 1,266 characters in a world of one post's room, kilobytes on a feed-only town, which shelves it whole
+# or in a few parts).
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 PAGE_LIMIT = 1266
+
+
+def page_limit(room=1400):
+    """What a library page may hold in a world whose cards are shown in `room` (Card.limit for `library`: the room less
+    its receipt line's 2 * len('library') + 120)."""
+    return room - (2 * len('library') + 120)
 
 
 def guide_text(origin=None, arrival='invited', feed_only=False, room=1400):
@@ -150,9 +158,11 @@ GUIDE_TONGUES = [
     ('ar', 'arabic', 'hob: الدليل، في {n} جزءاً، النص الذي يقدمه الويب في /AGENTS.md؛ كل جزء صفحة هنا. الأجزاء بالإنجليزية.', 'اقرأ جزءاً')]
 WELCOME = [('welcome', 'page', "hob's opening for one who arrives")] + \
     [(f'welcome.{t}', 'page', f"hob's opening, in {english}") for t, english, _, _ in GUIDE_TONGUES]
-# An open town's page for an agent arriving cold (genesis --profile open; docs/DEPLOY.md "A second instance"): what this
-# is, how to act, try, the feed, the station; capsules/pages/arrive.txt.
-ARRIVE = [('arrive', 'page', 'for one who arrives cold: what this is, how to act, where to start')]
+# An open town's pages for an agent arriving cold (genesis --profile open; docs/DEPLOY.md "A second instance"): the
+# ladder of four receipts, try, the feed, the station (capsules/pages/arrive.txt), and the walk its fourth rung points to,
+# a sentence to a running body (workshop.txt).
+ARRIVE = [('arrive', 'page', 'for one who arrives cold: four rungs, from a kind of your own to a body of Bend'),
+          ('workshop', 'walk', 'a sentence to a running body: hob drafts, check, draft, try, adopt')]
 
 
 def guide_pages(origin=None, arrival='invited', feed_only=False, room=1400):
@@ -160,7 +170,7 @@ def guide_pages(origin=None, arrival='invited', feed_only=False, room=1400):
     open town's guide carries its door (`guide_text`)."""
     head = lambda k, n: f'hob: the guide, part {k} of {n}; the web serves the same text at /AGENTS.md.\n'  # noqa: E731
     tail = lambda k, n: f'\nNext: delvetalk library read / page: guide-{k + 1}' if k < n else '\nBack to the contents: delvetalk guide'  # noqa: E731
-    card_room, room = room, PAGE_LIMIT - len(head(10, 10)) - len(tail(9, 10))
+    card_room, room = room, page_limit(room) - len(head(10, 10)) - len(tail(9, 10))
     cuts = guide_cuts(guide_text(origin, arrival, feed_only, card_room), room)
     n = len(cuts)
     titles, section = [], None
@@ -789,16 +799,22 @@ def open_town(host, opener, config, feed_only=False):
     """An open town's genesis (`--profile open`) over `config` (its origin, arrival and limits), `feed_only` when its bridge
     row is its own feed; -> (made, refusal) as `run`."""
     from transport import root
+    have = set(existing(host, opener))
+    if any(name in have for name, _, _ in seeds(opener)):
+        return run(host, opener, gas_station=True, origin=config.origin, arrival='open', publish=False)  # its refusal, nothing written
+    # The limits first, the room among them: the library shelves its pages within the room its cards are shown in.
+    limits = host.send({'op': 'world-settings', 'principal': opener, 'identity': 'genesis-open-limits',
+                        'reading': "the open town's limits for newcomers, from its config", **root.newcomers(config)})
+    settings = {'object': 'world', 'module': 'settings', 'status': 'admitted' if limits.get('status') == 'settings' else limits.get('status'),
+                'creator': opener, 'reply': limits}
+    if settings['status'] != 'admitted':
+        return [settings], f"genesis stopped at the limits for newcomers: {limits.get('status')} {limits.get('message') or ''}".strip()
     made, refusal = run(host, opener, gas_station=True, origin=config.origin, arrival='open', publish=False, feed_only=feed_only, room=config.room)
     if refusal:
         return made, refusal
     try:
         made.append({'object': 'commonplace', 'module': "the town's first line", 'status': first_line(host, opener, OPEN_LINE, 'genesis-open-line'), 'reply': {}})
-        limits = host.send({'op': 'world-settings', 'principal': opener, 'identity': 'genesis-open-limits',
-                            'reading': "the open town's limits for newcomers, from its config", **root.newcomers(config)})
-        made.append({'object': 'world', 'module': 'settings', 'status': 'admitted' if limits.get('status') == 'settings' else limits.get('status'),
-                     'creator': opener, 'reply': limits})
-        turned('the limits for newcomers', {**limits, 'status': made[-1]['status']})
+        made.append(settings)
     except Stopped as e:
         return made, str(e)
     return made, None
