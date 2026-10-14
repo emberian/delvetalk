@@ -120,7 +120,7 @@ directory per world for everything that is the world's, the town's included
     <state>/<world>.journal(.blocks)  serve's, with journal.lock, serve.pid, binary-pin, library/, scratch/
     <state>/host.sock, root/root.sock serve's sockets (host_socket, root_socket move them)
     <state>/identity.sqlite           claims: a principal is global
-    <state>/access.log(.1)            the front's, `... <did or -> <world>`
+    <state>/access.log(.1)            the front's, `... <did or -> <world>`, then for a 4xx or 5xx `class=<envelope class>[:<host stage, clause or class>]` (a fixed identifier, never a body, credential or reason), then `auth=<code>`
     <state>/hand-log.jsonl            the hand's actions, each with its world
     <state>/model-spend.jsonl         one line per replied model call, with its world
     <state>/lexicons/<URL-encoded authority DID>.json  account-wide published schema digests, never deletes

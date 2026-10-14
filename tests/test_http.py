@@ -789,6 +789,73 @@ def rain(state: State, input: {tag: String, nested: {tag: String, text: String}}
 class Repl(FrontCase):
     fresh_world = True  # each test opens a scratch world of its own
 
+    TWICE = 'edition ObjectiveBend 1\ndef twice(n: Nat) -> Nat:\n  n + n\n'
+
+    def test_a_repl_takes_plain_json_arguments_as_well_as_typed_ones(self):
+        """Refuted by `arguments: [21]` answering 400 `String expected` (the host reads `tag` off a bare number)."""
+        tok = self.login()
+        self.scratch_open(tok, 'lab')
+        s, r = self.repl(tok, source=self.TWICE, entry='twice', arguments=[21])
+        self.assertEqual((s, r.get('value')), (200, nat(42)), r)
+        s, r = self.repl(tok, source=self.TWICE, entry='twice', arguments=[nat(21)])
+        self.assertEqual((s, r.get('value')), (200, nat(42)), r)  # typed data goes through as it was
+
+    def test_a_repl_or_check_body_that_lacks_what_the_host_reads_is_named_not_string_expected(self):
+        """Refuted by a check with no source, a repl with no entry, a non-string source or non-list arguments answering the host's words."""
+        tok = self.login()
+        self.scratch_open(tok, 'lab')
+        for kind, body, field in (('check', {'entry': 'twice'}, 'source'), ('check', {'source': ['edition']}, 'source'),
+                                  ('repl', {'source': self.TWICE}, 'entry'), ('repl', {'source': self.TWICE, 'entry': 'twice', 'arguments': '21'}, 'arguments'),
+                                  ('repl', {'source': {'a': 1}, 'entry': 'twice'}, 'source')):
+            s, e = self.call('POST', f'/AGENTS.md/scratch/lab/{kind}', body, tok)
+            self.assertEqual((s, e['class']), (400, 'badRequest'), (kind, body, e))
+            self.assertIn(field, e['message'])
+
+    def test_every_refusal_is_logged_with_its_class_and_never_its_words(self):
+        """Refuted by a 4xx or 5xx line with no `class=`, by the host's stage missing from a compile refusal, or by the source text,
+        a host message or a stage with a space or newline in it appearing in the log."""
+        log = Path(self.tmp.name) / 'access.log'
+        self.front.access = AccessLog(log, 'town')
+        tok = self.login()
+        self.scratch_open(tok, 'lab')
+        habit = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n# secret-words\n'
+        self.assertEqual(self.repl(tok, source=habit, entry='flip')[0], 400)
+        self.assertEqual(self.repl(tok, source=self.TWICE, entry='twice', arguments=[nat(1)])[0], 200)
+        self.assertEqual(self.call('POST', '/AGENTS.md/scratch/lab/check', {'entry': 'x'}, tok)[0], 400)
+        self.assertEqual(self.repl(tok, source='x' * 140000, entry='pure')[0], 413)
+        self.assertEqual(self.call('GET', '/AGENTS.md/world/nowhere', token=tok)[0], 404)
+        scratch = mock.Mock()
+        scratch.send = lambda req: {'status': 'error', 'message': 'secret-message', 'stage': 'two words\nGET /x 200', 'clause': 'noSuchClause'}
+        self.addCleanup(setattr, self.host, 'at', self.host.at)
+        self.host.at = lambda world: scratch
+        self.assertEqual(self.repl(tok, source=self.TWICE, entry='twice')[0], 400)
+        for _ in range(200):  # a line follows its reply
+            lines = log.read_text().splitlines()
+            if any('noSuchClause' in l for l in lines):
+                break
+            time.sleep(0.02)
+        rows = [l.split() for l in lines]
+        tail = lambda path, i=0: [r for r in rows if r[2].endswith(path)][i]
+        self.assertEqual(tail('/repl', 0)[7:], ['class=hostRequest:objective-source-parse'])
+        self.assertEqual((tail('/repl', 1)[3], len(tail('/repl', 1))), ('200', 7))  # a success carries no class
+        self.assertEqual(tail('/check')[7:], ['class=badRequest'])
+        self.assertEqual((tail('/repl', 2)[3], tail('/repl', 2)[7:]), ('413', ['class=moduleTooLarge']))
+        self.assertEqual(tail('/nowhere')[7:], ['class=unknown'])
+        self.assertEqual(tail('/repl', 3)[7:], ['class=hostRequest:noSuchClause'])  # a stage with a space is dropped, the clause kept
+        text = '\n'.join(lines)
+        for secret in ('secret-words', 'secret-message', 'two words', tok, 'Bearer'):
+            self.assertNotIn(secret, text)
+        self.assertLess(max(map(len, lines)), 300)
+
+    def test_a_label_is_a_fixed_identifier_or_nothing(self):
+        """Refuted by a space, a newline, a quote, an over-long word or a non-string reaching the access log's class column."""
+        from transport.http import named
+        self.assertEqual(named('hostRequest', 'objective-typed-check'), 'hostRequest:objective-typed-check')
+        self.assertEqual(named('hostRequest', None), 'hostRequest')
+        for bad in ('a b', 'a\nb', "a'b", 'x' * 49, '', 7, ['a'], '1abc', 'a=b'):
+            self.assertIsNone(named(bad), bad)
+        self.assertEqual(named('x' * 48), 'x' * 48)
+
     def repl(self, tok, scratch='lab', full=False, **body):
         return self.call('POST', f'/AGENTS.md/scratch/{scratch}/repl' + ('?full=1' if full else ''), body, tok)
 
