@@ -282,6 +282,50 @@ class PolicyObject(Chain):
                          ({"tag": "admitted", "writes": []}, ["hob: the town heard you. A spell acts here: delvetalk guide shows how, delvetalk commonplace ? lists what it takes.\n"]), heard)
         self.assertEqual(self.things(), [])
 
+    HEARD_WRITE = "hob: the town heard you. Spells act here (delvetalk guide shows how); to leave your words on the commonplace as a line, send:\n\n"
+
+    def test_words_typed_on_the_commonplace_that_hob_reads_as_nothing_come_back_as_its_write(self):
+        """obend 10-14 (#1301-#1303, #1504-#1512): a web newcomer's "Dreggs to the moon" and "ciao", typed on the
+        commonplace's own page (`direct`), were admitted with nothing written and nothing said. The words come back as the
+        commonplace's write, filled, which sent as it stands puts them on the commonplace."""
+        self.policy()
+        self.garden()
+        self.say("Dreggs to the moon", reach="direct")
+        heard = self.interpret(self.NONE)
+        self.assertEqual((heard["receipt"]["outcome"], [o["text"] for o in heard["offers"]]),
+                         ({"tag": "admitted", "writes": []},
+                          [self.HEARD_WRITE + "    delvetalk commonplace write\n    text: Dreggs to the moon\n"]), heard)
+        written = self.say("delvetalk commonplace write\ntext: Dreggs to the moon", reach="direct")
+        self.assertEqual(written["receipt"]["outcome"]["tag"], "admitted", written)
+        self.assertNotEqual(written["receipt"]["outcome"]["writes"], [], written)
+        # The longest line the write takes (280 characters) comes back filled; one past it, a second line, only the
+        # town's line (a summons keeps it alone: above): nothing is offered that the write would refuse.
+        longest = "w" * 279 + "."
+        self.say(longest, reach="direct", identity="long-1")
+        self.assertEqual([o["text"] for o in self.interpret(self.NONE)["offers"]],
+                         [self.HEARD_WRITE + f"    delvetalk commonplace write\n    text: {longest}\n"])
+        for i, words in enumerate(("w" * 281, "two lines\nof words")):
+            self.say(words, reach="direct", identity=f"misfit-{i}")
+            self.assertEqual([o["text"] for o in self.interpret(self.NONE)["offers"]],
+                             ["hob: the town heard you. A spell acts here: delvetalk guide shows how, delvetalk commonplace ? lists what it takes.\n"])
+
+    def test_a_long_question_from_hob_names_no_field_its_prose_happens_to_spell(self):
+        """gsb 10-13 #4652-#4654: a plain sentence on the porch, hob asked back at length ("…write a line on the porch…"),
+        and the host read `line`, `to` and `on` out of its prose as fields still needed: eight spells to fill. A need past
+        one short line names no field; a short one still does."""
+        self.policy()
+        self.garden()
+        self.say("a quiet evening; the green bell sounds lovely tonight")
+        long = ("ask: the bell and the seed are two different things, so which do you mean to act on: the colour of a bell "
+                "you plant, or the seed in it, or both as one plan? And do you want to write a line, or only sit?")
+        self.assertGreater(len(long) - 4, 160)
+        heard = self.interpret(self.raw(long))
+        self.assertEqual([o["text"] for o in heard["offers"]],
+                         ["hob: none of commonplace's spells takes that; its spells: delvetalk commonplace ?\n"], heard)
+        self.say("a bell, please", identity="short-ask")
+        short = self.interpret(self.raw("ask: which colour?"))
+        self.assertTrue(short["offers"][0]["text"].startswith("hob: that still needs colour; send it filled:\n\n    delvetalk garden plant\n"), short["offers"])
+
     def test_a_colour_the_form_does_not_take_comes_back_as_hobs_one_question_over_the_doors(self):
         self.policy()
         self.garden()

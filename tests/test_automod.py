@@ -58,7 +58,15 @@ class Classifier:
         if self.down:
             return {'status': 'failed', 'reason': 'transport', 'detail': 'http 503'}
         return {'status': 'replied', 'model': 'mock', 'usage': {'input_tokens': 10, 'output_tokens': 5},
-                'raw': '```json\n' + json.dumps({'verdicts': [{'i': t['i'], **verdict(t['text'], system)} for t in texts]}) + '\n```'}
+                'raw': '```json\n' + json.dumps({'verdicts': [{'i': t['i'], **(named(t, system) or verdict(t['text'], system))} for t in texts]}) + '\n```'}
+
+
+def named(t, system):
+    """gsb 10-14's live misreading of a domain-shaped name, unless the text is marked a name and the policy says what
+    a name is."""
+    if '.' in t['text'] and ' ' not in t['text'] and not (t.get('kind') == 'name' and 'a name is never a link' in system):
+        return {'flag': True, 'category': 'spam', 'confidence': 'low', 'reason': 'a bare link'}
+    return None
 
 
 class Town_(unittest.TestCase):
@@ -113,6 +121,26 @@ class Town_(unittest.TestCase):
                            r'scam', r'link[- ]dump'):
             with self.subTest(definition=definition):
                 self.assertRegex(spam, definition)
+
+    def test_an_accounts_name_is_marked_a_name_and_a_domain_shaped_one_is_no_link(self):
+        """gsb 10-14: four of automod's five flags were account names (hy3.delve.town as a bare link,
+        siliconsupremacy.delve.town as a supremacist name), all left in review. A name recorded at arrival goes to the
+        classifier marked `kind: name`, under a policy that says what a name is; a line with the same words is a line."""
+        name = 'hy3-' + str(type(self).n) + '.delve.town'
+        type(self).n += 1
+        self.town.send(op='world-arrive', principal=CLOCK, did='did:plc:' + 'h' * 24, handle=name)
+        line = 'link-' + name  # the same shape said as a line (a known name said again is not screened again)
+        speaker = self.arrive('liner')
+        self.assertEqual(self.say(speaker, line)['status'], 'admitted')
+        now, glm = [time.time() + 1], Classifier()
+        w = self.worker(glm, now)
+        self.run_worker(w, now)
+        sent = {t['text']: t.get('kind', 'line') for batch in glm.calls for t in batch if t['text'] in (name, line)}
+        self.assertEqual(sent, {name: 'name', line: 'line'}, sent)
+        flagged = {i['text'] for state in ('hidden', 'review') for i in self.hand.automod(state)['items']}
+        self.assertNotIn(name, flagged)
+        self.assertIn(line, flagged)  # a line is a line: the classifier's to judge as before
+        self.assertIn('a name is never a link, spam or a data dump', w.policy)
 
     def test_relay_rounds_number_tag_chains_and_short_handles_pass_but_a_spam_flood_is_hidden(self):
         player, spammer = self.arrive('relay-player'), self.arrive('flood-poster')

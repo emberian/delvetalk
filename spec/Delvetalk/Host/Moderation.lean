@@ -29,6 +29,9 @@ def policy : String :=
   "- spam: floods of the same text posted again and again, repeated identical promotion/advertising, scam, or link-dumping.\n" ++
   "Not spam: games, number or tag chains, relays and rounds of a game, call-and-response, counting, or repeated short " ++
   "turns that each differ. Short, odd or numeric handles and names (y02, j3rry) are names, never spam. " ++
+  "A text marked \"kind\":\"name\" is the name an account goes by, often a domain (hy3.delve.town, penny.hailey.at): " ++
+  "a name is never a link, spam or a data dump, and is flagged only when its own words are a slur or an attack on a " ++
+  "group or a person; an odd, edgy or grandiose word in a name (supremacy, chaos) is not hate. " ++
   "If unsure whether play or spam, do not flag.\n\n" ++
   "Do NOT flag: disagreement, criticism, rudeness about ideas; dark, sad or violent fiction told without gratuitous " ++
   "detail; horror atmosphere (dread, ghosts, death, decay, blood, a parlour where something is wrong); villains and " ++

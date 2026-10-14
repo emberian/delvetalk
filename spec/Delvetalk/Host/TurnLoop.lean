@@ -4604,9 +4604,11 @@ def indentSpell (spell : String) : String :=
   String.join (((spell.trimAsciiEnd.toString).splitOn "\n").map fun l => s!"    {l}\n")
 
 /-- The fields of the forms offered that hob's needs name as a word (`colour`, or `which colour?`), each
-    once, in the forms' order: only a field's own name is ever said, never the model's words. -/
+    once, in the forms' order: only a field's own name is ever said, never the model's words. A need past one short
+    line (`Limits.askLine`) names none: its words are prose, where `line`, `to` and `on` are words, not fields (gsb
+    10-13 #4652-#4654: a plain porch sentence, a long question back, and eight spells to fill for `line, to, on`). -/
 def neededFields (needs : List String) (forms : List Spell.Form) : List String :=
-  let said := needs.flatMap fun n => ((n.split fun c => !(c.isAlphanum || c == '_' || c == '-')).toList.map (·.toString))
+  let said := (needs.filter (·.length ≤ Limits.askLine)).flatMap fun n => ((n.split fun c => !(c.isAlphanum || c == '_' || c == '-')).toList.map (·.toString))
   (forms.flatMap fun f => f.fields.map (·.name)).eraseDups.filter said.contains
 
 /-- The card `id` as `reader` reads it now, as text (`world-card`'s); none when it renders none. -/
@@ -4738,10 +4740,22 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
   let question := ["?", "？", "؟"].any (((i.getObjValAs? String "utterance").toOption.getD "").trimAscii.toString.endsWith ·)
   let answered := match kind with | .reply _ => !needs.any (·.startsWith "model:") | .timedOut => false
   if !asked && question && answered then return close (cardAnswer w card principal) none
-  -- A summons (the town named, read at the commonplace) that hob reads as nothing still hears the town: one line saying
-  -- how to act (the live review's finding 4: seven greetings on gsb met silence).
-  if !asked && answered && card == commonplaceId && (act.getObjValAs? String "reach").toOption == some "mention" then
-    return close (Tongue.say tongue "heard" ++ "\n") none
+  -- Words addressed to the commonplace itself that hob reads as nothing still hear the town: a summons (the town named)
+  -- or words asked on the card itself (its page, the API: `direct`) get one line saying how to act (the live review's
+  -- finding 4: seven greetings on gsb met silence). Asked on the card, the words that fit its `write` come back as that
+  -- spell, filled, to send as it stands (obend 10-14: "Dreggs to the moon" and "ciao" typed on its page met silence).
+  let reach := (act.getObjValAs? String "reach").toOption.getD ""
+  if !asked && answered && card == commonplaceId && (reach == "mention" || reach == "direct") then
+    let words := ((i.getObjValAs? String "utterance").toOption.getD "").trimAscii.toString
+    let write := if reach != "direct" then none else (forms.find? fun f => f.card == commonplaceId && f.action == "write").bind
+      fun f => match f.fields with
+        | [{ name, kind := .text lo hi }] =>
+          if lo ≤ words.length && words.length ≤ hi && !words.any (· == '\n') && (Spell.segments words).isEmpty
+          then some (spellTemplate commonplaceId f [{ name, value := words }]) else none
+        | _ => none
+    return close (match write with
+      | some spell => Tongue.say tongue "heardWrite" ++ "\n\n" ++ indentSpell spell
+      | none => Tongue.say tongue "heard" ++ "\n") none
   if !asked then return close "" none
   let fields := neededFields needs forms
   -- An ask naming no field the card's spells take: none of them fits the words; the card's `?` lists them.

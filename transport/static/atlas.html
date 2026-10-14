@@ -18,7 +18,7 @@
 <g class="count {cls}"><circle cx="{x}" cy="{y}" r="7.5"/><text x="{x}" y="{y}" dy="3.5">{n}</text></g>
 <!-- panel: a room on /town: its name, who is here, what lies here, its newest lines, its doors; unfolded, its scene, view and spells come from its own pages (atlas.js) -->
 <details class="room{lit}" id="{id}" data-obj="{obj}" data-version="{version}"{open}><summary><span class="rname">{name}</span> <span class="rabout">{about}</span> <span class="rsum">{summary}</span></summary>
-<div class="rbody"><div class="now">{here}{things}{lines}</div>{doors}{into}<div class="lazy" data-read="{read}" data-inspect="{inspect}"></div>
+<div class="rbody"><div class="now">{here}{things}{lines}</div>{doors}{into}<div class="lazy" data-read="{read}" data-inspect="{inspect}?bend=none"></div>
 <p class="ways"><a class="go" href="{go}">{golabel}</a> <a href="{read}">its page</a> <a href="{inspect}">inspect its Bend</a></p></div></details>
 <!-- panel_doors -->
 <p class="doors">Doors: {items}</p>
@@ -115,6 +115,12 @@
 <details class="odefs"><summary>every def ({n})</summary>{items}</details>
 <!-- outline_item -->
 <a href="{href}"><span class="okw">{kind}</span> {name}</a>
+<!-- source_folded: one part of its Bend not set in type here: its declarations, each a link to its line where it is drawn -->
+<details class="bend"><summary>{title} <span class="aside">{lines} lines</span></summary>{note}{outline}<p class="ways"><a href="{href}">set it in type, all {lines} lines</a></p></details>
+<!-- source_diff: a layer that is the entry module but for a few lines: those lines, as a diff against it -->
+<details class="bend"><summary>{title} <span class="aside">{lines} lines, the entry module's but for {n}</span></summary><pre class="bend diff"><code>{diff}</code></pre><p class="ways"><a href="{href}">set it in type, all {lines} lines</a></p></details>
+<!-- workshop_closed: the workshop's way, for a reader not signed in: no spell to send, so no copy of the Bend -->
+<section class="workshop" id="workshop"><h2 class="eyebrow">Amend it in the workshop</h2><p class="aside">Its Bend is checked and amended by the workshop's own spell, with the Bend in its block. To send it, <a href="/enter">come in</a>; the box is here then.</p></section>
 <!-- body_note -->
 <p class="aside">Each thing of this kind runs this layer over what the kind is of.</p>
 <!-- source_none -->

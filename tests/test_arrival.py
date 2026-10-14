@@ -15,7 +15,8 @@ import urllib.parse
 from pathlib import Path
 
 from tests.keys import write_repo_key
-from tests.test_http import FrontCase
+from tests.test_http import FrontCase, serve
+from transport.http import Front
 from transport import delve, identity
 from transport.config import Config
 from transport.host import PUBLIC, handles
@@ -173,6 +174,105 @@ class OpenDoor(FrontCase):
         self.assertIn(b"getElementById('arrive')", self.request('GET', '/static/say.js')[2])
         s, _, page = self.request('GET', '/', headers={'Accept': 'text/html'})
         self.assertIn(b'Ask the door for a key', page)
+
+    def page_form(self, path='/enter'):
+        """A browser's first look at a page: its cookies, its form's token, an arrival challenge when it has one."""
+        s, headers, page = self.request('GET', path, headers={'Accept': 'text/html'})
+        text = page.decode()
+        jar = '; '.join(v.split(';')[0] for k, v in headers if k == 'Set-Cookie')
+        challenge = re.search(r'data-challenge="([^"]+)"', text)
+        return jar, re.search(r'name="csrf" value="([^"]+)"', text)[1], challenge and html.unescape(challenge[1])
+
+    def post_form(self, form, jar, path='/enter'):
+        s, headers, page = self.request('POST', path, raw=urllib.parse.urlencode(form),
+                                        headers={'Accept': 'text/html', 'Content-Type': FORM, 'Cookie': jar, 'Origin': self.front.origin})
+        return s, headers, html.unescape(page.decode())
+
+    def test_a_name_the_door_cannot_take_comes_back_as_the_nearest_it_would_and_pressing_again_takes_it(self):
+        """obend 10-14 12:55: a visitor's five names were refused 400 (a capital, a space) and they left. The refusal puts
+        the nearest name the door takes in the box and says so; the page's work done again over it, the guest is in."""
+        jar, csrf, challenge = self.page_form()
+        typed = f'Wren Of {self.c.upper()}'
+        s, _, page = self.post_form({'name': typed, 'challenge': challenge, 'nonce': '1', 'csrf': csrf}, jar)
+        near = f'wren-of-{self.c}'
+        self.assertEqual(s, 400)
+        self.assertIn(f'“{typed}” cannot be one. “{near}” is in the box instead', page)
+        self.assertIn(f'id="arrive-name" name="name" value="{near}"', page)
+        challenge = re.search(r'data-challenge="([^"]+)"', page)[1]
+        s, _, page = self.post_form({'name': near, 'challenge': challenge, 'nonce': solve(challenge, near), 'csrf': csrf}, jar)
+        self.assertEqual(s, 200, page[:400])
+        self.assertIn(f'Welcome, {near}', page)
+        # Nothing left to suggest (no letter in it): the plain line. Braces and markup in what was typed are words, escaped.
+        s, _, page = self.post_form({'name': '4242', 'challenge': challenge, 'nonce': '1', 'csrf': csrf}, jar)
+        self.assertEqual(s, 400)
+        self.assertIn('A name starts with a lowercase letter', page)
+        s, _, raw = self.request('POST', '/enter', raw=urllib.parse.urlencode({'name': '{minutes}<b>', 'challenge': challenge, 'nonce': '1', 'csrf': csrf}),
+                                 headers={'Accept': 'text/html', 'Content-Type': FORM, 'Cookie': jar, 'Origin': self.front.origin})
+        self.assertEqual(s, 400)
+        self.assertIn('“{minutes}&lt;b&gt;” cannot be one. “minutes-b” is in the box', raw.decode().replace('&#x27;', "'"))
+        # An agent is told the nearest name beside the reason; the longest typed name suggests at most 32 characters.
+        s, _, body = self.request('POST', '/AGENTS.md/arrive', {'name': 'Q' * 300, 'proof': {'challenge': challenge, 'nonce': '1'}})
+        got = json.loads(body)
+        self.assertEqual((s, got['reason'], got['suggested']), (400, 'invalid_guest_name', 'q' * 32))
+
+    def test_a_name_with_no_code_on_an_open_town_is_pointed_at_asking_and_a_key_or_code_in_the_wrong_box_is_read_as_itself(self):
+        jar, csrf, _ = self.page_form()
+        s, _, page = self.post_form({'code': '', 'name': 'robin', 'csrf': csrf}, jar)
+        self.assertEqual(s, 400)
+        self.assertIn('No invitation? Then ask for a key above: your name is in its box', page)
+        self.assertIn('id="arrive-name" name="name" value="robin"', page)
+        code = self.front.identity.invite(None, 'postmark')['code']
+        s, _, page = self.post_form({'credential': code, 'csrf': csrf}, jar)  # the code in the key's box: it lets you choose a name
+        self.assertEqual(s, 400)
+        self.assertIn('This invitation lets you choose your name', page)
+        self.assertIn(f'value="{code}"', page)
+        name = f'kite-{self.c}'
+        key = self.front.identity.accept(self.front.identity.invite(name, 'k')['code'])['credential']
+        s, headers, _ = self.post_form({'code': key, 'name': '', 'csrf': csrf}, jar)  # a key in the code's box signs in
+        self.assertEqual((s, dict(headers)['Location']), (303, '/play/'))
+        s, _, page = self.post_form({'credential': 'dt_agent_' + 'x' * 43, 'csrf': csrf}, jar)
+        self.assertEqual(s, 401)
+        self.assertIn('Lost it? Ask for a new key above, under another name.', page)
+
+    def test_a_form_drawn_before_a_restart_or_a_sign_in_still_comes_in(self):
+        """obend 10-14: every restart (a config change, a carry) drew a new secret, so each open page's form was refused
+        403 and each unanswered challenge 400; gabriel's first two plays were refused so. The door's key is kept: a page
+        drawn by one front comes in through the next. A form from an earlier session of the browser comes back to send again."""
+        jar, csrf, challenge = self.page_form()
+        st = self.front.st
+        again = serve(Front(st, self.host, identity.Identity(st, delve.Client(self.provider), clock=lambda: self.now[0]),
+                            ('127.0.0.1', 0), clock=lambda: self.now[0]))
+        self.addCleanup(again.server_close)
+        self.addCleanup(again.shutdown)
+        self.port = again.server_address[1]
+        name = f'lark-{self.c}'
+        s, _, page = self.request('POST', '/enter', raw=urllib.parse.urlencode({'name': name, 'challenge': challenge, 'nonce': solve(challenge, name), 'csrf': csrf}),
+                                  headers={'Accept': 'text/html', 'Content-Type': FORM, 'Cookie': jar, 'Origin': again.origin})
+        self.assertEqual(s, 200, page[:400])
+        # The welcome rotated this browser's session: the old page's form now comes back as a page to send it again.
+        s, _, page = self.request('POST', '/enter', raw=urllib.parse.urlencode({'code': 'dt_invite_x', 'name': 'my <name>', 'csrf': csrf}),
+                                  headers={'Accept': 'text/html', 'Content-Type': FORM, 'Cookie': jar.replace('dt_browser=', 'dt_browser=x'), 'Origin': again.origin})
+        text = page.decode()
+        self.assertEqual(s, 403)
+        self.assertIn('Send it again', text)
+        self.assertIn('<input type="hidden" name="name" value="my &lt;name&gt;">', text)
+        self.assertRegex(text, r'name="csrf" value="[0-9a-f]{64}"')
+        s, _, page = self.request('POST', '/enter', raw=urllib.parse.urlencode({'credential': 'dt_agent_secret', 'csrf': csrf}),
+                                  headers={'Accept': 'text/html', 'Content-Type': FORM, 'Cookie': 'dt_browser=other', 'Origin': again.origin})
+        self.assertEqual(s, 403)
+        self.assertNotIn(b'dt_agent_secret', page)  # a key is never written back
+        self.assertIn(b'Your key is not kept here', page)
+        # Another site's form is no earlier session: refused as before, nothing carried back.
+        s, _, page = self.request('POST', '/enter', raw=urllib.parse.urlencode({'name': 'x', 'csrf': csrf}),
+                                  headers={'Accept': 'text/html', 'Content-Type': FORM, 'Cookie': jar, 'Origin': 'https://elsewhere.example'})
+        self.assertEqual(s, 403)
+        self.assertNotIn(b'Send it again', page)
+
+    def test_a_get_of_the_doors_api_says_what_it_takes_and_where_a_person_comes_in(self):
+        s, got = self.call('GET', '/AGENTS.md/accept')
+        self.assertEqual((s, got['class']), (405, 'methodNotAllowed'))
+        self.assertEqual(got['hint'], 'OPTIONS /AGENTS.md/accept says what it takes. A person comes in at /enter.')
+        self.assertEqual(got['_links']['enter'], {'href': '/enter'})
 
     def test_invitations_still_come_in_and_the_guide_and_catalogue_say_the_door_is_open(self):
         code = self.front.identity.invite(None, 'postmark')['code']

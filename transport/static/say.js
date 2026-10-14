@@ -252,10 +252,15 @@ document.addEventListener('click', (event) => {
   // ---- live: the page drawn again whenever the town's journal moves
   var live = document.querySelector('[data-live="/live"]');
   if (live && window.EventSource) {
-    var busy = false, again = false;
+    // At most one redraw every PACE ms however fast the journal moves, so a reader left on /town or an inspector stays
+    // well inside the front's pages a minute (each redraw is a page: a clock tick a minute and every turn move it).
+    var busy = false, again = false, last = 0, PACE = 10000;
     var redraw = function () {
       if (busy) { again = true; return; }
+      var wait = last + PACE - Date.now();
+      if (wait > 0) { busy = true; setTimeout(function () { busy = false; redraw(); }, wait); return; }
       busy = true;
+      last = Date.now();
       page(location.pathname + location.search).then(function (doc) {
         if (!doc) return;
         var graph = doc.querySelector('svg.town-graph'), mine = document.querySelector('svg.town-graph');

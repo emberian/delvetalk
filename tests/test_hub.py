@@ -262,15 +262,19 @@ class Hub(test_chain.Chain):
         self.assertEqual([o["text"].split(",")[0] for o in r["receipt"]["offers"]], ["Planted", "Planted"], r)
         self.assertEqual([self.seed_of(b) for b in self.children()], [("a fern", "silver"), ("a moss", "amber")])
 
-    def test_a_direct_replys_none_is_silence_every_time(self):
-        """The play page: words typed to the commonplace itself (no post). Every such reply reaches
-        hob (one attempt); its none is silence, whenever it is said and by whomever."""
+    def test_a_direct_replys_none_is_its_write_offered_every_time(self):
+        """The play page: words typed to the commonplace itself (no post). Every such reply reaches hob (one attempt); its
+        none is never silence (obend 10-14: "Dreggs to the moon" and "ciao" met it): the words come back as the
+        commonplace's write, filled, whenever they are said and by whomever."""
         self.policy()
         self.commonplace()
         direct = lambda text: self.turn("commonplace", "receive", record(text=label(text), post=label("")), principal=KIMI, reach="direct")
         for text in ("hello there", "what a lovely evening", "thank you all", "see you tomorrow"):
             self.assertEqual(direct(text)["status"], "suspended")
-            self.silent(self.interpret("none"))
+            resumed = self.interpret("none")
+            self.assertEqual(resumed["receipt"]["outcome"], {"tag": "admitted", "writes": []}, resumed)
+            [offer] = resumed["receipt"]["offers"]
+            self.assertTrue(offer["text"].endswith(f"\n\n    delvetalk commonplace write\n    text: {text}\n"), offer)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
 
