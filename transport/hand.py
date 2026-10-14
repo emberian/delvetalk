@@ -1582,7 +1582,7 @@ def cli_invite(h, a):
 
 def cli_reports(h, a):
     """`reports`: what moved since `--since`, newest first, and the cursor; `reports answer CARD N --status S [--text T]`."""
-    if a.verb != 'answer':
+    if a.action != 'answer':
         return h.reports(a.since, a.status, a.limit)
     if not a.card or a.n is None or not a.status:
         raise HandError('reports answer CARD N --status STATUS [--text WORDS | --text-file PATH]')
@@ -1639,12 +1639,12 @@ def parser(p, common):
                       ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
             'morning': [('--day', dict(type=int, help='the clock day (default today)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))],
             'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [], 'overview': [],
-            'requests': [('verb', dict(nargs='?', choices=('admit', 'adopt', 'decline', 'repair'), help="none: list what waits for the town")),
+            'requests': [('action', dict(nargs='?', metavar='verb', choices=('admit', 'adopt', 'decline', 'repair'), help="none: list what waits for the town")),
                          ('object', dict(nargs='?', help="the record a line waits on, the thing a proposal is for, or a stranded thing "
                                                           "(`repair kinds --kind stranded`: every thing the town's kinds made)")),
                          ('n', dict(nargs='?', type=int, help="the line's number, or the held proposal's")),
                          ('--kind', dict(choices=('line', 'proposal', 'stranded'), default='line')), ('--reading', dict(default=''))],
-            'reports': [('verb', dict(nargs='?', choices=('answer',), help='none: the reports moved since --since, newest first')),
+            'reports': [('action', dict(nargs='?', metavar='verb', choices=('answer',), help='none: the reports moved since --since, newest first')),
                         ('card', dict(nargs='?', choices=(mending.BASKET, mending.DRAWER), help='the basket, or its drawer for a confided report')),
                         ('n', dict(nargs='?', type=int, help="the report's number on that card")),
                         ('--since', dict(type=int, default=0, metavar='ENTRY', help='only reports moved after this entry (the cursor a read gives back)')),
@@ -1697,7 +1697,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
                 'overview': h.overview, 'vacate': lambda: h.vacate(a.who, a.reading),
-                'requests': lambda: h.request(a.kind, a.verb, a.object, a.n, a.reading) if a.verb else h.requests(),
+                'requests': lambda: h.request(a.kind, a.action, a.object, a.n, a.reading) if a.action else h.requests(),
                 'automod': lambda: h.automod_review(a.key, a.verdict, a.reading) if a.verdict else h.automod(a.only),
                 'reports': lambda: cli_reports(h, a),
                 'speak': lambda: cli_speak(h, a), 'morning': lambda: h.morning(a.day, a.topic, a.reply_to), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
