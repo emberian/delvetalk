@@ -108,7 +108,7 @@ def parser():
     p.add_argument('--obend', help='the host binary (default DELVETALK_OBEND, then .lake/build/bin/delvetalk-obend)')
     p.add_argument('--dealer', default='ember.delve.town', help="the dealer's principal: owns the tables, resolves the rounds")
     p = add('status', 'one probe of the world, as JSON')
-    p.add_argument('--health', choices=('host', 'http', 'hand', 'bridge', 'interpret'), help='exit 0 if the service is healthy (a compose healthcheck)')
+    p.add_argument('--health', choices=('host', 'http', 'hand', 'bridge', 'interpret', 'automod'), help='exit 0 if the service is healthy (a compose healthcheck)')
     p.add_argument('--playtest', action='store_true', help="the playtest's measures from the journal (docs/PLAYTEST-2.md section 4)")
     return ap
 

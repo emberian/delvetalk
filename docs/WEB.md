@@ -63,6 +63,7 @@ Seen in the screenshots, by path:
 7. **One thing at a time.** Each page has one job and one primary action: the front page says what the town is and
    lets you in; a place speaks and takes your words; a public page shows a thing.
 8. **Phone first.** One column, 34 rem at most, 16 px gutters; cards scroll inside their own box, never the page.
+   A desktop gets its own layout from 68 rem ("A desktop", below); the phone's is unchanged by it.
 
 ## The pages
 
@@ -231,6 +232,52 @@ is its own feed (`transport open --transport feed`; `State.feed_only`) says what
   `{{room}}` the characters a card and a feed post hold.
 - **The room.** Cards, library pages and the town's answers in the feed hold the world's `cardRoom` (8,000 on
   obend); docs/DEPLOY.md "A second instance" says what each limit was and is.
+
+## A desktop (the `wide-*` screenshots)
+
+The owner, 2026-10-13: "the desktop version is basically the same as the mobile version (too narrow etc)." Written on
+`lane/wide`. Screenshots in `docs/web/`: `wide-before-*` and `wide-after-*` are the same scratch town on hbox (genesis,
+the furnishings, the counter and the 7×7 hexboard, three guests who entered the porch and spoke there, moved the
+counter, placed four marks and posted to the feed), drawn by foundation's front and by this lane's front over the one
+host and the one front state, at 1440 px (and 1920, dark, logged out for some); `-390` pairs are the phone.
+
+**What wasted the width** (https://gsb.fg-goose.online and https://obend.fg-goose.online at 1440 and 1920, and the
+scratch town): every page was the phone's 36 rem column centred, 576 px of 1440 and 576 of 1920; the home page alone
+widened, to 928 px. A place's card scrolled sideways inside that column while two thirds of the screen stood empty; who
+is here, the doors and the newest lines came only after the box, a screen below the place; the hexboard was drawn at
+most 30 rem wide; the feed was one column of monospace answers 12,789 px tall; the door map stacked its text above a
+drawing 360 units wide; the hand, the owner's desktop tool, had the same 36 rem.
+
+**What a wide screen gets now.** From 68 rem (1088 px) the frame is 80 rem with 2 rem gutters, and each page lays out by
+its body's class (`pages.page(layout=…)`, style.css "A wide screen"):
+- **A place** (`place`: `/o/<id>`, `/play/<id>`): a main column of its name, telling, reply, view, the scene with the exact
+  card (most lines now fit without scrolling), what it wants, the ring and the box (the paint at 34 em, the box and suggestions at
+  46 rem); a view (a hexboard, a board, a drawing, a table) takes the whole column and scales up to 72 % of the window's
+  height. Beside it, ruled off, a 23 rem side column: who is here, what lies here, the doors as the local map with their
+  links, the newest lines, then **the town elsewhere**: what wants a hand in the rest of the town (`world-wanting`, four,
+  not this place) and the feed's newest posts by residents (four, as `/feed` shows them, moderation's placeholders
+  included). Law, source and journal stay folded under the main column.
+- **The home page** (`wide home`): the way in beside today in the town, then places, wants a hand and newly made in
+  three columns.
+- **The feed** (`feed`): the threads in the main column, the box beside them, staying in view as the threads scroll.
+- **The door map, the history, a book** (`surface`): the map's text beside its drawing (which scales with its column); a
+  day's paint beside its exact text.
+- **The hand** (`hand`) and the catalogue (`wide`): the frame, for their lists and tables. Every other page (the door,
+  the welcome, a refusal) keeps one column at every width.
+
+**The phone is unchanged.** Every rule a wide screen adds sits in one `@media (min-width: 68rem)` block at the end of
+style.css (tests/test_pages.py holds it there), and the markup only gained wrappers (`.col`, `aside.side`, `.col-foot`,
+the feed's `.intro` and `.composer`) that a phone lays out as plain blocks. The proof: foundation's front and this
+lane's over the same town at 390 px, logged in and out, light and dark (`/`, `/o/porch`, `/o/station`, `/o/hexboard`,
+`/play/`, `/play/porch`, `/play/hexboard`, `/play/counter`, `/history`, `/map`, `/enter`, the catalogue): 28 of 32
+screenshots byte-identical. The four that differ are `/feed`, and on purpose: the home page's `.town` grid also caught a
+town's post on the feed (`article.post.town`), spacing its who, words and reply 1.5 rem apart at every width; the rule
+is now `div.town` (`wide-before-feed-390.png`, `wide-after-feed-390.png`).
+
+**The text view and the side column.** The town elsewhere is `hidden` markup that the wide screen shows; a phone, a
+screen reader on a phone, and the text view (`?text=1`) read the place without it, as before, and the home page and
+`/feed` say the same things there. It costs a page one `world-wanting` read and one indexed read of the feed's store.
+No script, no framework; JS-off is as before; both palettes take it from the same tokens.
 
 ## Not decided here
 

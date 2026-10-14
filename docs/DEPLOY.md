@@ -179,7 +179,8 @@ connection per thread, so production runs path (b).
 ## Prerequisites on the workhorse
 
 - Docker with compose v2, as for `/opt/dregg-edge`; `rsync` and `python3` for backups.
-- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v16` since 2026-10-14 (861f965a with lane/deploy16 4641433e,
+- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v17` since 2026-10-14 03:02 UTC (foundation 62cad239 with
+  lane/deploy17 9023546e, replay edition 16; "Carried 2026-10-14 (03:00 UTC)" below), carried from `v16` (861f965a with lane/deploy16 4641433e,
   replay edition 15), carried from `v15` (fed71c47 with lane/deploy15 32c80591, 2026-10-13), itself of `v14`, itself of `v13`, `v12` and `v11` ("A new binary"); `v11` is the third carry's,
   2026-10-12 (550c0478, replay edition 12), of `v10`, the second carry's (lane/refresh-fix b59b0186, edition 12, height 722 at the carry), itself of
   `v9`, the first carry's (16471891, edition 10, height 446), itself of `v8`, the owner's fresh minimal town of the same
@@ -859,7 +860,7 @@ name N lives under `delvetalk-N`:
 | what | `delvetalk` (gsb) | `open` (obend) |
 | --- | --- | --- |
 | compose project, `/opt/<project>` | `delvetalk` | `delvetalk-open` |
-| data directory (`DELVETALK_DATA`), the genesis guard's `/towns` | `/var/lib/delvetalk/v16`, `/var/lib/delvetalk` | `/var/lib/delvetalk-open/v1`, `/var/lib/delvetalk-open` |
+| data directory (`DELVETALK_DATA`), the genesis guard's `/towns` | `/var/lib/delvetalk/v17`, `/var/lib/delvetalk` | `/var/lib/delvetalk-open/v2`, `/var/lib/delvetalk-open` |
 | root socket's directory | `/var/lib/delvetalk/root` | `/var/lib/delvetalk-open/root` |
 | repository keys, hand token, Delve credentials | `/etc/delvetalk/{repo,hand.token,delve}` | `/etc/delvetalk-open/{repo,hand.token,delve}` |
 | front, hand, firehose ports (10.10.1.10, 127.0.0.1, 10.10.1.10) | 8765, 8766, 8767 | 8775, 8776, 8777 |
@@ -879,7 +880,7 @@ every variable the compose files read is named in every rendered `.env`, so none
 which are the live town's (`tests/test_instances.py`). The proof that the live town is unchanged: `render delvetalk`
 gives byte for byte `deploy/delvetalk-watch.{service,timer}`, the backup units under "Durability and backups",
 the installed gsb Caddy block above and dregg-infra's `hbox/delvetalk-backups/delvetalk-pull-backups.{service,timer}`;
-its `.env` differs from compose's own defaults in `DELVETALK_DATA` (v16, which the carries moved and `.env` names)
+its `.env` differs from compose's own defaults in `DELVETALK_DATA` (v17, which the carries moved and `.env` names)
 and `DELVETALK_STATION` (on, the owner's word) only, as the workhorse's `.env` does today. Checked against the boxes
 2026-10-14: the watch units and hbox's pull units are byte for byte; the installed backup units carry a `Description=` and
 a longer first comment, and the installed gsb block two comment lines and a blank line, which `render` leaves out (every
@@ -947,11 +948,13 @@ kind's fork line, a law's refusal that says whose it is and how to have it other
 commonplace). Its library documents it from inside: `bend`, `api`, `reads`, `paint`, `authoring`, `voice`, besides
 any card's `delvetalk <card> source` and `delvetalk makings` (tests/test_inside.py).
 
-Rolling these to obend (not done here): the transport alone (the guide served, the pages, the routes, the feed's
-whole answers) by a restart; the room, the reads and the invitations need the new host binary and its library,
-carried as any new binary is ("A new binary"), then `hand limits` (journals `cardRoom` 8,000 from the rendered
-`delvetalk.toml`), then `genesis refresh` (shelves the guide, the arrive page and the inside pages within the room;
-it needs the room journaled first).
+Rolled to obend 2026-10-14 by the edition-16 carry ("Carried 2026-10-14 (03:00 UTC)"): the newly rendered
+`delvetalk.toml` (with `card_room`, and the owner's arrival and turn limits, which deploy/instances.toml now carries) is
+installed into the NEW state directory before `transport carry`, which reads that config (it copies the old one only
+when the new state has none); the carry's refresh then journals `cardRoom` first (`genesis.roomed`) and shelves the
+guide in four parts and the inside pages within the room, and places what an open town lacks (the counter and the
+hexboard, `genesis.placed_playthings`). `hand limits` after it re-journals the limits from the same file. No separate
+`genesis refresh` is needed.
 
 ## Bringing up obend
 
@@ -1131,6 +1134,13 @@ earlier carry's journal it was not given, is not screened) in full batches, in o
 that the cursor waits); `cursor entry N of M` on `/hand/<world>/automod` shows it catch up. Until it has, a new text
 waits behind the history: at about 4 s a call of 24, a few thousand texts are a quarter of an hour. A dry look at the worker without
 touching its state: `docker compose logs delvetalk-automod` and `<state>/worlds/town/automod-status.json`.
+
+Measured at the first rollout (2026-10-14, both towns carried just before): the host's history is the carried journal
+alone, so a carry's genesis is where screening begins: gsb's 4,633 entries of v16 and obend's 845 of v1 (and every chain
+before) were not screened; obend's feed, a transport file the carry copies, was screened whole (10 posts). Nothing was
+hidden or flagged on either town. To screen a town's past, the host would have to read the journals its carried genesis
+cites (not built). The service's healthcheck (`status --health automod`) shipped as a choice the command refused, so the
+worker screened while compose said unhealthy; lane/deploy17 admits it (tests/test_instances.py `Healthchecks`).
 
 **Off, or broken.** Stopping the service (`docker compose stop delvetalk-automod`) stops screening and nothing else;
 what it hid stays hidden (the journal says so) until the owner restores it. A restore is one click on the automod page.
@@ -1592,6 +1602,44 @@ posted with the chime was admitted (`soroh-homif`) and posted again refused `mov
 transport fixes of "Bringing up obend" then restarted it in place (same binary and library) at 00:45 and 00:53; every
 browser form behind the edge had been refused since v15 and is answered now. Still wrong after it: the station and porch
 list `deploycheck15` as here, a guest revoked at the v15 check.
+
+Carried 2026-10-14 (03:00 UTC), both towns, edition 15 to 16 (`be0febc4d7a3` to `8f67b5c48263`: automatic moderation,
+views, a town's own room and guide), with the owner's word ("go on the carry"). Built on hbox from `git archive`: foundation
+a322857e gives binary `8f67b5c4826368e827482adde2dd8f4d57842d61a465156c92989eff3fe03a86`, transport image `b099eeaf…bf9d`
+(both boxes); suite 2011 tests, 0 failed classes. Then lane/deploy17 on foundation 62cad239 (lane/wide), transport only, the
+same binary each time: 8a7417cd `510b2c5f…71bf` (the automod healthcheck), 9023546e `ba15168b…1b69` (the cardless check,
+the open town's playthings, the inside pages' docs in the image), each with the tests it touches on hbox (instances, watch,
+pages, browser security; view pages, card room, genesis refresh, genesis; carry's Carry, StateDirectory, CarriedTwice).
+Both towns serve `ba15168b…1b69`; the earlier images stay as `delvetalk:a322857e9d39` and `delvetalk:8a7417cd9629`.
+carry-check on the workhorse for each town: `backup.sh` of the live state into `/var/tmp/delvetalk-deploy17/<town>/`, its
+mirror copied and mounted over `/towns/<old>` read-only, the new image's `transport carry` under `docker compose run
+--no-deps` with data, root and keys pointed at scratch (obend's with the rendered `delvetalk.toml` placed in the scratch
+new state first). gsb: exit 0, 294 objects, `left`, `kept` empty, refresh 108 `current`. obend's first two tries
+exited 1, each fixed on the lane and checked again: `beacon-jar` (a resident's module with no card, `noCard` under the old
+binary too) counted a problem, so the check now names such objects `cardless`; then the refresh's inside pages read
+`docs/AUTHORING.md`, which the image lacked. Third try exit 0.
+gsb: watch off, bridge, front and hand stopped, `world-interpretations` empty, interpreter stopped (02:59:50); v16 at 4633
+with 294 objects twice (each object's owner and named law, want and rule lines, `/root/deploy17-gsb-census-pre*.json`);
+closing backup `delvetalk-20261014T030014Z` (also in hbox's `closing/`); carry 82 s, exit 0, `check {objects: 294,
+rendered: 294, problems: []}`, `left`, `kept` empty, the tide `dropped` and `rearmed`, refresh 108 `current` (its guide
+unchanged), receipt `solag-tunon`, carried genesis 4634; up 03:05 (the front down five minutes). `serve-status`: the new
+SHA, replay 16, 294 objects, the same ids, owners and lines (each version one more: the carry's rebuild). Old receipts resolve
+(`jodok-naras` 4253 of v16 to `lipuh-hutom` 111 of v8). Backup and `verify.sh --full` ok at 4646, hbox's `pull.env` names
+`delvetalk-host:8f67b5c48263` and its pull replayed it. Restarted in place at 03:09 and 03:32 for the transport images.
+obend (residents playing throughout: no quiet moment came): stopped 03:22:46; v1 at 845 with 110 objects twice; closing
+backup `delvetalk-20261014T032310Z` (hbox `/tank/delvetalk-open-backups/closing/`, made for it); the rendered
+`delvetalk.toml` in `v2/state`; carry 68 s, exit 0, `check {objects: 110, rendered: 109, cardless: [beacon-jar],
+problems: []}`, refresh 82 `current`, 47 `refreshed` (cardRoom 8000, the guide in four parts, the inside pages, the
+counter and hexboard placed), receipt `hakis-pohiv`, carried genesis 846; front back 03:25:03 (down 2 m 17 s). `hand limits`
+(`pozut-linum`): cardRoom 8000, turnQuota 300. Every v1 object present with its owner and lines (40 residents' objects,
+145 laws, 64 wants, the rule `room/2 glasshouse_1`; town-wide 310, 94, 11), plus the four playthings; v1 receipts at
+entries 1, 170, 400, 700 and 844 resolve. Backup and `verify.sh --full` ok at 914, hbox's open pull replayed it.
+Live: the hexboard draws and a guest's click placed its colour, an anonymous second browser's live view changing 376 ms
+later; the counter's + moved it 0 to 1; `/live/<id>` passes the edge as it is (headers in 35 ms direct, about 0.5 s
+through Caddy, no `content-encoding` with or without `Accept-Encoding`); `delvetalk station source` answered from the feed
+in 5 s as one 7,580-character post; `delvetalk guide` answered; obend's guide names no delve.town and speaks the door, the
+API and the feed, gsb's unchanged. Throwaway guests, all revoked: gsb `deploycheck17`, obend `deploycheck17-api`, `-web`,
+`-web2`, `-web3` (their two hexboard marks and the counter's one move stay in the journal).
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
