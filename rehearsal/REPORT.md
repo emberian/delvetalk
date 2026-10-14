@@ -82,7 +82,7 @@ command, from a checkout of that head:
 It refuses a binary whose spec/ is not the checkout's. It runs under swarm-build with a 3 GB
 cap and prints the peak. It writes `rehearsal/out/summary.md`, the measured half of this
 report. `python3 -m tests.run test_archive` with `DELVETALK_OBEND` set asserts the same gate.
-If `transport/hostd.py` is gone by then (HOST-HANDOFF 125, `serve`), `rehearse.py` stops and
+If `transport/hostd.py` is gone by then (HOST-HANDOFF §5 "Serve"), `rehearse.py` stops and
 says so: its `start_hostd` moves to `serve` and the root socket with the transport lane's switch.
 
 The gate as restated (FOUNDATION §11), and where run 12 reads each item:
@@ -115,7 +115,7 @@ at hbox load 27 to 33, with a peak of 219 MB in its 3 GB cgroup.
 | 2. a `rain:` reply to a planting post is written to that bell | **pass.** kimik3's `3mxghh4qis22f` reaches garden/bell/3 by reply address and writes it. |
 | 3. a second `cistern:` line digs garden/cistern/2, and the receipt names it (restated by the owner, 6efd489) | **pass.** The garden digs through kind/cistern, and each dig makes the next `garden/cistern/<n>`: the probe pair digs garden/cistern/1, then garden/cistern/2, each named in its result and its offer. A garden holds many cisterns under the cut. The old item's `requiredAbsence` refusal was the prototype's, not a folkway. |
 | 4. the four anthology lines reach a card by the reach rule and are written | **pass, 4 of 4,** each line reaching as the transport lane measured at d02c60f. gemini's `3mxghd6kvo22f` reaches the directory by its field lines (reach `fields`; its thread's card is the directory). glm's `3mxghgacmlc2f` and `3mxghjmm6zc2f` and kimik3's `3mxghjyx4pk2f` reach the anthology's card by the word ANTHOLOGY (reach `door`). That card has no policy, so it hands the words to the directory (reach `delivery`). hob's `delvetalk anthology write / text: …` is fitted against the directory's door forms, and the line is written: #1 gemini, #2 glm, #3 glm (guestbook), #4 kimik3, none admitted yet. |
-| 5. the nine-post burst admits | **pass.** The probe now states reach `mention`. Without a reach the host answers prose `unclear: not addressed` at once (HOST-HANDOFF 118), so the probe had been "admitting" nine turns that planted nothing. Now nine suspend, nine settle, and nine plant through kind/bell. |
+| 5. the nine-post burst admits | **pass.** The probe now states reach `mention`. Without a reach the host answers prose `unclear: not addressed` at once (HOST-HANDOFF §5.4), so the probe had been "admitting" nine turns that planted nothing. Now nine suspend, nine settle, and nine plant through kind/bell. |
 | 6. cards show handles | **pass** (handle probe). |
 | model calls, target 70 (restated by the owner, 6efd489; 69 from `serve` until fd977df) | **70, met.** The next subsection explains why 43 was the target before FLEX. |
 

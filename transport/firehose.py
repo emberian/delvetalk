@@ -1,4 +1,4 @@
-"""One durable event log and one selector thread per front/world (docs/REPO.md, ATPROTO L4).
+"""One durable event log and one selector thread per front/world (docs/REPO.md "Live subscription").
 
 Sequence positions belong to emitted events, never journal heights. The log stores exact DAG-CBOR
 message bytes with coverage metadata; replay cannot re-sign or rebuild them. The selector thread owns
