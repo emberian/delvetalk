@@ -1,4 +1,4 @@
-"""The hand's root console and moderation verbs (docs/ROOT.md 1.6 and 2.3, HOST-HANDOFF 5.126): each verb, from the CLI
+"""The hand's root console and moderation verbs (docs/ROOT.md 1.6 and 2.3, HOST-HANDOFF §5 "Root and moderation"): each verb, from the CLI
 and from /hand/root/, is one request on the root socket under the opener, and none is sent without its reason or
 reading; against a real `serve`, the acts land in the journal, public and marked.
 

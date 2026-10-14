@@ -3,7 +3,7 @@
 through that method on the unchanged state, `true` where the refusing clause reads the state (the
 commit decides), and omits the module text under `source: false`; `world-objects {methods: true}` names each listed object's turnable methods.
 
-Evidence for HOST-HANDOFF 5.55 to 5.57 (layer: host). Refuted by a method the law refuses its caller
+Evidence for HOST-HANDOFF §5.3 (layer: host). Refuted by a method the law refuses its caller
 listed `true` on a request-only clause, a permitted method listed refused, a clause that reads the state
 answered as a refusal, `source: false` answering the source, or a listing whose methods name an object the reader may not view or a method a
 turn cannot run.
@@ -42,7 +42,7 @@ class Admits(Reflection):
         self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="probe", source=0)["status"], "error")
 
     def test_offered_names_the_actions_the_reader_is_offered(self):
-        # `offeredTo`, the per-reader filter usage uses (5.103): ember is offered bump2, kim is not.
+        # `offeredTo`, the per-reader filter usage uses (HOST-HANDOFF §5.3): ember is offered bump2, kim is not.
         offered = lambda who: self.host.send(op="world-inspect", principal=who, object="probe")["offered"]
         self.assertIn("bump2", offered("ember"))
         self.assertNotIn("bump2", offered("kim"))

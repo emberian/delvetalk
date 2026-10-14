@@ -1,4 +1,4 @@
-"""Repository epochs (ATPROTO L3 finding 4), using test_repo's fake journal and CAR reader.
+"""Repository epochs (docs/REPO.md "The signed repository", chain epochs), using test_repo's fake journal and CAR reader.
 
 Refuted by a no-tick carried journal regressing its rev, a replacement key signing an old rev,
 changed record keys at rotation, a delta losing post-cursor records, or a restart changing bytes.

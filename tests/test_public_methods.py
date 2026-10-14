@@ -1,4 +1,4 @@
-"""A method is public only when its package declares it (HOST-HANDOFF 5.62; WORLD-REVIEW finding 1).
+"""A method is public only when its package declares it (HOST-HANDOFF §5.3 "Declared methods").
 
 Evidence for the authority model (layer: host).
 
@@ -35,7 +35,7 @@ def refused_no_method(test, reply, method, obj):
 
 
 class Reproductions(Chain):
-    """The three reproductions of WORLD-REVIEW finding 1, against world/objects."""
+    """Three reproductions of an undeclared method run from outside, against world/objects."""
 
     def setUp(self):
         super().setUp()

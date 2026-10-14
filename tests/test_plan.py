@@ -1,9 +1,9 @@
-"""A plan is one turn (docs/HOST-HANDOFF.md 5.203): `delvetalk plan` (or a fence tagged `plan`) and the spells after it
+"""A plan is one turn (docs/HOST-HANDOFF.md §5 "Plans and try"): `delvetalk plan` (or a fence tagged `plan`) and the spells after it
 run in order inside one turn of the speaker, each reading what the acts before it wrote and made (`{made N}`), every
 law judged once at the commit against the world the acts leave, one receipt; any refusal refuses the whole plan and
 names the act.
 
-Evidence for HOST-HANDOFF 5.203 (layer: host). Refuted by: a plan that leaves a kind, its thing or a rule behind when
+Evidence for HOST-HANDOFF §5 "Plans and try" (layer: host). Refuted by: a plan that leaves a kind, its thing or a rule behind when
 a later act is refused (in its frame or at the commit); a later act that cannot name what an earlier made; a plan of
 several acts journaled as more than one entry or answered under `#1` identities; a hole naming no earlier act that
 runs anyway; a plan entry that does not replay.

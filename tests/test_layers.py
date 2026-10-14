@@ -3,7 +3,7 @@ the version below, and an override keeps its type.
 
 Evidence for FOUNDATION §8 extend (layer: kernel).
 
-Layer stacks (KERNEL-HANDOFF section 13): a module whose first line is
+Layer stacks (KERNEL-HANDOFF §8, "Layers"): a module whose first line is
 `layer over ./X.obend` overrides X's definitions for every caller in the object, its own
 `Super.f` reaching the version below; an override keeps its type; the method table lists
 the whole stack; an unlayered package compiles exactly as before

@@ -142,7 +142,7 @@ def malformed(t, rng):
 
 
 
-# Names the host answers on every card whatever the package declares (HOST-HANDOFF 5.62, 5.68: a
+# Names the host answers on every card whatever the package declares (HOST-HANDOFF §5.3, §5.5 "Default page": a
 # public card's `publishPage` is the host's default page), so a direct turn naming one is not a helper.
 CONVENTIONAL = {"receive", "render", "forms", "lenses", "set", "publishPage", "page", "relations",
                 "methods", "law", "lawReads", "views", "initial",
@@ -199,7 +199,7 @@ class Run:
         reply = self.send(**request)
         status = reply.get("status")
         self.statuses[status] += 1
-        if status == "spells":  # a post of several spells: a turn each, each its own receipt (HOST-HANDOFF 5.148)
+        if status == "spells":  # a post of several spells: a turn each, each its own receipt (HOST-HANDOFF §5 "Spells")
             if any(t.get("status") not in ("admitted", "refused", "suspended") for t in reply["turns"]):
                 self.fail("a spell's turn neither admitted, refused nor suspended", request, reply)
         elif status not in ("admitted", "refused", "suspended"):
@@ -208,7 +208,7 @@ class Run:
             out = reply["receipt"]["outcome"]
             if out.get("class") not in CLASSES:
                 self.fail("a refusal outside the closed set", request, out)
-            # Every law refusal carries its clause's reading, and the reason voices it (HOST-HANDOFF 5.154).
+            # Every law refusal carries its clause's reading, and the reason voices it (HOST-HANDOFF §5.1 "Readings").
             if out["class"] == "lawRefused" and not (out.get("clause") and out.get("reading")
                                                      and out.get("reason") == "refused %s: %s" % (out["clause"], out["reading"])):
                 self.fail("a law refusal without its clause and reading", request, out)

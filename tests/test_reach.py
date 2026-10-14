@@ -1,4 +1,4 @@
-"""Reach: only words that reached a card go to the model (docs/FLEX.md §2; HOST-HANDOFF 5.118).
+"""Reach: only words that reached a card go to the model (docs/FLEX.md §2; HOST-HANDOFF §5.4).
 
 Evidence for interpretation (layer: host).
 
@@ -8,7 +8,7 @@ principal named a method other than `receive`), `delivery` (an object sent it), 
 transport saw of the post and states: `mention`, `door`, `fields` (the host checks the field line)
 or `direct` (asked on the card itself). An `interpret` of a turn with none is answered `unclear
 {needs: ["not addressed"]}` at once: no suspension, no model, no quota. Every interpretation
-journals its reach. Where a post reaches at all is the host's too (`world-reach`, 5.162): the bridge passes
+journals its reach. Where a post reaches at all is the host's too (`world-reach`, HOST-HANDOFF §5.5): the bridge passes
 the post and the ancestors it saw with their authors. Refuted by: prose with no reach suspending or listed for the model, a reached
 interpretation listed without its reach, a stated `fields` with no field line or an unknown reach
 admitted, or a reach left out of the retry digest; a reply reaching a card other than its direct parent's,
@@ -151,7 +151,7 @@ Z = lambda n: f'zulip://delvetalk/t/{n}'
 
 
 class WorldReach(Chain):
-    """`world-reach`: where an observed post reaches, found by the host from what the bridge saw (5.162)."""
+    """`world-reach`: where an observed post reaches, found by the host from what the bridge saw (HOST-HANDOFF §5.5)."""
     def setUp(self):
         super().setUp()
         town_garden(self.host.send)
