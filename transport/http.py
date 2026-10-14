@@ -211,6 +211,7 @@ def turn_view(reply):
             **({'revealed': reply['revealed']} if reply.get('revealed') else {}),
             **({'waiting': reply['waiting']} if reply.get('waiting') else {}),  # hob reading the words: by when, behind how many
             **({'hint': reply.get('hint') or outcome['hint']} if reply.get('hint') or outcome.get('hint') else {}),  # a refusal's fix, as the host wrote it or says it
+            **{k: reply[k] for k in ('replayed', 'spent') if reply.get(k)},  # the intent's answer given again; a refusal binding its intent
             'offers': [o['text'] for o in reply.get('offers') or []],
             'receipt': {'slug': rc.get('slug'), 'height': rc.get('height')}}
 

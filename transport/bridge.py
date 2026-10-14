@@ -322,6 +322,7 @@ def caller_view(reply, preview=False):
     status = 'previewed' if preview else reply.get('status', out.get('tag', 'refused'))
     line = ('would be ' + (reply.get('line') or 'refused moved') if reply.get('class') == 'moved' else
             would_line(reply) if rc else str(reply.get('message') or reply.get('status'))) if preview else reply.get('line') or turn_line(reply)
+    line = '\n'.join([line, *(reply[k] for k in ('replayed', 'spent') if reply.get(k) and not preview)])  # what the intent is now
     outcome = {'status': status, 'line': line,
                **{k: out[k] for k in ('class', 'clause', 'reason') if isinstance(out.get(k), str)},
                **({'class': reply['class']} if reply.get('class') else {}),
@@ -381,7 +382,8 @@ def retained_reply(host, principal, intent, transient):
     outcome = rc.get('outcome') or {}
     if outcome.get('tag') == 'refused' and outcome.get('class') in transient:
         return None
-    reply = {**got, 'status': outcome.get('tag', 'refused'), 'object': (rc.get('roots') or [{}])[0].get('object')}
+    reply = {**got, 'status': outcome.get('tag', 'refused'), 'object': (rc.get('roots') or [{}])[0].get('object'),
+             'replayed': f"already answered at entry {rc.get('height')}: this intent's answer again, and nothing ran; a new turn needs a new intent"}
     if reply['status'] != 'suspended':
         reply['offers'] = [o for o in paged(host, {'op': 'world-offers', 'principal': principal, 'after': rc['height'] - 1}, 'offers')
                            if (o.get('from') or o.get('identity') or {}).get('intent') == intent]

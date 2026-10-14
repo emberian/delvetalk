@@ -3087,6 +3087,10 @@ def turnReply (w : World) (r : Json) : Json :=
         | none => p)]).getD [] ++
       -- What a refusal may say in public, for transport to draft from; a law's, on a roomy world, how to have it otherwise.
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
+      -- A refusal binds its intent for good (the same request again is this answer; another is `duplicateIdentity`):
+      -- said, so a corrected spell goes under a new one (Kestrel, obend 10-14: four intents spent finding it out).
+      (if tagOf entry == "refused" && !isTransient entry && (entry.getObjVal? "delivery").toOption.isNone then
+        [("spent", toJson s!"intent {identityIntent entry} is spent on this refusal: send the corrected spell under a new intent")] else []) ++
       (((teaching w entry).orElse fun _ => ruleTeaching w entry).map fun t => [("hint", toJson t)]).getD [] ++
       ((waitingLine w entry).map fun t => [("waiting", toJson t)]).getD [])
 
@@ -3106,6 +3110,10 @@ def receipt (w : World) (j : Json) : Except String Json := do
     return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++ inPublic w entry ++
       (if owner == reader then ((waitingLine w entry).map fun t => [("waiting", toJson t)]).getD [] else []) ++
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
+      -- A refusal binds its intent for good (the same request again is this answer; another is `duplicateIdentity`):
+      -- said, so a corrected spell goes under a new one (Kestrel, obend 10-14: four intents spent finding it out).
+      (if tagOf entry == "refused" && !isTransient entry && (entry.getObjVal? "delivery").toOption.isNone then
+        [("spent", toJson s!"intent {identityIntent entry} is spent on this refusal: send the corrected spell under a new intent")] else []) ++
       (if owner == reader && !reader.isEmpty then revealedField w entry else []))
 
 /-- Retry rule for turns: the identity is bound to the whole turn request. -/
@@ -3115,7 +3123,11 @@ def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
   | some entry =>
     let same := (entry.getObjValAs? String "turnRequest").toOption == some r.digest
     if isTransient entry then none
-    else if same then some (turnReply w (reply entry))
+    else if same then
+      -- The same request again is the first answer again, said so: nothing ran this time.
+      let height := (entry.getObjValAs? Nat "height").toOption.getD 0
+      some ((turnReply w (reply entry)).setObjVal! "replayed"
+        (toJson s!"already answered at entry {height}: this is that answer again, and nothing ran; a new turn needs a new intent"))
     else some (duplicate r.principal r.intent entry)
 
 /-- What a turn knows about how it began: the ledger it runs under and, for a

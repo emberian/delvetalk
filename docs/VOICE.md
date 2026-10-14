@@ -442,7 +442,7 @@ The reply line is `refused <clause>: <reading>` (`transport/http.py` `turn_line`
 | keyTaken | `another row holds that key; upsert, or add an ordinal.` |
 | duplicateKey | `the write names one key twice.` |
 | budgetExhausted | `the run of sends spent its {depth, work or storage}.` |
-| duplicateIdentity | `{intent} already names a different turn; choose a new intent.` |
+| duplicateIdentity | `{intent} already names a different turn, answered at entry {N}; send this one under a new intent.` |
 | quiet | `the hand quieted you until clock {till}: {reading}`, with `next` (ROOT.md); the automatic moderation's reading is `automod {category}: {reason}` |
 | noMethod | `{object} has no method {method}; reply delvetalk {object} ? for its spells.` |
 
