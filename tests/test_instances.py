@@ -48,11 +48,11 @@ class Live(unittest.TestCase):
         env = dict(line.split('=', 1) for line in self.live.env().splitlines() if not line.startswith('#'))
         self.assertEqual((env['COMPOSE_PROJECT_NAME'], env['DELVETALK_DATA'], env['DELVETALK_ROOT'], env['DELVETALK_REPO_KEYS'],
                           env['DELVETALK_HTTP_PORT'], env['DELVETALK_HAND_PORT'], env['DELVETALK_OPENER']),
-                         ('delvetalk', '/var/lib/delvetalk/v16', '/var/lib/delvetalk/root', '/etc/delvetalk/repo', '8765', '8766',
+                         ('delvetalk', '/var/lib/delvetalk/v17', '/var/lib/delvetalk/root', '/etc/delvetalk/repo', '8765', '8766',
                           'did:plc:6amo7col5h4ciq2gpm5eur7b'))
 
     def test_against_compose_defaults_only_the_data_directory_and_the_station_differ(self):
-        """compose.yml's own defaults are the live town's; its `.env` moved two of them since (v11 to v16 by the
+        """compose.yml's own defaults are the live town's; its `.env` moved two of them since (v11 to v17 by the
         carries, the station by the owner's word), and names the rest as compose would take them."""
         defaults = {}
         for name in ('compose.yml', 'compose.hand.yml'):
