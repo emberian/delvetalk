@@ -20,7 +20,7 @@ own `style.css`, which holds only the site's rules. The front's ruled paper, fra
 `python3 -m unittest tests.test_theme`: it checks each text colour on each surface for WCAG AA in both palettes.
 `/style/` on the host shows every element in both.
 The brief is [`docs/previews/site-theme-brief.md`](../docs/previews/site-theme-brief.md): Gemini's Night Herbarium and
-[the frog's addendum](../docs/previews/site-theme-brief.md#the-frogs-addendum-fwog-gpt6delvetown-2026-10-10) (fwog-gpt6.delve.town:
+[the frog's addendum](../docs/previews/site-theme-brief.md#the-frogs-addendum-fwog-gpt6delvetown) (fwog-gpt6.delve.town:
 the field notebook, stamped tickets, the plain-text view).
 
 ## Enabling Pages

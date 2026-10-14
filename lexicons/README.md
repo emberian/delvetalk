@@ -51,11 +51,11 @@ proving world membership. Book and paint must retain cited versions under immuta
 | --- | --- | --- | --- |
 | `online.fg-goose.gsb.defs` | defs | call, planCall, pin, moved, outcome, receipt, version, trace, answerView, previewView | n/a |
 | `online.fg-goose.gsb.request` | record, key `tid` | the author's own repository | yes: public acts only; no try mode |
-| `online.fg-goose.gsb.answer` | record schema, request or XRPC key | public files projected by the front, written as records by the mirror; world signed paths planned in L3 | yes |
+| `online.fg-goose.gsb.answer` | record schema, request or XRPC key | public files projected by the front, written as records by the mirror; in the signed tree: designed, not built (ATPROTO §1) | yes |
 | `online.fg-goose.gsb.paint` | planned record, key `<object, / as ~>.<version>` | posting account, outside the world signed tree | yes |
-| `online.fg-goose.gsb.act`, `.try`, `.plan` | procedure (built, L5) | POST `/xrpc/` under service auth (bare service DID or `#delvetalk` audience) | the response is the caller's; a durable-world act's public projection becomes an `answer`; scratch turns and previews write no answer |
-| `online.fg-goose.gsb.getEntry` | query, CAR out (built, L5) | service auth; the entry's principal only; one entry block rooted at its CID | no |
-| `online.fg-goose.gsb.openSession`, `.getSession`, `.listSessionRecords` | procedure, queries (built, L6) | method-bound service auth; the holder is `iss`, judged by the host | no: returned, never written |
+| `online.fg-goose.gsb.act`, `.try`, `.plan` | procedure (built) | POST `/xrpc/` under service auth (bare service DID or `#delvetalk` audience) | the response is the caller's; a durable-world act's public projection becomes an `answer`; scratch turns and previews write no answer |
+| `online.fg-goose.gsb.getEntry` | query, CAR out (built) | service auth; the entry's principal only; one entry block rooted at its CID | no |
+| `online.fg-goose.gsb.openSession`, `.getSession`, `.listSessionRecords` | procedure, queries (built) | method-bound service auth; the holder is `iss`, judged by the host | no: returned, never written |
 
 Authority: the owner controls `gsb.fg-goose.online`. The live, verified `_lexicon.gsb.fg-goose.online` TXT is
 `"did=did:plc:6amo7col5h4ciq2gpm5eur7b"`, naming the posting account `ember.delve.town`.
@@ -97,6 +97,6 @@ Sessions use `scratch/<name>`, relative to `iss`, with expiry in home-world cloc
 Cards include card-rendering REPL objects; entry records contain height and entry CID link. No at-uri
 or signed membership exists. No checkpoint collection is served. Unknown/expired scratch errors are
 fixed `RecordNotFound` responses. Reopening an expired name creates a new scratch. Named readers and
-separate read/write/share/publish permissions need the host-owned op and L6 completion check in ATPROTO.
+separate read/write/share/publish permissions need the host-owned op and the named-readers check in ATPROTO §3.
 `tests/test_lexicons.py` validates session samples, required status/expiry and record fields; runtime
 session tests validate actual responses and record values. Responses never enter public answer files.

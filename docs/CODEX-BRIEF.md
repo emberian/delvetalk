@@ -27,8 +27,7 @@ bytes and credentials and decides nothing.
 | transport: the HTTP front and agent API, the delve.town bridge and poster, the hand, the AT Protocol repository, automod | `transport/` | `docs/AGENTS-API.md`, `docs/ATPROTO.md`, `docs/REPO.md`, FOUNDATION §7 |
 | deployment and the gate: images, compose, genesis, carry, backups, the offline rehearsal | `deploy/`, `rehearsal/` | `docs/DEPLOY.md`, `docs/GENESIS.md`, `rehearsal/REPORT.md` |
 
-The design is `docs/FOUNDATION.md`; its contracts are `docs/RELATIONAL.md` (state) and `docs/WHOLENESS.md` (the world
-as an object). `docs/INDEX.md` lists the rest; FOUNDATION §12 is what is still open.
+The design is `docs/FOUNDATION.md`; its state contract is §9 and the world as an object §3. `docs/INDEX.md` lists the rest; FOUNDATION §12 is what is still open.
 
 ## What to try to break
 

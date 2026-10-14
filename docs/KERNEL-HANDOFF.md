@@ -882,7 +882,7 @@ state before any collection (`Store.readsOf`, one heap pass):
   probes read nothing: where the sought key falls decides it.
 
 The host journals them on the root as `rows [{field, key}]`, `spans [{field, through?}]` and `gaps [{field,
-after?, before?}]` (`Ops.Cells`, `cellsOf`) and judges (`cellsCurrent`, WHOLENESS §3a): stale when a write since
+after?, before?}]` (`Ops.Cells`, `cellsOf`) and judges (`cellsCurrent`, FOUNDATION §9 "Reads and roots"): stale when a write since
 touched a read key, any key at or before a span's last, or a key strictly inside a gap; a write below or above a
 looked-up key leaves the lookup current (`test_relation.Lookups`). A turn's reads are the union over its segments
 (`Cells.join`: a span covers the rows and gaps below its last key). `Reads.toJson` is the wire form.
