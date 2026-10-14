@@ -1270,14 +1270,17 @@ def requestModules (j : Json) : Except String (List (String × String)) := do
   | .ok m => parseModules m
   | .error _ => return [("Package", ← j.getObjValAs? String "source")]
 
-/-- `world-check {principal, modules | source, entry, limits?}`: compile the modules over the
+/-- `world-check {principal, modules | source, entry?, limits?}`: compile the modules over the
     world's sealed library (the modules they import, as `overLibrary` resolves them; a world
     without a library compiles them alone), journalling nothing. A read: any principal may ask,
     "" anonymously, since the library is the world's public code. A package that declares laws
-    compiles, as it would at `world-create`. The answer is `check-package`'s plus `library`. -/
+    compiles, as it would at `world-create`. `entry` names a definition of the last module,
+    defaulting to `initial`. The answer is `check-package`'s plus `library`. -/
 def worldCheck (w : World) (j : Json) : Except String Json := do
   discard <| readerOf j
-  let entry ← j.getObjValAs? String "entry"
+  let entry ← match j.getObjVal? "entry" with
+    | .ok value => value.getStr?
+    | .error _ => pure "initial"
   let own ← requestModules j
   let modules ← match w.library with
     | some lib => overLibrary lib own

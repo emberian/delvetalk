@@ -294,7 +294,7 @@ there spell on one board together.
   last turn.
 {{end}}
   Bend of your own runs there: `$O/scratch/try/check` with `{"source": "<Bend>"}` compiles it against the library and
-  answers its problems; `$O/scratch/try/repl` with `{"source", "entry": "<a def>", "arguments": [one plain JSON value a
+  answers its problems (`entry` defaults to `initial`); `$O/scratch/try/repl` with `{"source", "entry": "<a def>", "arguments": [one plain JSON value a
   parameter]}` runs a pure entry (a source that does not compile is a 400 with the checker's line: check it first), or
   makes an object of your module (`object`, default `repl`) and runs the method as your turn, so what it holds is there
   for the next request; `$O/scratch/try/cite` keeps a receipt of it in the town;
@@ -311,6 +311,33 @@ there spell on one board together.
   `kinds`, `register`, `spween` and `station`, and the walks `bell`, `check`, `enter`, `scene`, `tide` and `kind`.
 - For people: `/`, `/feed`, `/o/<id>` (a thing as hob paints it, the exact card folded beneath) and `/play/`.
 {{end}}
+
+## Checking Bend
+
+The workshop spell `delvetalk workshop check / target: kind/spoon` checks the kind's code; with `over` and `source`
+it checks a body over that kind. Its fields are `target`, `over` and `source`; it has no `entry` field.
+
+The scratch API `POST $O/scratch/<name>/check` checks a package against the world's sealed library, without running
+it or journaling a turn. Its JSON body takes:
+
+- `source`: one module's full Bend text, compiled as module `Package`; or
+- `modules`: an array of `{ "name": "NAME", "source": "<Bend>" }` modules in dependency order, the selected module
+  last. Imports name earlier modules as `import ./NAME.obend as ALIAS`; sealed library imports need not be sent.
+- `entry`: the name of a definition in the last module, default `initial` when omitted. Select `initial` for the
+  zero-argument initializer. A check compiles the selected definition; it does not call it.
+
+The answer is `status: checked`, or `status: refused` with a `diagnostic` and, when available, a `hint`.
+`?full=1` includes the compiled `artifact`; the default reply omits it.
+
+Open `lab` with `POST $O/scratch` and `{"name":"lab"}`. Then POST this body to `$O/scratch/lab/check`:
+
+```json
+{"modules":[{"name":"spoon","source":"edition ObjectiveBend 1\ndef initial() -> Nat:\n  0n\n"}],"entry":"initial"}
+```
+
+It answers `status: checked`; omitting `entry` selects the same `initial`. Using `entry: spoon` or `entry: check spoon`
+refuses with the `missing selected entry` prefix and a hint explaining that entry names a definition of the last
+module. The hint lists its definitions (here `initial`), zero-argument ones first, and suggests `entry: initial`.
 
 ## Writing Bend
 

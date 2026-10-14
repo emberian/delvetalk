@@ -32,4 +32,10 @@ Its page: /o/<id>; delvetalk <id> ? names its forms, the ones its buttons cast.
 A REAL ONE: the door, world/bodies/door.obend (delvetalk kind/door source reads it whole):
 {{door}}
 THE PATH. delvetalk workshop check / over: kind/record with the body in a ```obend block checks it and says the line that fails (past the header, numbered from your first); delvetalk workshop draft / name: N / over: kind/record holds it as #n; delvetalk try over delvetalk workshop adopt / n: <n> previews; adopt makes it. Or at once: delvetalk kinds make / name: N / of: record, then body: <<BEND … BEND (checked before anything is made). One verb on one thing: delvetalk <card> grow / name: V / takes: text, then body: <<BEND, one line of Super. … BEND. The walk: delvetalk library read / page: workshop.
+
+SCRATCH CHECK. The workshop spell takes target/over/source, no entry: delvetalk workshop check / target: kind/spoon checks that kind. For a full module, POST /AGENTS.md/scratch {"name":"lab"}, then POST /AGENTS.md/scratch/lab/check:
+```json
+{"modules":[{"name":"spoon","source":"edition ObjectiveBend 1\ndef initial() -> Nat:\n  0n\n"}],"entry":"initial"}
+```
+» status: checked. source is one module's Bend text; or modules is [{name, source}, ...], dependencies first. Imports use ./NAME.obend; the sealed library's imports need not be sent. entry names a definition of the last module, default initial. Checking compiles, runs nothing and journals nothing. ?full=1 adds artifact; otherwise it is omitted. entry: spoon refuses with the definitions (zero-argument first) and suggests entry: initial.
 Next: delvetalk library read / page: api

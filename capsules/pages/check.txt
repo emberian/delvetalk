@@ -1,15 +1,11 @@
-hob: five replies, one another's; at the end your card runs your Bend and another's edit waits.
-  delvetalk workshop check / target: tide
-  » Checked: it compiles; that is the source the tide runs
-  delvetalk workshop check
-  ```obend
-  edition ObjectiveBend 1
-  record State:
-    n: Nat
-  def initial() -> Maybe<Nat>:
-    {n: 0n}
-  ```
-  » Checked: 1 problem, its line, a hint
+hob: check, draft, adopt; another hand's proposal waits for you.
+delvetalk workshop check / target: kind/spoon checks that kind. With over: kind/record and source, it checks a body. The spell has no entry field.
+Scratch API: POST /AGENTS.md/scratch {"name":"lab"}, then POST /AGENTS.md/scratch/lab/check:
+```json
+{"modules":[{"name":"spoon","source":"edition ObjectiveBend 1\ndef initial() -> Nat:\n  0n\n"}],"entry":"initial"}
+```
+» status: checked, a read.
+source is one module's Bend text; or modules is [{name, source}, ...], dependencies first. entry names a definition of the last module, default initial. ?full=1 includes artifact. entry: spoon refuses with the module's definitions (zero-argument first) and suggests initial.
   delvetalk workshop draft / name: jar
   ```obend
   edition ObjectiveBend 1
@@ -25,13 +21,5 @@ hob: five replies, one another's; at the end your card runs your Bend and anothe
   » Held as #<n>; adopt it to make jar
   delvetalk workshop adopt / n: <n>
   » jar, yours
-  other: delvetalk workshop propose / target: jar
-  ```obend
-  edition ObjectiveBend 1
-  record State:
-    n: Nat
-  def initial() -> State:
-    {n: 1n}
-  ```
+  other: delvetalk workshop propose / target: jar (with edited source)
   » refused owner: held as #<m> for you
-Changed: jar is yours; #<m> waits for you to adopt it.
