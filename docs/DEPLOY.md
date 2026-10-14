@@ -179,8 +179,8 @@ connection per thread, so production runs path (b).
 ## Prerequisites on the workhorse
 
 - Docker with compose v2, as for `/opt/dregg-edge`; `rsync` and `python3` for backups.
-- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v15` since 2026-10-13 (fed71c47 with lane/deploy15 32c80591,
-  replay edition 15), carried from `v14`, itself of `v13`, `v12` and `v11` ("A new binary"); `v11` is the third carry's,
+- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v16` since 2026-10-14 (861f965a with lane/deploy16 4641433e,
+  replay edition 15), carried from `v15` (fed71c47 with lane/deploy15 32c80591, 2026-10-13), itself of `v14`, itself of `v13`, `v12` and `v11` ("A new binary"); `v11` is the third carry's,
   2026-10-12 (550c0478, replay edition 12), of `v10`, the second carry's (lane/refresh-fix b59b0186, edition 12, height 722 at the carry), itself of
   `v9`, the first carry's (16471891, edition 10, height 446), itself of `v8`, the owner's fresh minimal town of the same
   day (5db9aa79, edition 9, height 435); the worlds before stay unserved: edition 1 in `v2`, then b14df72e's `v3`,
@@ -241,7 +241,9 @@ connection per thread, so production runs path (b).
   every other source (the edge's and the default bridge's containers were the open path); `DELVETALK-LOCAL`, jumped to
   from `OUTPUT`, resets a non-root process on the box (the `mini` user's sessions) connecting to :8765 or to the hand's
   :8766. Matched on conntrack's original destination, so a recreated container keeps the rule. Checked 2026-10-10: the
-  anchor gets 200; a container on `docker0`, `nobody` on the box, hbox and the Mac get nothing; root still reaches both.
+  anchor gets 200; a container on `docker0`, `nobody` on the box, hbox and the Mac get nothing; root still reaches both. Since
+  2026-10-14 the script loops over every instance's front and hand (`FRONTS="8765 8775"`, `HANDS="8766 8776"`;
+  "Bringing up obend" step 3), 11 rules.
 
 ## Build and ship
 
@@ -286,7 +288,11 @@ d943a90e (the poller's switch, transport only), carried into v12 the same day, `
 transport images `3cd2b368…cdc5` (3c5fc48e, never served) and `f756247b…43eb` (d943a90e, both boxes). Foundation fed71c47
 and lane/deploy15 32c80591 (the carry's SQLite read, transport only), carried into v15 on 2026-10-13,
 `3443cf907704491b5c18ec8e4913b75b257bf6322966ba4c07a7ee82a4679049`; transport images
-`ae7b99f6…bdb1bc` (fed71c47, never served, kept as `delvetalk:fed71c475c8b`) and `423e784d…ecdb7` (32c80591, both boxes). The Lean compile runs inside dockerd's
+`ae7b99f6…bdb1bc` (fed71c47, never served, kept as `delvetalk:fed71c475c8b`) and `423e784d…ecdb7` (32c80591, both boxes). Foundation
+861f965a and lane/deploy16 (transport only), carried into v16 and serving obend on 2026-10-14,
+`be0febc4d7a322f3f38e6a7576b91b3f9e86396a52e56e18049b54e0ad4df6be`; transport images `7f0361c6…c835` (861f965a, served
+11 minutes, kept as `delvetalk:861f965acaed`), `92ee7d6c…47f1` (6ea57c88, 8 minutes) and `5a0a02ef…75eb` (4641433e, both
+boxes and both instances). The Lean compile runs inside dockerd's
 build, outside a `swarm-build` cgroup around the client; the Dockerfile's own
 two-slot wrapper is what bounds it. Everything the build reads is pinned (base images by digest, Debian
 packages by snapshot, elan and the Lean tarball by SHA-256).
@@ -773,7 +779,7 @@ name N lives under `delvetalk-N`:
 | what | `delvetalk` (gsb) | `open` (obend) |
 | --- | --- | --- |
 | compose project, `/opt/<project>` | `delvetalk` | `delvetalk-open` |
-| data directory (`DELVETALK_DATA`), the genesis guard's `/towns` | `/var/lib/delvetalk/v15`, `/var/lib/delvetalk` | `/var/lib/delvetalk-open/v1`, `/var/lib/delvetalk-open` |
+| data directory (`DELVETALK_DATA`), the genesis guard's `/towns` | `/var/lib/delvetalk/v16`, `/var/lib/delvetalk` | `/var/lib/delvetalk-open/v1`, `/var/lib/delvetalk-open` |
 | root socket's directory | `/var/lib/delvetalk/root` | `/var/lib/delvetalk-open/root` |
 | repository keys, hand token, Delve credentials | `/etc/delvetalk/{repo,hand.token,delve}` | `/etc/delvetalk-open/{repo,hand.token,delve}` |
 | front, hand, firehose ports (10.10.1.10, 127.0.0.1, 10.10.1.10) | 8765, 8766, 8767 | 8775, 8776, 8777 |
@@ -793,8 +799,12 @@ every variable the compose files read is named in every rendered `.env`, so none
 which are the live town's (`tests/test_instances.py`). The proof that the live town is unchanged: `render delvetalk`
 gives byte for byte `deploy/delvetalk-watch.{service,timer}`, the backup units under "Durability and backups",
 the installed gsb Caddy block above and dregg-infra's `hbox/delvetalk-backups/delvetalk-pull-backups.{service,timer}`;
-its `.env` differs from compose's own defaults in `DELVETALK_DATA` (v15, which the carries moved and `.env` names)
-and `DELVETALK_STATION` (on, the owner's word) only, as the workhorse's `.env` does today.
+its `.env` differs from compose's own defaults in `DELVETALK_DATA` (v16, which the carries moved and `.env` names)
+and `DELVETALK_STATION` (on, the owner's word) only, as the workhorse's `.env` does today. Checked against the boxes
+2026-10-14: the watch units and hbox's pull units are byte for byte; the installed backup units carry a `Description=` and
+a longer first comment, and the installed gsb block two comment lines and a blank line, which `render` leaves out (every
+other line equal). Since the v16 carry the workhorse's `/opt/delvetalk/.env` is `render delvetalk`'s, with `v16` and the
+deploy's images, under a header of the carries.
 
 What assumed one instance a box, and what holds each apart now:
 
@@ -839,8 +849,8 @@ What assumed one instance a box, and what holds each apart now:
 
 ## Bringing up obend
 
-The open instance `open` at `https://obend.fg-goose.online`, prepared 2026-10-13 and not yet run: the owner does steps
-1 to 3 (DNS, the anchor's Caddy, the workhorse's firewall), then a deploy lane does 4 and 5. The workhorse has room for
+The open instance `open` at `https://obend.fg-goose.online`, prepared 2026-10-13 and brought up 2026-10-14 (below,
+after step 5): the owner did step 1 (DNS), the deploy lane 2 to 5 with the owner's approval. The workhorse has room for
 it (4 cores, 7 GB, 41 GB free; the live town uses about 450 MB and no CPU to speak of): the second stack's limits in
 compose total about 4.5 GB, as the first's.
 
@@ -946,6 +956,27 @@ by the guide's own three commands: a challenge, the guide's one-line nonce finde
 under it by the town (`bridge --once`). In Chromium (Playwright) at 1280 and 390 px: `/enter` asks a name, the page's
 work took a quarter of a second, "Welcome, robin" showed the key once and the home page was signed in; asking again
 for `robin` said the name is taken and kept the form.
+
+Brought up 2026-10-14 (00:41 to 00:54 UTC) on foundation 861f965a with lane/deploy16 (binary `be0febc4d7a3…6be`). Steps 2
+and 3 as given (dregg-infra 2da7b38 and ae81833; the anchor's previous Caddyfile is `Caddyfile.before-obend-20261014`, the
+workhorse's previous firewall `delvetalk-firewall.before-obend-20261014`). Two things the rehearsal, which ran from a
+checkout behind no edge, could not see: (1) `genesis --profile open` refused, "cannot read its inputs: ...
+/app/docs/AGENTS-ARRIVE.md": the transport image (its COPY and its dockerignore) lacked the open door's page, which an
+open town's guide also reads (6ea57c88; `tests/test_instances.py` Image). Genesis had written nothing (the journal held
+serve's own three entries), so it ran again on the fixed image, exit 0, 71 lines, height 165. (2) `/enter`'s "Give me a
+key" in Chromium was 403 "browser writes require the exact town origin": the anchor's `baseline_headers` sends
+`Referrer-Policy: no-referrer`, under which a browser's own form says `Origin: null`. The same refusal had met every
+browser form on gsb since the v15 carry (4d7653a7's gate). 4641433e takes `Origin: null` as the town's own only with
+`Sec-Fetch-Site: same-origin` (`tests/test_browser_security.py`). Then: all five services healthy, `smoke.sh --open` all
+passed; an agent's `POST /AGENTS.md/arrive` with an 18-bit proof found in 0.08 s; `/me` with `turns {remaining: 60}`;
+`delvetalk guide` from `/feed` answered in 4 s; the station and the parlour entered; the porch's doors to mimo's,
+light-traces' and alchemicav's bells and the station; `/o/register` empty with its REGISTER door on the commonplace;
+the commonplace's first line naming Postmark; in Chromium at 1280 and 390 px, "Welcome, <name>", the key shown once,
+`dt_credential` HttpOnly, Secure, SameSite Strict, the home page signed in, no horizontal scroll. From the anchor
+`:8775/AGENTS.md` is 200; from hbox it times out, and `nobody` on the workhorse is reset on 8775 and 8776. Backup ok
+(`delvetalk-20261014T004609Z`, height 170), hbox's pull (`~/.ssh/delvetalk-open-backups`, its own `rrsync -ro
+/var/backups/delvetalk-open` line) replayed it; both timers and the watch on (its run sent nothing). Every throwaway
+guest (`deploycheck-agent16`, `-web16`, `-phone16`) revoked.
 
 ## Rotating the Anthropic key
 
@@ -1383,6 +1414,35 @@ a reply card's count line says "lines: 2, the first by <the asker>" where the ca
 station/bee); of the paints in the first minutes several came back `exact` after their retry. The revoked guest's
 snapshot was retained by that build; revocation and startup reconciliation now remove inactive guests' snapshots,
 including with hosting off. Foundation's a8fe1938 (lane/register2) came after this build and follows in the next restart or carry.
+
+Carried 2026-10-14 (00:29 UTC), v15 to v16 (`3443cf907704` to `be0febc4d7a3`, edition 15 to 15: register v2 and the town's
+register placed, the parlour, the radio's chord, posted guards with the behaviour revision, the hand's whole console, the
+cx-tidy round, the open-town host limits (inert here), the instance template). Built on hbox from `git archive` of
+861f965a: binary `be0febc4d7a3…6be` on both boxes, transport image `7f0361c6…c835`; suite 1952 tests, 0 failed. The
+carry-check ran on the workhorse with no tarball: `backup.sh` of the live v15 into a scratch backup directory, its mirror
+(SQLite by the backup API, no side files, the head snapshot by the old image) copied and mounted over `/towns/v15`
+read-only, the new image's `transport carry` under `docker compose run --no-deps` with `DELVETALK_DATA`, `DELVETALK_ROOT`
+and `DELVETALK_REPO_KEYS` pointed at scratch and `DELVETALK_STATION=on`: exit 0, 3 m 56 s, `check {objects: 274, problems:
+[]}`, `left`, `kept` empty, refresh 79 `current` and 43 `refreshed`. Then, watch timer off, the bridge, front and hand
+stopped, `world-interpretations` empty, the interpreter stopped: v15 at 4252 with 274 objects (twice). Closing backup
+`delvetalk-20261014T002829Z` (also in hbox's `closing/`). The carry took 3 m 50 s and exited 0: `check {objects: 274,
+rendered: 274, receipts: 2121, problems: [], turn: advanced}`, all 274 `moved`, `left`, `kept` empty, the tide's tick
+`dropped` (`told carried`), `rearmed: [tide]`, receipt `jodok-naras`, the carried genesis at 4253. Refresh 79 `current`, 43
+`refreshed`: 26 library pages (the guide and its parts and tongues changed, `guide-18` and `register` shelved, `world`
+changed); `kind/register`, `register` and `register/desk` placed with their doors and the commonplace's REGISTER door;
+`kind/parlour`, `kind/planchette`, `station/parlour` (stitched) and its planchette with their doors; the station's scene
+restitched. `serve-status`: the new SHA, replay 15, 281 objects (v15's 274, none missing, and those 7). Old receipts
+resolve (`hand search`): `jimaf-dakol` 2132 of v15, `zodiz-jufid` 1336 of v14, `vopap-zurak` 1072 of v13, `jikub-pokas` 940
+of v12, `topof-ribaz` 723 of v11, `lipuh-hutom` 111 of v8. Backup and `verify.sh --full` ok at 4320; hbox's `pull.env`
+names `delvetalk-host:be0febc4d7a3` and its pull replayed it; the watch's run sent nothing. Down 00:27 to 00:34. Live, as
+a guest (`deploycheck16`, revoked after): `/o/register` empty, "THE RING (0 of 12)", its door from the commonplace;
+`station/parlour enter` ("two candles. one window, cracked."), a nudge toward Y admitted (`tisif-hahap`) and the hands
+lifted; after `porch chime` (`fogaf-higof`) the radio's "Tune to the hum under the static" said "three bells rung
+together on a porch: A, C and F#"; `try` of a chime gave the guard `if: porch v21/b0, ..., station v42/b11, ...`, which
+posted with the chime was admitted (`soroh-homif`) and posted again refused `moved: porch is at v22, not v21`. The two
+transport fixes of "Bringing up obend" then restarted it in place (same binary and library) at 00:45 and 00:53; every
+browser form behind the edge had been refused since v15 and is answered now. Still wrong after it: the station and porch
+list `deploycheck15` as here, a guest revoked at the v15 check.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
