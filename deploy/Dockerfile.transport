@@ -11,7 +11,7 @@ WORKDIR /app
 COPY deploy/requirements-transport.txt ./deploy/
 RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r deploy/requirements-transport.txt
 COPY transport ./transport
-COPY docs/AGENTS-API.md docs/AGENTS-EXAMPLES.md docs/PLAYTEST-2.md ./docs/
+COPY docs/AGENTS-API.md docs/AGENTS-ARRIVE.md docs/AGENTS-EXAMPLES.md docs/PLAYTEST-2.md ./docs/
 COPY world ./world
 COPY capsules/pages ./capsules/pages
 # The operator's scripts by name, never deploy/out (build.sh's extracted 125 MB binary, which the legacy builder,
