@@ -201,7 +201,7 @@ def compact(reply):
             'receipt': {'object': root.get('object'), 'version': root.get('version'), 'height': receipt.get('height')}}
 
 
-def turn_view(reply):
+def turn_view(reply, base=PREFIX):
     """A turn reply's default rendering: the turn line with its stamp, what the act fired, opened and where it stands (the
     host's `revealed` lines, when it has any), a refusal's `hint`, the offered texts and where the receipt sits. The whole receipt is
     `?full=1` and `GET /receipt/<slug>`."""
@@ -209,10 +209,14 @@ def turn_view(reply):
     line = turn_line(reply)
     outcome = rc.get('outcome') or {}
     cls = reply.get('class') or outcome.get('class')
+    intent = (rc.get('identity') or {}).get('intent')
+    later = ("hob is reading this; the outcome will reach your inbox (your avatar's notes), or GET "
+             + base + '/receipt?intent=' + (urllib.parse.quote(intent, safe='') if intent is not None else '<intent>'))
     return {'status': reply.get('status'), **({'class': cls} if cls and reply.get('status') == 'refused' else {}),
             'line': f"{pages.stamp(reply.get('status'), word=False)} {line}",
             **({'revealed': reply['revealed']} if reply.get('revealed') else {}),
             **({'waiting': reply['waiting']} if reply.get('waiting') else {}),  # hob reading the words: by when, behind how many
+            **({'later': later} if reply.get('status') == 'suspended' else {}),
             **({'hint': reply.get('hint') or outcome['hint']} if reply.get('hint') or outcome.get('hint') else {}),  # a refusal's fix, as the host wrote it or says it
             **{k: reply[k] for k in ('replayed', 'spent') if reply.get(k)},  # the intent's answer given again; a refusal binding its intent
             'offers': [o['text'] for o in reply.get('offers') or []],
@@ -1154,7 +1158,7 @@ class Handler(BaseHTTPRequestHandler):
             seen = host.send({'op': 'world-inspect', 'principal': principal, 'object': obj})
             acts = actions(base, obj, seen, only=tail) if seen.get('status') == 'inspected' else None
             links.setdefault('hint', links['source'])
-        view = lambda t: (compact(t) if q.get('compact') == '1' else turn_view(t)) if 'receipt' in t and t.get('status') in ('admitted', 'refused', 'suspended') else t
+        view = lambda t: (compact(t) if q.get('compact') == '1' else turn_view(t, base=base)) if 'receipt' in t and t.get('status') in ('admitted', 'refused', 'suspended') else t
         if 'full' not in q:
             reply = {'status': 'spells', 'turns': [view(t) for t in turns]} if reply.get('status') == 'spells' else view(reply)
         self.answer(reply, links=links, acts=acts)

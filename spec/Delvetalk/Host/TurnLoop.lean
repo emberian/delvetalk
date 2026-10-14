@@ -5341,6 +5341,7 @@ def interpretationsReply (w : World) : World × Json := Id.run do
       ("utterance", toJson utterance), ("user", toJson (userTurn.getD utterance)), ("offers", plainJson offers),
       ("roots", (s.getObjVal? "roots").toOption.getD (Json.arr #[])), ("card", toJson card),
       ("misfit", toJson misfit), ("wants", plainJson (listData wants)), ("reach", toJson reach), ("attempts", toJson tried),
+      ("identity", (s.getObjVal? "identity").toOption.getD Json.null),
       ("next", if next > w.clock then toJson next else Json.null)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
 

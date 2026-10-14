@@ -808,6 +808,38 @@ class Mentions(BridgeCase):
         self.assertEqual((forged['receipt']['outcome']['tag'], forged['receipt']['outcome'].get('clause')), ('refused', 'notTown'), forged)
         self.assertNotIn('forged', json.dumps(host.send({'op': 'world-card', 'principal': self.GLM, 'object': self.GLM})))
 
+    def test_a_suspended_turn_later_refused_reaches_the_senders_real_avatar_inbox(self):
+        from tests.town import Town
+        from transport import interpret
+        from transport.host import plain
+        town = Town(str(Path(self.tmp.name) / 'late-town'), cleanup=self.addCleanup)
+        host = type('TownHost', (), {'send': lambda _, req: town.send(**req)})()
+        state = State(Path(self.tmp.name) / 'late-state', config=Config(opener=town.opener))
+        host.send({'op': 'world-arrive', 'principal': 'transport', 'did': self.GLM, 'handle': 'glm.delve.town'})
+        suspended = host.send({'op': 'world-turn', 'principal': self.GLM, 'object': 'commonplace', 'method': 'receive',
+                               'identity': 'make-pianist-2', 'reach': 'direct',
+                               'argument': typed({'text': 'a violet bell on the porch please', 'post': ''})})
+        self.assertEqual(suspended['status'], 'suspended', suspended)
+        # A plan fits each act during resumption; a plain misfit model spell is only `unclear`.
+        # Put the unknown field before `of`: a trailing unknown field is read as prose.
+        done = interpret.run(state, host, lambda req: {'status': 'replied', 'model': 'm',
+                             'raw': 'delvetalk plan\ndelvetalk kinds make / name: pianist / place: porch / of: record'})
+        self.assertTrue(done['settled'], done)
+        got = host.send({'op': 'world-receipt', 'principal': self.GLM, 'identity': 'make-pianist-2'})
+        rc = got['receipt']
+        self.assertEqual(rc['outcome']['tag'], 'refused', got)
+        self.assertEqual(rc['outcome']['class'], 'badSpell', got)
+        self.assertEqual(rc['outcome']['clause'], 'unknownField', got)
+        self.assertIn('place is not a field of kinds make', rc['outcome']['reason'])
+        self.assertTrue(got['public'].get('hint'), got)
+        avatar = host.send({'op': 'world-view', 'principal': self.GLM, 'object': self.GLM})
+        [note] = [n for n in plain(avatar['state'])['inbox']['items'] if n['uri'] == 'make-pianist-2']
+        self.assertEqual(note['from'], town.opener)
+        for text in ('make-pianist-2', 'refused', rc['outcome']['clause'], rc['slug']):
+            self.assertIn(text, note['text'])
+        self.assertIn(got['public']['hint'][:30], note['text'])
+        self.assertLessEqual(len(note['text']), bridge.NOTE_TEXT)
+
 
     def test_posts_skipped_before_the_fix_are_heard_again_once_and_nothing_else_is_asked(self):
         """The operator's replay of gsb's 803 posts skipped from 09:07Z (`bridge --hear-again ISO`): refuted by a post

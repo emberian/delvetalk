@@ -585,7 +585,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are `Delvetalk.Bounds`, KERNEL-HAN
   `badSpell`, which is the answer at once without a policy. A post's misfit spells are one reading after its fitting
   spells run (`misfitOf`), under the first's identity (`#k`), offered each one's card table; a retry asks nothing. Where
   hob cannot read, each misfit is refused alone.
-- **`world-interpretations`** lists pending items with `{model, system, user, examples, attempts, next, reach, roots}`
+- **`world-interpretations`** lists pending items with `{model, system, user, examples, attempts, next, reach, roots, identity}`
   and `asked {utterance, offers, card, misfit, wants, pages}`: `card` the asking card as the speaker reads it
   (`cardText`, at most `cardShownChars`), `misfit` the host's own, `wants` with filled `asks`, the library's `pages`.
   `system` is the Policy's `prompt(state, asked)` (hob's instruction, its owner's examples, the answers); `user` is

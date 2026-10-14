@@ -1,7 +1,7 @@
 """The one model worker: what the host asks of the world's model -> one call each -> submitted verbatim.
 
 Interpretations (words read into a spell, journaled):
-  world-interpretations            -> {status: "interpretations", pending: [{id, object, policy, utterance, offers, attempts, next}]}
+  world-interpretations            -> {status: "interpretations", pending: [{id, identity, object, policy, utterance, offers, attempts, next}]}
   world-interpretation {id, reply} -> the host decides: a verdict, or {status: "retrying", attempt, next} for a failure it retries.
 Paints (a card painted from its strokes, cached by the host and never journaled; docs/OVERHAUL.md section 4):
   world-renders                    -> {status: "renders", pending: [{key, object, version, attempts, request}]}
@@ -19,8 +19,9 @@ reader's paint can arrive inside the host's `patience`.
 import hashlib
 import json
 
-from transport import model
+from transport import bridge, model
 from transport.delve import canonical
+from transport.host import TOWN
 
 
 def cache_path(st, request_id):
@@ -31,6 +32,35 @@ def request(item):
     """The model request: the host's policy text as the system; the user turn as the host composed it (residents' writing quoted, then the utterance)."""
     policy = item['policy']
     return {'model': policy.get('model'), 'system': policy.get('system', ''), 'user': item.get('user', item['utterance'])}
+
+
+def tell_settled(st, host, identity):
+    """Tell a direct sender what settled, through the avatar's existing notes; post answers belong to the bridge."""
+    principal, intent = identity.get('principal'), identity.get('intent')
+    if principal is None or intent is None or principal == st.config.opener or bridge.awaiting_path(st, intent).exists():
+        return None
+    got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': intent})
+    rc = got.get('receipt') or {}
+    outcome = rc.get('outcome') or {}
+    tag = outcome.get('tag')
+    if tag == 'refused':
+        if not got.get('public'):
+            return None
+        line = bridge.refusal_line(outcome)
+        hint = got.get('hint') or got['public'].get('hint')
+    elif tag == 'admitted' and (rc.get('offers') or outcome.get('writes')):
+        line = 'admitted' + (f" {outcome['clause']}" if outcome.get('clause') else '')
+        hint = got.get('hint') or outcome.get('hint')
+    else:
+        return None  # hob's `none`: nothing written or offered
+    clip = lambda text, room: text if len(text) <= room else text[:room - 1] + '…'
+    head = f"receipt {rc['slug']}; intent {clip(intent, 80)}; "
+    room = bridge.NOTE_TEXT - len(head)
+    tail = f'; hint: {hint}' if hint else ''
+    hint_room = min(len(tail), room // 2)
+    text = head + clip(line, room - hint_room) + (clip(tail, hint_room) if tail else '')
+    note_id = 'settled:' + hashlib.sha256(canonical([principal, intent]).encode()).hexdigest()
+    return bridge.tell_notes(st, host, principal, [{'from': st.config.opener, 'handle': TOWN, 'text': text, 'post': intent}], note_id)
 
 
 def run(st, host, ask=model.ask):
@@ -57,6 +87,10 @@ def run(st, host, ask=model.ask):
         else:
             st.write(path, dict(saved, answer=answer))
             settled.append(item['id'])
+            if answer.get('status') == 'interpreted':
+                told = tell_settled(st, host, item['identity'])
+                if told is not None and told.get('status') == 'error':
+                    failed.append({'id': item['id'], 'message': told.get('message')})
     return {'settled': settled, 'failed': failed, **({'retrying': retrying} if retrying else {})}
 
 

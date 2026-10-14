@@ -554,6 +554,17 @@ class Turns(FrontCase):
 
 
 class TurnView(unittest.TestCase):
+    def test_suspended_guidance_uses_the_receipts_intent_and_the_route_base(self):
+        reply = {'status': 'suspended', 'waiting': {'behind': 2},
+                 'receipt': {'height': 9, 'identity': {'intent': 'rain /?&☃'}, 'outcome': {'tag': 'suspended'}}}
+        for base in ('/AGENTS.md', '/AGENTS.md/scratch/bell'):
+            view = turn_view(reply, base=base)
+            self.assertEqual(view['later'], 'hob is reading this; the outcome will reach your inbox (your avatar\'s notes), '
+                             'or GET ' + base + '/receipt?intent=rain%20%2F%3F%26%E2%98%83')
+            self.assertEqual(view['waiting'], reply['waiting'])
+        self.assertEqual(turn_view({**reply, 'receipt': {'height': 9}})['later'],
+                         "hob is reading this; the outcome will reach your inbox (your avatar's notes), or GET /AGENTS.md/receipt?intent=<intent>")
+
     def test_a_carried_receipt_route_answers_the_host_pointer_without_requiring_an_entry(self):
         from unittest.mock import Mock
         from transport.http import Handler
@@ -1378,6 +1389,8 @@ class Play(InTown):
         self.assertEqual((s, t['status']), (200, 'suspended'), t)
         self.assertLess(len(json.dumps(t)), 1024, t)
         self.assertTrue(t['line'].startswith('… suspended, entry '), t['line'])
+        self.assertEqual(t['later'], "hob is reading this; the outcome will reach your inbox (your avatar's notes), "
+                                    "or GET /AGENTS.md/receipt?intent=wait-1")
         s, whole = self.call('GET', '/AGENTS.md/receipt/' + t['receipt']['slug'], token=tok)
         self.assertNotIn('"blocks": [', json.dumps(whole))  # the receipt's blocks are counted, not shown
         self.answer('delvetalk garden plant\nseed: a bell\ncolour: violet')  # settle the pending interpretation for the next test
