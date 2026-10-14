@@ -75,8 +75,8 @@ class Instance:
         return self.opener or town_did(self.origin)
 
     def env(self, image='delvetalk:<sha12>', host_image='delvetalk-host:<sha12>'):
-        """The instance's `.env`: every variable compose.yml, compose.hand.yml and the units read, so none falls to a
-        compose default (which are the live town's). No comment after a value (systemd's EnvironmentFile keeps it)."""
+        """The instance's `.env`: every variable the compose files and units require.
+        No comment after a value (systemd's EnvironmentFile keeps it)."""
         p = self.paths
         files = 'compose.yml:compose.hand.yml' + (':compose.firehose.yml' if self.firehose else '')
         rows = [('COMPOSE_PROJECT_NAME', self.project), ('COMPOSE_FILE', files), ('DELVETALK_IMAGE', image),
