@@ -50,7 +50,7 @@ class Classifier:
         self.calls.append(texts)
         if self.down:
             return {'status': 'failed', 'reason': 'transport', 'detail': 'http 503'}
-        return {'status': 'replied', 'model': 'mock', 'usage': {'prompt_tokens': 10, 'completion_tokens': 5},
+        return {'status': 'replied', 'model': 'mock', 'usage': {'input_tokens': 10, 'output_tokens': 5},
                 'raw': '```json\n' + json.dumps({'verdicts': [{'i': t['i'], **verdict(t['text'])} for t in texts]}) + '\n```'}
 
 
@@ -238,7 +238,7 @@ class Town_(unittest.TestCase):
 
 
 class Wire(unittest.TestCase):
-    """ask_glm over a fake transport: Z.ai's answers as measured, the key read from its file and sent as a bearer."""
+    """ask_glm over a fake transport: the Anthropic-compatible endpoint's answers, the key read from its file and sent as x-api-key."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -249,26 +249,34 @@ class Wire(unittest.TestCase):
 
     def answers(self, *replies):
         replies = list(replies)
-        def transport(method, url, headers, body, limit, timeout):
+        def transport(method, url, headers, body):
             self.sent.append((url, headers, json.loads(body)))
             status, payload = replies.pop(0)
             return status, json.dumps(payload).encode(), {}
         return transport
 
-    def test_an_overloaded_model_falls_back_once_and_the_answer_names_the_model_that_gave_it(self):
-        ok = {'model': 'glm-4.5-flash', 'choices': [{'finish_reason': 'stop', 'message': {'content': '{"verdicts": []}'}}],
-              'usage': {'prompt_tokens': 3, 'completion_tokens': 2}}
-        got = automod.ask_glm(self.st, 'policy', 'Texts:', self.answers((429, {'error': {'code': '1305'}}), (200, ok)))
-        self.assertEqual((got['status'], got['model'], got['raw']), ('replied', 'glm-4.5-flash', '{"verdicts": []}'))
-        self.assertEqual([b['model'] for _, _, b in self.sent], ['glm-4.7-flash', 'glm-4.5-flash'])
-        self.assertEqual(self.sent[0][1]['Authorization'], 'Bearer ' + 'k' * 49)
-        self.assertEqual(self.sent[0][2]['thinking'], {'type': 'disabled'})
-        both = automod.ask_glm(self.st, 'p', 'u', self.answers((429, {'error': {'code': '1305'}}), (429, {'error': {'code': '1305'}})))
-        self.assertEqual((both['status'], both['reason']), ('failed', 'rate'))
+    def test_a_batch_is_one_messages_call_with_thinking_off_and_the_text_blocks_are_the_answer(self):
+        ok = {'model': 'glm-5.3-flash', 'content': [{'type': 'thinking', 'thinking': 'hm'}, {'type': 'text', 'text': '{"verdicts": []}'}],
+              'stop_reason': 'end_turn', 'usage': {'input_tokens': 3, 'output_tokens': 2}}
+        got = automod.ask_glm(self.st, 'policy', 'Texts:', self.answers((200, ok)))
+        self.assertEqual((got['status'], got['model'], got['raw'], got['usage']['input_tokens']), ('replied', 'glm-5.3-flash', '{"verdicts": []}', 3))
+        url, headers, body = self.sent[0]
+        self.assertEqual(url, 'https://api.z.ai/api/anthropic/v1/messages')
+        self.assertEqual((headers['x-api-key'], headers['anthropic-version']), ('k' * 49, '2023-06-01'))
+        self.assertNotIn('Authorization', headers)
+        self.assertEqual((body['model'], body['system'], body['thinking']), ('glm-5.3-flash', 'policy', {'type': 'disabled'}))
+        self.assertEqual(body['messages'], [{'role': 'user', 'content': 'Texts:'}])
+
+    def test_a_loaded_or_refused_provider_fails_and_nothing_else_is_asked(self):
+        for status, reason in ((429, 'rate'), (401, 'refused'), (500, 'transport')):
+            self.sent.clear()
+            got = automod.ask_glm(self.st, 'p', 'u', self.answers((status, {'error': {'code': '1305'}})))
+            self.assertEqual((got['status'], got['reason']), ('failed', reason))
+            self.assertEqual(len(self.sent), 1)  # no second model, no second API shape
 
     def test_the_providers_own_filter_is_blocked_and_no_key_sends_nothing(self):
         self.assertEqual(automod.ask_glm(self.st, 'p', 'u', self.answers((400, {'error': {'code': '1301'}})))['status'], 'blocked')
-        sensitive = {'choices': [{'finish_reason': 'sensitive', 'message': {'content': ''}}]}
+        sensitive = {'content': [], 'stop_reason': 'sensitive'}
         self.assertEqual(automod.ask_glm(self.st, 'p', 'u', self.answers((200, sensitive)))['status'], 'blocked')
         none = State(self.tmp.name, config=Config(zai_key_file=''))
         self.assertEqual(automod.ask_glm(none, 'p', 'u', self.answers())['reason'], 'refused')

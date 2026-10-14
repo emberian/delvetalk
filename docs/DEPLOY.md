@@ -1099,7 +1099,9 @@ replay edition 16, so the deploy is a carry ("A new binary", *It carries*) of ea
 `deploy/carry-check.sh` green on each town's newest backup first.
 
 **1. The key (the owner's Mac to the workhorse, never printed, never in the repository, `.env` or an argv).** The
-Z.ai key is `~/.zai-key` on the owner's Mac (50 bytes). It goes beside the Anthropic key, readable by uid 10425 alone,
+Z.ai key is `~/.zai-key` on the owner's Mac (50 bytes): the owner's Z.ai subscription's key. The subscription is served
+through Z.ai's Anthropic-compatible endpoint (`automod_base_url`, https://api.z.ai/api/anthropic, `POST /v1/messages`, headers
+`x-api-key` and `anthropic-version: 2023-06-01`), not the pay-per-token paas endpoint, which refuses it ("insufficient balance"). It goes beside the Anthropic key, readable by uid 10425 alone,
 one file for both instances (each tallies its own spend in `<state>/automod-spend.jsonl`):
 
     ssh root@workhorse 'umask 0277 && cat > /etc/delvetalk/zai.key.new && chown 10425:10425 /etc/delvetalk/zai.key.new &&
@@ -1116,8 +1118,10 @@ it on every call, so rotating it is the Anthropic key's procedure ("Rotating the
 
 **3. Up.** After the carry, `docker compose --profile town up -d --wait --remove-orphans` starts `delvetalk-automod`
 beside the hand (compose.hand.yml): six services healthy. Nothing in a town's `delvetalk.toml` needs to change:
-`automod` is on by default; its settings (`automod_model` glm-4.7-flash, `automod_window` 5 s, `automod_batch` 24,
-`automod_daily_calls` 2000, `automod_quiet_hours` 24) are transport/config.py's. `automod = false` turns it off (the
+`automod` is on by default; its settings (`automod_model` glm-5.3-flash, `automod_window` 5 s, `automod_batch` 24,
+`automod_daily_calls` 2000, `automod_quiet_hours` 24) are transport/config.py's. The plan serves glm-5.3, glm-5.3-flash,
+glm-5 and glm-4.6; glm-5.3-flashx answers code 1311 (not in the plan) though the models list names it: call a model before
+setting it as `automod_model`. `automod = false` turns it off (the
 service then idles, healthy, and the overview says "off in the config").
 
 **4. Check.** The overview's "Automatic moderation" line reads "the classifier answers" after the first batch, and
