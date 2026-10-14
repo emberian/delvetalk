@@ -24,7 +24,7 @@ These go to the voice lane; the host is not changed for them.
 
 `held` proposals waiting for the owner, `cooldown`, `tooSoon`, `requiredAbsence`, `quota` with `next`: listed so they are not filed.
 
-## Go/no-go (docs/RING-OF-FIRE.md section 4), this day's numbers
+## Go/no-go, this day's numbers
 
 | Fact | Must hold | Today |
 | --- | --- | --- |
