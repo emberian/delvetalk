@@ -76,8 +76,11 @@ def maxViewNodes : Nat := 4096
     (a store names a made thing's lineage bodies by CID, `Snapshot.knownLineage`, and keeps only the libraries in use,
     which a binary before it would misread; hob's prose is asked again, `attempted` reason `prose`); 19: lane/cx-night
     (declared text fields of direct requests unwrap one whole block or fence before bounds and execution; a direct
-    `publishPage` fills an omitted `page` with empty text when its input admits it). -/
-def replayEdition : Nat := 19
+    `publishPage` fills an omitted `page` with empty text when its input admits it); 20: lane/morningfix (a reading is not
+    stale for its own speaker's grow, the objects' `changedBy`; the spell grammar's new refusals and readings; eight
+    placed a hand on the town's own things; the commonplace's words come back as its `write`; a refusal that binds its
+    intent says `spent`; the world's `heads` read). -/
+def replayEdition : Nat := 20
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
