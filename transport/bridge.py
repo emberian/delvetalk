@@ -22,7 +22,7 @@ from transport.atproto.cbor import block
 DELIVER_ROUNDS = 8
 TELLING_LINES = 8  # the exact lines an unpainted telling before arrival leads a post with, the newest
 TELLING_LINE = 120  # each of them at most, clipped
-TELLING_CLIP = 700  # the telling a post leads with, at most: half of what one post holds (post.CLIP)
+TELLING_CLIP = 700  # the telling a post leads with, at most: half of what one post holds (post.CLIP; a feed-only town's, half its room)
 
 
 def uri_hash(uri):
@@ -116,17 +116,23 @@ def offered_object(reply, addressed=None):
     return (made or [reply.get('object') or addressed])[0]
 
 
-def with_paint(host, obj, text, sleep=None, speaker=None, words=None):
+def room(st):
+    """What one post holds where this world's drafts go (transport/post.py `holds`)."""
+    from transport.post import holds
+    return holds(st)
+
+
+def with_paint(host, obj, text, sleep=None, speaker=None, words=None, clip=None):
     """`text` with the thing's verified paint above it (docs/OVERHAUL.md section 4; the owner: posting paint is fine, it
     is what the place says), as the public reads it, when one is verified and the two fit one post; else `text`. The
     paint is the one `painted` the front's pages show: the host's, checked, cached per version and tongue, in the tongue
-    the host chooses for `speaker` and their `words` (docs/VOICE.md "Tongues")."""
+    the host chooses for `speaker` and their `words` (docs/VOICE.md "Tongues"). `clip`: what one post holds (post.CLIP)."""
     from transport.post import CLIP
     paint = painted(host, PUBLIC, obj, sleep or time.sleep, speaker=speaker, words=words).get('text') if obj and text else None
-    return f'{paint.rstrip()}\n\n{text}' if paint and len(paint.rstrip()) + 2 + len(text) <= CLIP else text
+    return f'{paint.rstrip()}\n\n{text}' if paint and len(paint.rstrip()) + 2 + len(text) <= (clip or CLIP) else text
 
 
-def telling_lead(told):
+def telling_lead(told, within=TELLING_CLIP):
     """A place's telling as a post leads with it (docs/VOICE.md "A telling"), as `/play` shows it: the host's frame above
     the paint; unpainted before arrival, the frame above the exact lines it draws on (its making, then the newest
     TELLING_LINES, how many earlier counted, each at most TELLING_LINE, the whole within TELLING_CLIP, so the reply's own
@@ -147,23 +153,23 @@ def telling_lead(told):
     while True:
         earlier = [f'… and {len(rest) - len(shown)} earlier'] if len(rest) > len(shown) else []
         text = f"{t['frame']}\n" + '\n'.join(head + earlier + shown) + '\n\n'
-        if len(text) <= TELLING_CLIP or not shown:
+        if len(text) <= within or not shown:
             return text
         shown = shown[1:]
 
 
-def with_telling(host, principal, reply, obj, text, sleep=None, words=None):
+def with_telling(host, principal, reply, obj, text, sleep=None, words=None, clip=None):
     """`text` led by the place's telling when the turn entered the place (an admitted `enter`, `result` `entered`) and its
     draft is the reply itself, not its receipt line alone (`inPublic`), for `principal` who entered (`world-render
     {telling}`, waiting the host's patience for the paint), as `telling_lead` sets it; else `text`. -> (the text, the
     telling's characters at its head, 0 for none), which a draft notes as `told` for whoever posts or threads it. A
     receipt never carries it. A painted telling's exact history follows the complete reply as "What it draws on".
-    Told in the tongue the host chooses for `principal` and their `words`."""
+    Told in the tongue the host chooses for `principal` and their `words`; within half of `clip`, what one post holds."""
     obj = reply.get('object') or obj
     if reply.get('status') != 'admitted' or (reply.get('result') or {}).get('label') != 'entered' or not reply.get('inPublic') or not obj or not text:
         return text, 0
     told = painted(host, principal, obj, sleep or time.sleep, telling={}, words=words)
-    lead = telling_lead(told)
+    lead = telling_lead(told, clip // 2 if clip else TELLING_CLIP)
     exact = (told.get('telling') or {}).get('exact') or []
     if (told.get('text') or '').strip() and exact:
         text += ('\n' if text.endswith('\n') else '\n\n') + 'What it draws on:\n' + '\n'.join(exact) + '\n'
@@ -177,8 +183,8 @@ def told_field(told):
 
 def first_move(st, did, reply, text):
     """A resident's first admitted reply teaches the next move by its spells (docs/POSTING.md build 8): try before an
-    act is real, and find this one again by its receipt. Once a resident; only when it fits the post."""
-    from transport.post import CLIP
+    act is real, and find this one again by its receipt. Once a resident; only when it fits the post (`post.holds`)."""
+    CLIP = room(st)
     slug = (reply.get('receipt') or {}).get('slug')
     if reply.get('status') != 'admitted' or not text or not slug or did in st.words(st.taught):
         return text
@@ -538,7 +544,7 @@ def offer_drafts(st, host):
             text = ('\n'.join(o['text'] for o in offers).rstrip('\n') + '\n' if got.get('inPublic') else '') + receipt_line(rc, st.config.origin, w.get('object'), handles) if rc else ''
             if rc and got.get('inPublic'):
                 text = with_paint(host, offered_object({'receipt': rc, 'object': w.get('object')}), text,
-                                  speaker=principal, words=said.get(w.get('post', uri)))
+                                  speaker=principal, words=said.get(w.get('post', uri)), clip=room(st))
             st.new_draft(st.outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': w.get('post', uri), 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
@@ -758,7 +764,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             ran = [t for t in turns if 'receipt' in t]
             text, told = ''.join(draft_text(t, origin, t.get('object'), handles, compact=True) for t in turns), 0
             for t in ran:  # the first spell that entered a place leads the reply with its telling
-                text, told = with_telling(host, did, t, t.get('object') or obj, text, words=obs['text'])
+                text, told = with_telling(host, did, t, t.get('object') or obj, text, words=obs['text'], clip=room(st))
                 if told:
                     break
             # A reply answering several cards is no one card's: a bare verb under it would reach whichever came first,
@@ -793,9 +799,9 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         obj = reply.get('object') or obj  # the card the host ran the turn on: a spell's card as it resolved it
         text = draft_text(reply, origin, obj, handles)
         if reply.get('status') == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
-            text = with_paint(host, offered_object(reply, obj), text, speaker=did, words=obs['text'])  # the place speaking, above its exact card
+            text = with_paint(host, offered_object(reply, obj), text, speaker=did, words=obs['text'], clip=room(st))  # the place speaking, above its exact card
         text = first_move(st, did, reply, text)
-        text, told = with_telling(host, did, reply, obj, text, words=obs['text'])  # entering a place: what happened there, above it all
+        text, told = with_telling(host, did, reply, obj, text, words=obs['text'], clip=room(st))  # entering a place: what happened there, above it all
         st.new_draft(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,

@@ -34,3 +34,4 @@ arrival = "open"  # a key for the asking at /enter and POST /AGENTS.md/arrive, b
 hand_find = false  # nothing of this town is posted on delve.town, so the hand reads no posting account
 watch_topic = "watch-open"
 summon_handle = "obend.fg-goose.online"  # the handle the town's own posts carry in its feed (a delve.town address on the live town)
+card_room = 8000  # a card, and one feed post, of 8,000 characters: nothing here is a delve.town post (`hand limits` journals it)

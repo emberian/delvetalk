@@ -495,7 +495,8 @@ def context_data(principal, intent, obj):
         {"name": "clock", "value": nat(0)},
         {"name": "inputOrigin", "value": {"tag": "record", "fields": [
             text("kind", "request"), text("object", ""), text("command", "bump"), text("program", ""),
-            {"name": "immediatelyPrevious", "value": {"tag": "boolean", "value": False}}, text("post", "")]}}]}
+            {"name": "immediatelyPrevious", "value": {"tag": "boolean", "value": False}}, text("post", "")]}},
+        {"name": "room", "value": nat(1400)}]}
 
 
 class ContextTests(TurnCase):

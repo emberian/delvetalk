@@ -174,6 +174,11 @@ class State:
         """The world's bridge row (`open`); a world without one is observed on delve.town."""
         return json.loads(self.row.read_text()) if self.row.exists() else {'world': self.world, 'transport': 'delve'}
 
+    def feed_only(self):
+        """Whether the world speaks its own feed alone (`open --transport feed`): no delve.town and no Zulip, so its guide,
+        pages and limits are the feed's (docs/DEPLOY.md "A second instance")."""
+        return self.bridge()['transport'] == 'feed'
+
     def pidfile(self, name):
         return self.home / f'{name}.pid'
 

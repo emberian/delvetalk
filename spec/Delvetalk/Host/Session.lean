@@ -509,7 +509,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-wanting" => return (session, wantingOp s.world request)
       | "world-receipt" => return (session, receipt s.world request)
       | "world-history" => return (session, history s.world request)
-      | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
+      | "world-status" => return (session, .ok (Json.mkObj ([("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
           -- The world's own principal (`isTown`), which surfaces outside the host name the town as it does.
@@ -517,13 +517,15 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
           ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world),
           ("modelQuota", Json.mkObj [("quota", toJson s.world.modelQuota), ("used", toJson
             (if s.world.modelDay.1 == s.world.clock / Limits.clockDay then s.world.modelDay.2 else 0)), ("next", toJson ((s.world.clock / Limits.clockDay + 1) * Limits.clockDay))]),
-          ("paintQuota", Json.mkObj [("quota", toJson s.world.paintQuota), ("used", toJson (s.renders.paintsOn (s.world.clock / Limits.clockDay)))]),
+          ("paintQuota", Json.mkObj [("quota", toJson s.world.paintQuota), ("used", toJson (s.renders.paintsOn (s.world.clock / Limits.clockDay)))])] ++
+          -- The room a card is shown in, where the world gives more than one post's (`cardRoom`).
+          (if s.world.cardRoom == Limits.cardShownChars then [] else [("cardRoom", toJson s.world.cardRoom)]) ++ [
           ("hour", (if s.world.hourCounts.hour == s.world.clock / 60 then s.world.hourCounts else { hour := s.world.clock / 60 }).json),
           ("shadowed", Json.arr s.world.shadowed), ("ignored", toJson s.world.ignored), ("replay", toJson Limits.replayEdition), ("locked", toJson true), ("sync", toJson s.sync.name),
           ("recompiledDifferently", toJson s.world.recompiledDifferently), ("renders", s.renders.counts),
           -- What this process holds compiled (carried from world to world it opens).
           ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),
-            ("methods", toJson s.world.compiled.size)])] |>
+            ("methods", toJson s.world.compiled.size)])]) |>
           -- A fork or a carry names where it came from (its genesis's `forkedFrom` or `carriedFrom`).
           fun r => (match s.world.entries.genesis?.bind genesisOrigin with
             | some (key, origin) => r.setObjVal! key (originShown origin)

@@ -284,8 +284,10 @@ def observe_feed(st, feed=None):
 
 
 def post_drafts(st, host, feed=None, parts=None):
-    """Send local-feed drafts through post.progress; the feed adapter only reserves and sends bytes."""
-    feed, parts = feed or Feed(st), parts or post.parts
+    """Send local-feed drafts through post.progress; the feed adapter only reserves and sends bytes. An answer is one
+    post up to what a post holds here (`post.holds`: on a feed-only town its card room), numbered parts beyond."""
+    feed, clip = feed or Feed(st), post.holds(st)
+    parts = parts or (lambda text: post.parts(text, clip))
     sent = []
     for path, _ in st.unposted():
         with st.draft_lock(path):

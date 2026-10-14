@@ -1265,7 +1265,7 @@ class Hand:
         today = s.get('today') or {}
         codes = self.codes([a['state'], f"{s.get('pending', 0)} waiting" + (f", the oldest {s.get('oldestSeconds')} s" if s.get('pending') else ''),
                             f"cursor entry {s.get('cursor', 0)} of {s.get('height', 0)}", f"model {s.get('model', self.st.config.automod_model)}",
-                            f"calls today {today.get('calls', 0)} of {today.get('budget', self.st.config.automod_daily_calls)}, ${today.get('dollars', 0)}"] +
+                            f"calls today {today.get('calls', 0)} of {today.get('budget', self.st.config.automod_daily_calls)}, {today.get('inputTokens', 0)} tokens in, {today.get('outputTokens', 0)} out"] +
                            [f"{k} {v}" for k, v in a['counts'].items()])
         return shell('automod', self.st.world, H['automod'].format(world=q(self.st.world), codes=codes,
                      review=rows(('review',)) or none('nothing waits for review'), hidden=rows(('hidden',)) or none('nothing hidden'),

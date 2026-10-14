@@ -226,6 +226,7 @@ def storeJson (w : World) : Except String Json := do
       (if w.turnQuota == 0 then [] else [("turnQuota", toJson w.turnQuota)]) ++
       (if w.objectQuota == Limits.objectsPerPrincipal then [] else [("objectQuota", toJson w.objectQuota)]) ++
       (if w.paintQuota == 0 then [] else [("paintQuota", toJson w.paintQuota)]) ++
+      (if w.cardRoom == Limits.cardShownChars then [] else [("cardRoom", toJson w.cardRoom)]) ++
       (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]) ++
       (if w.name.isEmpty then [] else [("name", toJson w.name)]))),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
@@ -323,6 +324,7 @@ def install (b : Json) (base : World) (naming : Naming := .cells) : Except Strin
                 turnQuota := (settings.getObjValAs? Nat "turnQuota").toOption.getD 0,
                 objectQuota := (settings.getObjValAs? Nat "objectQuota").toOption.getD Limits.objectsPerPrincipal,
                 paintQuota := (settings.getObjValAs? Nat "paintQuota").toOption.getD 0,
+                cardRoom := (settings.getObjValAs? Nat "cardRoom").toOption.getD Limits.cardShownChars,
                 opener := (settings.getObjValAs? String "opener").toOption.getD "",
                 name := (settings.getObjValAs? String "name").toOption.getD "" }
   let mut types : Std.HashMap String (Ty × DataBounds × Json × Bool × Bool) := {}

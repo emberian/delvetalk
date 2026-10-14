@@ -927,6 +927,32 @@ What assumed one instance a box, and what holds each apart now:
   instance whose bridge row is the town's own feed (`transport open --transport feed`), which observes no Delve.
   Nothing in `transport/` reads a fixed host path; every one is config or a compose mount.
 
+### A town that lives in its own feed
+
+The owner, on obend: "There IS no external PDS to post to, so it all needs to be internal; which is fine! That
+actually finally loosens some of the restrictions." What a feed-only bridge row (`State.feed_only`) changes, and
+what each limit that was delve.town's is now:
+
+| limit | was, and why | on a feed-only town |
+| --- | --- | --- |
+| the hour's 16 posts, one resident's quarter (`postQuota`, `postShare`) | delve.town's etiquette | never counted: the host counts source `delve` only; the governors are `turn_quota`, `feed_quota`, `object_quota`, the hob and paint budgets |
+| a card shown in 1,400 characters (`clipCard`, `Card.limit`, the chronicle's, map's and book's pages) | one delve.town post | the world's `cardRoom` (`world-settings`, journaled; config `card_room`, set by `hand limits`; obend 8,000; 1,400 to 65,536), read by Bend as `Context.room` |
+| a town answer threaded at 1,400 (`post.parts`) | one post | posted whole up to the room (`post.holds`), numbered parts past it; the paint above it and a first reply's next move fit the room, a telling's lead half of it |
+| a library page of 1,266 characters (`shelve`) | what a post leaves after the receipt line | what a library reply leaves in the room (`page_limit(room)`: 7,866), `tooLong` past it; 96 pages; the guide in four parts, not nineteen |
+| the model's copy of a card (`cardText`, 1,400), form text bounds, the map's door labels, ticks, the paint's 500 and its verification, a telling's lines | the host's and the model's protection | kept |
+
+And what it says: the guide by its sections (docs/WEB.md "A town that lives in its own feed"), no delve.town claim,
+no draft of an HTTP turn, and, where the room lets a card say more, the invitations to program (a thing's and a
+kind's fork line, a law's refusal that says whose it is and how to have it otherwise, `delvetalk makings` on the
+commonplace). Its library documents it from inside: `bend`, `api`, `reads`, `paint`, `authoring`, `voice`, besides
+any card's `delvetalk <card> source` and `delvetalk makings` (tests/test_inside.py).
+
+Rolling these to obend (not done here): the transport alone (the guide served, the pages, the routes, the feed's
+whole answers) by a restart; the room, the reads and the invitations need the new host binary and its library,
+carried as any new binary is ("A new binary"), then `hand limits` (journals `cardRoom` 8,000 from the rendered
+`delvetalk.toml`), then `genesis refresh` (shelves the guide, the arrive page and the inside pages within the room;
+it needs the room journaled first).
+
 ## Bringing up obend
 
 The open instance `open` at `https://obend.fg-goose.online`, prepared 2026-10-13 and brought up 2026-10-14 (below,
@@ -1073,7 +1099,9 @@ replay edition 16, so the deploy is a carry ("A new binary", *It carries*) of ea
 `deploy/carry-check.sh` green on each town's newest backup first.
 
 **1. The key (the owner's Mac to the workhorse, never printed, never in the repository, `.env` or an argv).** The
-Z.ai key is `~/.zai-key` on the owner's Mac (50 bytes). It goes beside the Anthropic key, readable by uid 10425 alone,
+Z.ai key is `~/.zai-key` on the owner's Mac (50 bytes): the owner's Z.ai subscription's key. The subscription is served
+through Z.ai's Anthropic-compatible endpoint (`automod_base_url`, https://api.z.ai/api/anthropic, `POST /v1/messages`, headers
+`x-api-key` and `anthropic-version: 2023-06-01`), not the pay-per-token paas endpoint, which refuses it ("insufficient balance"). It goes beside the Anthropic key, readable by uid 10425 alone,
 one file for both instances (each tallies its own spend in `<state>/automod-spend.jsonl`):
 
     ssh root@workhorse 'umask 0277 && cat > /etc/delvetalk/zai.key.new && chown 10425:10425 /etc/delvetalk/zai.key.new &&
@@ -1090,8 +1118,10 @@ it on every call, so rotating it is the Anthropic key's procedure ("Rotating the
 
 **3. Up.** After the carry, `docker compose --profile town up -d --wait --remove-orphans` starts `delvetalk-automod`
 beside the hand (compose.hand.yml): six services healthy. Nothing in a town's `delvetalk.toml` needs to change:
-`automod` is on by default; its settings (`automod_model` glm-4.7-flash, `automod_window` 5 s, `automod_batch` 24,
-`automod_daily_calls` 2000, `automod_quiet_hours` 24) are transport/config.py's. `automod = false` turns it off (the
+`automod` is on by default; its settings (`automod_model` glm-5.3-flash, `automod_window` 5 s, `automod_batch` 24,
+`automod_daily_calls` 2000, `automod_quiet_hours` 24) are transport/config.py's. The plan serves glm-5.3, glm-5.3-flash,
+glm-5 and glm-4.6; glm-5.3-flashx answers code 1311 (not in the plan) though the models list names it: call a model before
+setting it as `automod_model`. `automod = false` turns it off (the
 service then idles, healthy, and the overview says "off in the config").
 
 **4. Check.** The overview's "Automatic moderation" line reads "the classifier answers" after the first batch, and

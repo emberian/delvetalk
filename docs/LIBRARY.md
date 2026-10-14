@@ -21,9 +21,9 @@ in. Law `owner "only the owner shelves a page; anyone reads, and places rules, w
 - `laws / card: <id>`: the card's law clause by clause with its readings, as `world.inspect` has it; a clause `under
   "<kind>"` is followed to that kind's `law` (`Under kind/bell's law: …`), expressions dropped when the whole would
   pass the card's clip. `rules` and `wants` on the card itself list its rules and the wants that hold now.
-- `shelve / name / kind / title / body`: the owner's (`refused notOwner` else); a body is at most 1,266 characters, what
-  a reply leaves after the library's receipt line (`Card.limit`), so a page is never clipped. Shelved again, a page
-  keeps its place.
+- `shelve / name / kind / title / body`: the owner's (`refused notOwner` else); a body is at most what a reply leaves
+  after the library's receipt line (`Card.limit`: 1,266 characters at one post's room, 7,866 at obend's 8,000; past
+  it `refused tooLong`), so a page is never clipped. Shelved again, a page keeps its place. 96 pages.
 
 The index, as it renders on a genesis town (the walks clipped to the card's budget):
 

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = ROOT / 'world' / 'lib'  # what serve seals at its start
 ORIGIN = 'https://gsb.fg-goose.online'
 PREFIX = 'DELVETALK_'
+CARD_ROOM = 1400  # the host's own `Limits.cardShownChars`: what one delve.town post holds
 
 
 def field(default, what):
@@ -93,16 +94,24 @@ class Config:
                             "with the card's spells to send instead)")
     automod: bool = field(True, "run the automatic moderation worker (`transport automod`, docs/ROOT.md section 2.4): residents' public texts "
                           "screened after they are admitted, a flagged one hidden and its author quieted; on by default on every town")
-    zai_key_file: str = field('', "the file holding the Z.ai API key the moderation's classifier uses (never the Anthropic key's budget)")
-    automod_model: str = field('glm-4.7-flash', "the classifier: a GLM chat model at `automod_url` (glm-4.7-flash: free, about 3 s for a batch)")
-    automod_fallback: str = field('glm-4.5-flash', "the classifier asked once more when `automod_model` answers that Z.ai is loaded (429); '' for none")
-    automod_url: str = field('https://api.z.ai/api/paas/v4/chat/completions', "Z.ai's OpenAI-compatible chat endpoint")
+    zai_key_file: str = field('', "the file holding the owner's Z.ai subscription key the moderation's classifier uses (never the Anthropic key's budget)")
+    automod_model: str = field('glm-5.3-flash', "the classifier: a model the Z.ai subscription serves (glm-5.3-flash answers a batch in about 2 s; glm-5.3-flashx is not in the plan, code 1311)")
+    automod_base_url: str = field('https://api.z.ai/api/anthropic', "Z.ai's Anthropic-compatible endpoint: the subscription is served here (POST /v1/messages), not at the pay-per-token paas endpoint")
     automod_window: float = field(5.0, "seconds the worker holds a new text for others to join its batch before it asks; a full batch goes at once")
     automod_batch: int = field(24, "texts one classifier call reads, each answered by its number (each clipped to 2 KiB, a batch to 32 KiB)")
     automod_daily_calls: int = field(2000, "classifier calls a UTC day, this world's; when spent, texts wait (the wordlist still acts)")
     automod_quiet_hours: int = field(24, "hours a high-confidence flag quiets the text's author (the host's `quiet`; 0: never)")
     paint_budget: int = field(400, "open town: paints a clock day, the whole town's (host `paintQuota`; when spent, a card is read "
                               "exact, and the page says why)")
+
+    card_room: int = field(0, "the characters a reader is shown of a card, and one feed post holds before the town's answer is threaded "
+                           "(the world's `cardRoom`, set by `hand limits`; docs/DEPLOY.md \"A second instance\"): 0, the host's own 1,400, "
+                           "what one delve.town post holds; a feed-only town may give kilobytes (obend: 8,000)")
+
+    @property
+    def room(self):
+        """`card_room`, or the host's own when the config gives none."""
+        return self.card_room or CARD_ROOM
 
     def __post_init__(self):
         if not self.opener:

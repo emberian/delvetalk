@@ -20,6 +20,7 @@ from transport import delve, identity
 from transport.config import Config
 from transport.host import PUBLIC, handles
 from transport.identity import IdentityError, proof_digest, zero_bits
+from transport.pages import told
 from transport.state import State
 
 FORM = 'application/x-www-form-urlencoded'
@@ -204,7 +205,7 @@ class InvitedDoor(FrontCase):
         self.assertFalse({'arrive', 'arriveProof'} & {r['name'] for r in catalogue['routes']})
         self.assertNotIn('arrival', catalogue)
         s, _, guide = self.request('GET', '/AGENTS.md')
-        old = (Path(__file__).resolve().parent.parent / 'docs' / 'AGENTS-API.md').read_text().replace('{{arrive}}\n', '')
+        old = told((Path(__file__).resolve().parent.parent / 'docs' / 'AGENTS-API.md').read_text(), 'delve', 'invited').replace('{{arrive}}\n', '')
         self.assertEqual(guide.decode(), old.replace('{{origin}}', self.front.origin))
         # a form posted with a challenge but no code is an invitation's door as before: it asks for the code
         s, _, page = self.request('POST', '/enter', raw=urllib.parse.urlencode({'name': 'wren', 'challenge': 'x', 'nonce': '1'}),

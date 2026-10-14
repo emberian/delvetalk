@@ -194,6 +194,34 @@ record Annal:
   page: Nat
   lines: Document.Names
   firsts: Lists.List<First>
+# A card's Bend as the host hands its `source` read (Surfaces.sourceData): its pin's slug, its maker, the line saying
+# what it came after, what a kind is over (`of`), its law text, whether its code is a kind's body, and the page asked
+# for of that code (`text`, its lines indented, cut by the host within the world's room; `page` 0 is all of it) of
+# `pages`; "" for what the reader may not see.
+record Source:
+  object: String
+  page: Nat
+  pages: Nat
+  pin: String
+  maker: String
+  after: String
+  of: String
+  law: String
+  body: Bool
+  text: String
+# What a resident made that others may read and fork (Surfaces.makings): `kind` (name: what it is over, from: the
+# kind it came after), `body` (a kind with Bend of its own), `verb` (grown on `object`; name: the verb); `who` by
+# handle, `at` the entry. Newest first.
+record Making:
+  what: String
+  object: String
+  name: String
+  who: String
+  from: String
+  at: Nat
+record Makings:
+  page: Nat
+  rows: Lists.List<Making>
 # A door as the map draws it: the card it is on, its label, the card it opens onto.
 record Way:
   from: String
