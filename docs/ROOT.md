@@ -264,6 +264,62 @@ enough.
 **Decision:** moderation is the default face; root is one click further and
 never the default.
 
+### 2.4 Automatic moderation
+
+The owner, 2026-10-13: "I don't want people posting anything foul, obscene, or really fucked up, but we can't use the
+same Haiku budget for that, and I'm worried about latency... retroactive moderation." On by default on every town.
+
+**Retroactive.** A resident's text is admitted as ever; nothing waits in a turn. What is screened is every text a
+public page can show: the labels a resident's admitted turn wrote or created on an object the public may view (record
+lines, say and emote lines, kinds' voices, abouts and heads, scenes, grown verbs' readings, register rows, inspirited
+surroundings: whatever the edits carry, `Moderation.entryItems`), the name recorded at an arrival, and the feed's posts
+(the transport offers them, `feed:<uri>`). The opener's, the clock's and a thing's own (`@id`) are the town's, never
+screened. Object ids, principals and links are not words.
+
+**The worker** (`transport/automod.py`, its own service `delvetalk-automod` on the root socket: a moderation act is the
+opener's) asks `world-screen {after, external}` every second; the host answers the texts written since the cursor less
+any screened, and first runs its wordlist (`Screen.prefilter`: a dozen slurs and child-abuse terms, whole words, digit
+stand-ins and spaced-out letters read) on each: a hit is hidden and its author quieted at once, with no model. The
+worker holds the rest; a held text waits `automod_window` (5 s) for others, a batch goes at once at `automod_batch` (24),
+and one call to Z.ai's GLM (`automod_model`, glm-4.7-flash, free) reads the batch, each text numbered and clipped to
+2 KiB. The reply goes to the host verbatim (`world-screen-verdicts`), which reads one verdict per number and decides:
+high confidence hides the text and quiets its author `automod_quiet_hours` (24); medium hides it; low hides nothing and
+waits for the owner's review; `sexual-minors` is always high. A text the reply did not answer is asked again. An idle
+worker calls nothing. Its own day of calls (`automod_daily_calls`, 2000) and ledger (`automod-spend.jsonl`), apart
+from hob's and the paints'. When GLM fails the texts wait on disk with the cursor, the worker backs off (5 s doubling to
+300 s), the wordlist still acts, and the hand's overview says "the classifier is down"; when the provider's own filter
+refuses a batch it is asked again in halves, and one text it refuses alone is hidden at medium for the owner to look at.
+
+**The policy** (`Moderation.policy`, the classifier's system text): hate (slurs; attacks on a group), explicit sexual
+content, graphic gore for its own sake, harassment of a real person or a named resident, self-harm encouragement, spam
+floods. Not flagged: disagreement, dark or violent fiction told without gratuitous detail, horror atmosphere (the
+parlour's dread, ghosts, death, blood), villains, romance, casual profanity. The line: a text is flagged for what it
+does to a reader or a person, never for its mood, its darkness or a swear word. The wordlist errs toward missing:
+words with innocent uses (`chink` of light, `fag`) are the model's.
+
+**What a flag does.** One `moderated` entry under the opener, power `screen` (intent `screen:<height>`):
+`{key, text, source, author, at, category, confidence, by, reading, before, after}`, `after` the state (`hidden`,
+`review`, `confirmed`, `restored`), `key` the CID of the text; a high flag adds an ordinary `quiet` entry whose reading
+begins `automod`. Replay applies both verbatim and derives `World.screened` (snapshotted, carried); it needs no model.
+A `hidden` or `confirmed` text leaves every reply but the opener's (`Session.stepWorld`; a cross-world read in
+`Serve.readForeign`): wherever it occurs in a card, a view, a history, the strokes a paint or telling is made from
+(`Strokes.redacted`, so no paint quotes it and the paint's key moves), a paint's request, an interpretation's quoted
+writing, the repository's projections: `[hidden by moderation]` in its place; a short one-word text only where it stands
+as a word. The feed asks `world-redact` for its posts. The journal keeps the bytes; the screen entry's public
+projection omits `text` (the fact is public, the words are not published again).
+
+**The owner** sees it on the overview (the worker's state, the counts, the newest flags) and at `/hand/<world>/automod`
+(`hand automod [--only STATE]`): each row with restore, confirm or hide (`world-screen-review`, `hand automod restore
+KEY --reading R`), journaled as a `screen` entry `by: owner`; restore also lifts a quiet whose reading begins
+`automod`. A restored text is never screened again. The ops `world-screen`, `-verdicts` and `-review` are the root
+socket's; `world-screened` answers the opener whole and anyone else the hidden keys and sources only.
+
+**Edition.** `screen` and `World.screened` are replay-derived: `replayEdition` 16. Old journals replay as before; a
+carry from 15 starts `screened` empty.
+
+**Decision:** screened after admission, never before; the wordlist at once, the classifier in five-second batches; the
+host decides from the reply and journals; hidden by redaction at every public reply, never by rewriting a state.
+
 ## 3. The three to build first
 
 1. **`world-root` with `set`, `delete`, `as`, `ignore` and `settings`, the

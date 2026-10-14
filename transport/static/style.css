@@ -269,3 +269,64 @@ article.post.just { outline: 2px solid var(--glow); outline-offset: 4px; border-
 .replies { margin-left: clamp(.75rem, 4vw, 2rem); }
 a.receipt { font-family: var(--mono); }
 blockquote.under { margin: 0 0 .25rem; padding: .4rem .75rem; border-left: 2px solid var(--rule); color: var(--soft); font-size: .9rem; }
+
+/* ---- a thing's own view (docs/VIEWS.md; transport/views.py): its tones are these classes and nothing else */
+:root { --v-red: #c0392b; --v-orange: #d9731a; --v-yellow: #d8b41c; --v-green: #3f8f3a; --v-cyan: #1f9aa8; --v-blue: #2f63b8;
+  --v-purple: #7a45b0; --v-magenta: #b83a8c; --v-white: #f7f3ea; --v-black: #1c1a17; --v-grey: #8a857c;
+  --v-grass: #8fb860; --v-forest: #4f7a3a; --v-hills: #b49a5e; --v-mountain: #8c7f73; --v-water: #4a7fb5; --v-shallows: #86b6d6;
+  --v-sand: #e2cf96; --v-snow: #eef1f4; --v-cave: #5b4e45; --v-village: #c98f5a; --v-castle: #a9a39a; --v-keep: #7f786e; --v-road: #cdb48a; }
+.view { margin: .25rem 0 1.25rem; }
+.view .v-stack { display: flex; flex-direction: column; gap: .5rem; }
+.view .v-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
+.view .v-heading { margin: 0; font-size: 1.15rem; }
+.view .v-text { margin: 0; white-space: pre-line; }
+.view .z-small { font-size: .9rem; } .view .z-large { font-size: 2.6rem; line-height: 1.1; font-variant-numeric: tabular-nums; min-width: 2ch; text-align: center; }
+.view .v-act { display: inline; margin: 0; }
+.view .v-button { min-width: 2.75rem; font-size: 1.15rem; }
+.view .v-off { color: var(--muted); }
+.view span.v-button.v-off { display: inline-block; padding: .5rem 1rem; border: 1px dashed var(--rule); border-radius: 8px; }
+.view .v-ask { display: block; } .view .v-ask input { display: block; width: 100%; margin: .25rem 0 .5rem; font: inherit; padding: .4rem .5rem; }
+.view .v-progress progress { width: min(16rem, 60%); vertical-align: middle; } .view .v-of { color: var(--muted); font: .85rem var(--sans); }
+.view .v-table { border-collapse: collapse; font-size: .95rem; } .view .v-table th, .view .v-table td { padding: .2rem .6rem; border-bottom: 1px solid var(--rule); text-align: left; }
+.view .v-rule { border: 0; border-top: 1px solid var(--rule); width: 100%; }
+.view .v-image { max-width: 100%; height: auto; }
+.view svg.v-board { display: block; width: 100%; max-width: 30rem; height: auto; }
+.view svg.v-drawing { display: block; width: 100%; max-width: 30rem; height: auto; }
+.view .v-ground { fill: var(--leaf); stroke: var(--rule); stroke-width: 1.2; }
+.view .v-tile-label { fill: var(--ink); font: 11px var(--sans); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.view .v-disc { stroke: var(--paper); stroke-width: 1.5; }
+.view a.v-acts { cursor: pointer; }
+.view a.v-acts:hover .v-ground, .view a.v-acts:focus .v-ground { stroke: var(--glow); stroke-width: 2.5; }
+.view a.v-acts:focus { outline: none; }
+.view .v-shape { fill: none; stroke: none; } .view .v-shape-label { fill: var(--ink); font: 12px var(--sans); }
+/* the tones (View.tones, transport/views.py TONES): words, fills, strokes */
+.view .t-ink { color: var(--ink); } .view .t-soft { color: var(--soft); } .view .t-muted { color: var(--muted); } .view .t-paper { color: var(--paper); }
+.view .t-leaf { color: var(--leaf); } .view .t-tint { color: var(--tint); } .view .t-rule { color: var(--rule); } .view .t-amber { color: var(--amber); }
+.view .t-violet { color: var(--violet); } .view .t-silver { color: var(--silver); } .view .t-terracotta { color: var(--terracotta); } .view .t-sage { color: var(--sage); }
+.view .t-glow { color: var(--glow); } .view .t-red { color: var(--v-red); } .view .t-orange { color: var(--v-orange); } .view .t-yellow { color: var(--v-yellow); }
+.view .t-green { color: var(--v-green); } .view .t-cyan { color: var(--v-cyan); } .view .t-blue { color: var(--v-blue); } .view .t-purple { color: var(--v-purple); }
+.view .t-magenta { color: var(--v-magenta); } .view .t-white { color: var(--v-white); } .view .t-black { color: var(--v-black); } .view .t-grey { color: var(--v-grey); }
+.view .t-grass { color: var(--v-grass); } .view .t-forest { color: var(--v-forest); } .view .t-hills { color: var(--v-hills); } .view .t-mountain { color: var(--v-mountain); }
+.view .t-water { color: var(--v-water); } .view .t-shallows { color: var(--v-shallows); } .view .t-sand { color: var(--v-sand); } .view .t-snow { color: var(--v-snow); }
+.view .t-cave { color: var(--v-cave); } .view .t-village { color: var(--v-village); } .view .t-castle { color: var(--v-castle); } .view .t-keep { color: var(--v-keep); }
+.view .t-road { color: var(--v-road); }
+.view .f-ink { fill: var(--ink); } .view .f-soft { fill: var(--soft); } .view .f-muted { fill: var(--muted); } .view .f-paper { fill: var(--paper); }
+.view .f-leaf { fill: var(--leaf); } .view .f-tint { fill: var(--tint); } .view .f-rule { fill: var(--rule); } .view .f-amber { fill: var(--amber); }
+.view .f-violet { fill: var(--violet); } .view .f-silver { fill: var(--silver); } .view .f-terracotta { fill: var(--terracotta); } .view .f-sage { fill: var(--sage); }
+.view .f-glow { fill: var(--glow); } .view .f-red { fill: var(--v-red); } .view .f-orange { fill: var(--v-orange); } .view .f-yellow { fill: var(--v-yellow); }
+.view .f-green { fill: var(--v-green); } .view .f-cyan { fill: var(--v-cyan); } .view .f-blue { fill: var(--v-blue); } .view .f-purple { fill: var(--v-purple); }
+.view .f-magenta { fill: var(--v-magenta); } .view .f-white { fill: var(--v-white); } .view .f-black { fill: var(--v-black); } .view .f-grey { fill: var(--v-grey); }
+.view .f-grass { fill: var(--v-grass); } .view .f-forest { fill: var(--v-forest); } .view .f-hills { fill: var(--v-hills); } .view .f-mountain { fill: var(--v-mountain); }
+.view .f-water { fill: var(--v-water); } .view .f-shallows { fill: var(--v-shallows); } .view .f-sand { fill: var(--v-sand); } .view .f-snow { fill: var(--v-snow); }
+.view .f-cave { fill: var(--v-cave); } .view .f-village { fill: var(--v-village); } .view .f-castle { fill: var(--v-castle); } .view .f-keep { fill: var(--v-keep); }
+.view .f-road { fill: var(--v-road); }
+.view .s-ink { stroke: var(--ink); } .view .s-soft { stroke: var(--soft); } .view .s-muted { stroke: var(--muted); } .view .s-paper { stroke: var(--paper); }
+.view .s-leaf { stroke: var(--leaf); } .view .s-tint { stroke: var(--tint); } .view .s-rule { stroke: var(--rule); } .view .s-amber { stroke: var(--amber); }
+.view .s-violet { stroke: var(--violet); } .view .s-silver { stroke: var(--silver); } .view .s-terracotta { stroke: var(--terracotta); } .view .s-sage { stroke: var(--sage); }
+.view .s-glow { stroke: var(--glow); } .view .s-red { stroke: var(--v-red); } .view .s-orange { stroke: var(--v-orange); } .view .s-yellow { stroke: var(--v-yellow); }
+.view .s-green { stroke: var(--v-green); } .view .s-cyan { stroke: var(--v-cyan); } .view .s-blue { stroke: var(--v-blue); } .view .s-purple { stroke: var(--v-purple); }
+.view .s-magenta { stroke: var(--v-magenta); } .view .s-white { stroke: var(--v-white); } .view .s-black { stroke: var(--v-black); } .view .s-grey { stroke: var(--v-grey); }
+.view .s-grass { stroke: var(--v-grass); } .view .s-forest { stroke: var(--v-forest); } .view .s-hills { stroke: var(--v-hills); } .view .s-mountain { stroke: var(--v-mountain); }
+.view .s-water { stroke: var(--v-water); } .view .s-shallows { stroke: var(--v-shallows); } .view .s-sand { stroke: var(--v-sand); } .view .s-snow { stroke: var(--v-snow); }
+.view .s-cave { stroke: var(--v-cave); } .view .s-village { stroke: var(--v-village); } .view .s-castle { stroke: var(--v-castle); } .view .s-keep { stroke: var(--v-keep); }
+.view .s-road { stroke: var(--v-road); }

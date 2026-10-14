@@ -1092,6 +1092,45 @@ the Anthropic console. `model.py` reads the file (`anthropic_key_file`) on every
 restart is needed. The key never enters the repository, the image, `.env`, or
 an argv.
 
+## Automatic moderation
+
+docs/ROOT.md 2.4 is the mechanism; this is how it is put in place, on both towns, from lane/automod. The binary is
+replay edition 16, so the deploy is a carry ("A new binary", *It carries*) of each town, gsb then obend, with
+`deploy/carry-check.sh` green on each town's newest backup first.
+
+**1. The key (the owner's Mac to the workhorse, never printed, never in the repository, `.env` or an argv).** The
+Z.ai key is `~/.zai-key` on the owner's Mac (50 bytes). It goes beside the Anthropic key, readable by uid 10425 alone,
+one file for both instances (each tallies its own spend in `<state>/automod-spend.jsonl`):
+
+    ssh root@workhorse 'umask 0277 && cat > /etc/delvetalk/zai.key.new && chown 10425:10425 /etc/delvetalk/zai.key.new &&
+      mv /etc/delvetalk/zai.key.new /etc/delvetalk/zai.key && stat -c "%U %a %s" /etc/delvetalk/zai.key' < ~/.zai-key
+    # 10425 400 50
+
+It is mounted into `delvetalk-automod` alone (compose.hand.yml's `zai_key` secret, `DELVETALK_ZAI_KEY_PATH`, default
+`/etc/delvetalk/zai.key`; obend's rendered `.env` names the same file, deploy/instances.toml `zai_key`). The worker reads
+it on every call, so rotating it is the Anthropic key's procedure ("Rotating the Anthropic key") with this path.
+
+**2. The `.env`.** gsb's compose default is the right path; obend's: re-render (`python3 -m deploy.instance render open
+--out /tmp/obend-kit ...`) and take its new `DELVETALK_ZAI_KEY_PATH=/etc/delvetalk/zai.key` line into
+`/opt/delvetalk-open/.env`. `python3 -m deploy.instance check` stays empty (the key is shared on purpose).
+
+**3. Up.** After the carry, `docker compose --profile town up -d --wait --remove-orphans` starts `delvetalk-automod`
+beside the hand (compose.hand.yml): six services healthy. Nothing in a town's `delvetalk.toml` needs to change:
+`automod` is on by default; its settings (`automod_model` glm-4.7-flash, `automod_window` 5 s, `automod_batch` 24,
+`automod_daily_calls` 2000, `automod_quiet_hours` 24) are transport/config.py's. `automod = false` turns it off (the
+service then idles, healthy, and the overview says "off in the config").
+
+**4. Check.** The overview's "Automatic moderation" line reads "the classifier answers" after the first batch, and
+`hand automod` lists what it flagged. The worker's cursor starts at entry 0 and the feed's at its first post, so the
+first minutes screen every resident's text the host's history holds (a chain the host does not read, such as an
+earlier carry's journal it was not given, is not screened) in full batches, in order (at most 512 texts held; past
+that the cursor waits); `cursor entry N of M` on `/hand/<world>/automod` shows it catch up. Until it has, a new text
+waits behind the history: at about 4 s a call of 24, a few thousand texts are a quarter of an hour. A dry look at the worker without
+touching its state: `docker compose logs delvetalk-automod` and `<state>/worlds/town/automod-status.json`.
+
+**Off, or broken.** Stopping the service (`docker compose stop delvetalk-automod`) stops screening and nothing else;
+what it hid stays hidden (the journal says so) until the owner restores it. A restore is one click on the automod page.
+
 ## Durability and backups
 
 The host appends each step's entries and fsyncs once before it replies

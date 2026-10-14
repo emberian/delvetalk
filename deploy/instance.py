@@ -44,6 +44,7 @@ class Instance:
     hosted_accounts: bool = False  # DELVETALK_HOSTED_ACCOUNTS: hosted guest DIDs, off for want of wildcard DNS (cx-tidy)
     firehose: bool = False  # publish the firehose's port (deploy/compose.firehose.yml) and route it at the edge
     anthropic_key: str = ''
+    zai_key: str = ''  # the moderation classifier's key (docs/DEPLOY.md "Automatic moderation")
     watch_zuliprc: str = ''
     config: dict = dataclasses.field(default_factory=dict)
 
@@ -65,7 +66,7 @@ class Instance:
         p = self.project
         return {'home': f'/opt/{p}', 'towns': f'/var/lib/{p}', 'data': f'/var/lib/{p}/{self.data}', 'root': f'/var/lib/{p}/root',
                 'repo_keys': f'/etc/{p}/repo', 'hand_token': f'/etc/{p}/hand.token', 'delve_dir': f'/etc/{p}/delve',
-                'anthropic_key': self.anthropic_key or f'/etc/{p}/anthropic.key',
+                'anthropic_key': self.anthropic_key or f'/etc/{p}/anthropic.key', 'zai_key': self.zai_key or f'/etc/{p}/zai.key',
                 'watch_zuliprc': self.watch_zuliprc or f'/etc/{p}/watch.zuliprc', 'backups': f'/var/backups/{p}',
                 'pull_dir': f'%h/{p}-backups', 'pull_key': f'%h/.ssh/{p}-backups', 'pulled': f'/tank/{p}-backups'}
 
@@ -83,6 +84,7 @@ class Instance:
                 ('DELVETALK_DATA', p['data']), ('DELVETALK_ROOT', p['root']), ('DELVETALK_TOWNS', p['towns']),
                 ('DELVETALK_REPO_KEYS', p['repo_keys']), ('DELVETALK_HAND_TOKEN_PATH', p['hand_token']),
                 ('DELVETALK_DELVE_DIR', p['delve_dir']), ('DELVETALK_ANTHROPIC_KEY_PATH', p['anthropic_key']),
+                ('DELVETALK_ZAI_KEY_PATH', p['zai_key']),
                 ('DELVETALK_PRIVATE_IP', PRIVATE_IP), ('DELVETALK_HTTP_PORT', self.http_port), ('DELVETALK_HAND_PORT', self.hand_port),
                 ('DELVETALK_FIREHOSE_PORT', self.firehose_port), ('DELVETALK_BACKUPS', p['backups']),
                 ('DELVETALK_WATCH_ZULIPRC', p['watch_zuliprc']), ('DELVETALK_REQUESTS', 'off'),
@@ -240,9 +242,9 @@ def load(path=INSTANCES):
 
 def check(instances):
     """Why two instances would collide on the one box (a port, a path, an origin, a backup minute), or []. Paths an
-    instance names as another's on purpose (the shared Anthropic key, the watch bot's rc) are not collisions."""
+    instance names as another's on purpose (the shared Anthropic and Z.ai keys, the watch bot's rc) are not collisions."""
     problems, seen = [], {}
-    shared = {'anthropic_key', 'watch_zuliprc'}
+    shared = {'anthropic_key', 'zai_key', 'watch_zuliprc'}
     for i in instances.values():
         claims = [('port', i.http_port), ('port', i.hand_port), ('port', i.firehose_port), ('origin', i.origin),
                   ('project', i.project), ('backup minute', i.backup_minute % 30)]

@@ -36,6 +36,11 @@ def maxCardRoom : Nat := 65536
 def mentionsAddressed : Nat := 4
 /-- The rows of what wants a hand a card's `render` is handed (`TurnLoop.renderCard`, the commonplace's lead). -/
 def cardWanting : Nat := 8
+/-- The wire bytes of a derived view read from outside a turn (`world-derived`; a card's `view`, docs/VIEWS.md): a
+    larger value is refused `viewTooLarge`, never cut. -/
+def maxViewBytes : Nat := 262144
+/-- The nodes of a card's `view` a front draws (docs/VIEWS.md): past it the front draws the first ones and says so. -/
+def maxViewNodes : Nat := 4096
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
     with every change to what replay derives (judging, a derived field, an index replay checks).
@@ -65,8 +70,9 @@ def cardWanting : Nat := 8
     lane/cx-world (a kind's component bodies, source pins, receipts and layer positions in `madeFrom`;
     reprogram replay replaces those layers through `componentInputs`, retaining unrelated layers); 15:
     bounded clock and dependent-want transition prefixes, a journal-derived pending flip queue, and
-    checked drain entries retaining each transition's triggering height and clock. -/
-def replayEdition : Nat := 15
+    checked drain entries retaining each transition's triggering height and clock; 16: lane/automod (the
+    moderated `screen` act and the `screened` index it derives, `Screen.lean`). -/
+def replayEdition : Nat := 16
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -808,6 +814,11 @@ structure World where
   quiets : Std.HashMap String (Nat × String) := {}
   /-- Objects hidden (`hide`): the read policy `show` restores. Derived by `record`. -/
   hidden : Std.HashMap String Json := {}
+  /-- Residents' public texts the automatic moderation screened and flagged (`Screen`, docs/ROOT.md §2.4), by the
+      text's key (`Screen.textKey`): `{text, source, author, at, state, category, confidence, by, reason, height}`,
+      `state` one of `hidden`, `review`, `confirmed`, `restored`. A `hidden` or `confirmed` text is shown nowhere
+      public (`Screen.redact`). Derived by `recordActs` from `screen` entries. -/
+  screened : Std.HashMap String Json := {}
   /-- Heights this world replays as refused (docs/ROOT.md §1.3): the ignore set of the whole journal,
       found before replay starts (`Snapshot.ignoresFrom`), kept in a snapshot, and re-derived after every
       `ignore`/`unignore`. -/

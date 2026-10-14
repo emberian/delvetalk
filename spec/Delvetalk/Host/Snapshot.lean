@@ -32,8 +32,8 @@ def edition : String := "delvetalk.snapshot.v5"
 def previousEdition : String := "delvetalk.snapshot.v4"
 
 /-- The index keys an older binary's body may not write: a carry from it starts them empty (`wantFlips`: a
-    binary before replay edition 15 queued no want transitions). -/
-def addedKeys : List String := ["refusedBy", "wantFlips"]
+    binary before replay edition 15 queued no want transitions; `screened`: one before 16 screened nothing). -/
+def addedKeys : List String := ["refusedBy", "wantFlips", "screened"]
 
 /-! ## Writing -/
 
@@ -117,6 +117,7 @@ def indexJson (w : World) : Json :=
     ("cards", mapJson w.cards toJson),
     ("quiets", mapJson w.quiets fun (u, r) => Json.arr #[toJson u, toJson r]),
     ("hidden", mapJson w.hidden id),
+    ("screened", mapJson w.screened id),
     ("ignored", toJson w.ignored), ("ignoring", toJson w.ignoring), ("ignoreNamed", toJson w.ignoreNamed),
     ("shadowed", Json.arr w.shadowed),
     ("modelDay", pairJson w.modelDay.1 w.modelDay.2), ("hour", w.hourCounts.json),
@@ -169,6 +170,8 @@ def installIndex (w : World) (j : Json) : Except String World := do
     cards := ← mapOf (← field "cards") (·.getStr?)
     quiets := ← mapOf (← field "quiets") quiet
     hidden := ← mapOf (← field "hidden") pure
+    -- A snapshot from before edition 16 screened nothing.
+    screened := ← mapOf ((field "screened").toOption.getD (Json.mkObj [])) pure
     ignored := ← nats (← field "ignored")
     ignoring := ← nats (← field "ignoring")
     ignoreNamed := ← nats (← field "ignoreNamed")
@@ -445,10 +448,10 @@ def suspendedObject (e : Json) : String :=
 /-- The indexes a carry keeps beyond the store, the pending deliveries, the suspensions and the handles,
     each as `indexJson` writes it: what the world stands on that no object's state holds (the rules'
     last firings, the wants that hold, the refusals each law made, posting reservations, model attempts, the quotas' counts, the root acts'
-    count, the moderation: cards, quiets, hidden). Every other index names entries of the old chain. -/
+    count, the moderation: cards, quiets, hidden, screened). Every other index names entries of the old chain. -/
 def carriedKeys : List String :=
   ["ruleLog", "wanting", "wantFlips", "refusedBy", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
-   "hidden", "modelDay", "hour"]
+   "hidden", "screened", "modelDay", "hour"]
 
 /-- A genesis entry chained to `cid`: `tag` and its origin, the store of `shown` with every source its
     objects compile from carried once in the entry's `sources` (as any entry carries the sources it is

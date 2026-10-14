@@ -7,6 +7,7 @@ import Delvetalk.Host.Law
 import Delvetalk.Host.Slug
 import Delvetalk.Host.Spell
 import Delvetalk.Host.DiskCache
+import Delvetalk.Host.Screen
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host
@@ -3744,6 +3745,16 @@ def recordActs (w : World) (entry : Json) : World := Id.run do
     unless w.hidden.contains id do
       w := { w with hidden := w.hidden.insert id ((outcome.getObjVal? "before").toOption.getD Json.null) }
   | "show" => w := { w with hidden := w.hidden.erase (text "object") }
+  | "screen" =>
+    -- The automatic moderation's act on one text (`Moderation.lean`): the first carries the text and what the
+    -- classifier said; a later one (the owner's restore or confirm) moves its state.
+    let key := text "key"
+    let prior := w.screened[key]?
+    let item := ["text", "source", "author", "at", "category", "confidence", "by", "reading"].foldl (fun (j : Json) k =>
+      match outcome.getObjVal? k with
+      | .ok v => j.setObjVal! k v
+      | .error _ => j) (prior.getD (Json.mkObj [("height", toJson w.height)]))
+    w := { w with screened := w.screened.insert key ((item.setObjVal! "state" after).setObjVal! "acted" (toJson w.height)) }
   | "set" =>
     let id := text "object"
     match text "field" with
@@ -5266,6 +5277,7 @@ def rootBefore (w : World) (outcome : Json) : Except String Json := do
     | some (u, r) => Json.mkObj [("until", toJson u), ("reading", toJson r)]
     | none => Json.null
   | "hide" | "show" => return (← object ()).read.json
+  | "screen" => return ((w.screened[text "key"]?).map fun i => toJson (Screen.stateOf i)).getD Json.null
   | "retire" | "unretire" => return toJson (← object ()).lawText
   | "revoke" => match w.grants[text "grant"]? with
     | some g => return Json.mkObj [("revoked", toJson g.revoked)]
@@ -5352,7 +5364,7 @@ def applyRoot (w : World) (outcome : Json) : Except String World := do
     let g := (outcome.getObjValAs? String "grant").toOption.getD ""
     let some grant := w.grants[g]? | throw s!"no grant {g}"
     return { w with grants := w.grants.insert g { grant with revoked := true } }
-  | "ignore" | "unignore" | "card" | "quiet" => return w
+  | "ignore" | "unignore" | "card" | "quiet" | "screen" => return w
   | k => throw s!"no root act {k}"
 
 /-- Is an entry a root `ignore` or `unignore`? -/
@@ -5900,6 +5912,11 @@ def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
   if owner == reader && !reader.isEmpty then slugged entry
   -- A root entry is whole to every reader, `before` included (docs/ROOT.md §1.2), and so is the
   -- opener's moderation and a turn root ran `as` another.
+  -- A `screen` act names the text it hid by its key: the fact is public, the words are not published again.
+  else if tagOf entry == "moderated" && actOf ((entry.getObjVal? "outcome").toOption.getD Json.null) == "screen" then
+    slugged (entry.setObjVal! "outcome" (match (entry.getObjVal? "outcome").toOption.getD Json.null with
+      | o@(.obj _) => Json.mkObj (((o.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "text"))
+      | o => o))
   else if tagOf entry == "root" || tagOf entry == "moderated" then slugged entry
   else if tagOf entry == "refused" then
     (publicRefusal entry).setObjVal! "height" ((entry.getObjVal? "height").toOption.getD Json.null)

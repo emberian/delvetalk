@@ -1047,7 +1047,7 @@ class Hand:
             if done is not None:
                 note = ' '.join(str(v) for v in done.values() if isinstance(v, (str, list)))
                 back = {'root': '/root/?', 'mod': '/root/?', 'newcomers': '/root/?', 'vacate': '/root/?', 'speak': '/speak?', 'invite': '/speak?',
-                        'morning': '/speak?', 'welcome': '/speak?'}.get(rest.partition('/')[0], '/?')
+                        'morning': '/speak?', 'welcome': '/speak?', 'automod': '/automod?'}.get(rest.partition('/')[0], '/?')
                 anchor = '#outbox' if back == '/?' else ''
                 back = '/hand/?' if rest == 'root/expire' else base + back  # a scratch world is expired from the worlds
                 more = {'came': done['intent']} if rest == 'speak' and done.get('intent') else {}
@@ -1056,7 +1056,7 @@ class Hand:
         if method == 'GET':
             page = (lambda query: h.read_page(rest, query)) if rest in READ_FORMS else {
                 '': h.page, 'speak': h.speak_page, 'plan': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page,
-                'overview': h.overview_page}.get(rest)
+                'overview': h.overview_page, 'automod': h.automod_page}.get(rest)
         if page is None:
             return 404, shell('not here', world, H['missing'].format(text=e(f'no page {rest} in the hand'))), []
         try:
@@ -1069,6 +1069,9 @@ class Hand:
         face, _, verb = rest.partition('/')
         if rest == 'root/save':
             return self.save(form.get('object', ''), form)
+        if face == 'automod' and verb in ('restore', 'confirm', 'hide'):
+            got = self.automod_review(form.get('key', ''), verb, form.get('reading', '').strip())
+            return {'done': f"{verb}: {got['state']}" + (', the quiet lifted' if got.get('unquieted') else '')}
         if rest == 'newcomers/limits':  # an open town's limits, set from its config (root page, "Newcomers")
             got = self.limits(form.get('reading') or None)
             return {'done': f"limits: {got.get('status')}, entry {(got.get('receipt') or {}).get('height')}"}
@@ -1226,6 +1229,48 @@ class Hand:
     def overview(self):
         return overview.overview(self)
 
+    # ---- the automatic moderation (docs/ROOT.md 2.4)
+
+    def automod(self, state=None, limit=200):
+        """The screened texts, whole, newest first, and the worker's status."""
+        got = self.host.send({'op': 'world-screened', 'principal': self.owner, **({'state': state} if state else {}), 'limit': limit})
+        if got.get('status') != 'screened':
+            raise HandError(f"world-screened: {got.get('message') or got}")
+        return {**overview.automod_of(self, 0), 'items': got['items']}
+
+    def automod_review(self, key, verdict, reading=''):
+        """restore, confirm or hide one screened text: a journaled screen entry (and, on restore, the quiet lifted)."""
+        got = self.host.send({'op': 'world-screen-review', 'principal': self.owner, 'key': key, 'verdict': verdict,
+                              **({'reading': reading} if reading else {})})
+        if got.get('status') != 'screened':
+            raise HandError(f"{verdict}: {got.get('message') or got}")
+        self.log('automod:' + verdict, None, key=key, reading=reading, unquieted=got.get('unquieted'))
+        return got
+
+    def screened_row(self, i, base, q):
+        state = i.get('state', '')
+        verdicts = {'hidden': ('restore', 'confirm'), 'review': ('hide', 'restore'), 'confirmed': ('restore',), 'restored': ('hide',)}.get(state, ())
+        buttons = ''.join(H['screen_button'].format(base=base, verdict=v, key=q(i['key'])) for v in verdicts)
+        return H['screened'].format(fate={'hidden': 'refused', 'confirmed': 'refused', 'review': 'suspended'}.get(state, 'admitted'),
+                                    state=q(state), category=q(i.get('category', '')), confidence=q(i.get('confidence', '')),
+                                    author=q(self.handle_of(i.get('author', '')) or i.get('author', '')), text=q(clip(i.get('text', ''), 600)),
+                                    reading=q(i.get('reading', '')), by=q(i.get('by', '')), source=q(i.get('source', '')),
+                                    height=q(i.get('height', '')), buttons=buttons)
+
+    def automod_page(self, query):
+        q, a = lambda t: e(str(t)), self.automod()
+        base, s = f'/hand/{q(self.st.world)}', a['status'] or {}
+        none = lambda what: f'<li class="quiet">— {what} —</li>'
+        rows = lambda states: ''.join(self.screened_row(i, base, q) for i in a['items'] if i.get('state') in states)
+        today = s.get('today') or {}
+        codes = self.codes([a['state'], f"{s.get('pending', 0)} waiting" + (f", the oldest {s.get('oldestSeconds')} s" if s.get('pending') else ''),
+                            f"cursor entry {s.get('cursor', 0)} of {s.get('height', 0)}", f"model {s.get('model', self.st.config.automod_model)}",
+                            f"calls today {today.get('calls', 0)} of {today.get('budget', self.st.config.automod_daily_calls)}, ${today.get('dollars', 0)}"] +
+                           [f"{k} {v}" for k, v in a['counts'].items()])
+        return shell('automod', self.st.world, H['automod'].format(world=q(self.st.world), codes=codes,
+                     review=rows(('review',)) or none('nothing waits for review'), hidden=rows(('hidden',)) or none('nothing hidden'),
+                     settled=rows(('confirmed', 'restored')) or none('nothing settled')))
+
     def overview_page(self, query):
         """The town at a glance (transport/overview.py), read only."""
         q, o = lambda t: e(str(t)), self.overview()
@@ -1253,9 +1298,14 @@ class Hand:
         acts = ''.join(H['act'].format(what=q(a['what']), at=q(a['at']), about=q(clip(str(a['about']), 120))) for a in o['acts']) or none('the hand did nothing in the last day')
         feed = ''.join(H['posted'].format(fate='posted' if p['town'] else 'admitted', handle=q(p['handle']), created=q(p['created']), text=q(clip(p['text'], 280)))
                        for p in o['feed']) or none('nothing in the feed')
+        am, s = o['automod'], o['automod']['status'] or {}
+        automod_codes = self.codes([am['state'], f"{s.get('pending', 0)} waiting", f"calls today {(s.get('today') or {}).get('calls', 0)}"] +
+                                   [f"{k} {v}" for k, v in am['counts'].items()])
+        screened = ''.join(self.screened_row(i, f'/hand/{q(self.st.world)}', q) for i in am['newest']) or none('nothing screened has been flagged')
         return shell('overview', self.st.world, H['overview'].format(
             world=q(self.st.world), height=q(o['height']), codes=self.codes(overview.summary(o)), arrivals=arrivals, busiest=busiest,
-            refusals=refusals, budgets=budgets, state=state, quiets=quiets, acts=acts, feed=feed, base=f'/hand/{q(self.st.world)}'))
+            refusals=refusals, budgets=budgets, state=state, quiets=quiets, acts=acts, feed=feed, base=f'/hand/{q(self.st.world)}',
+            automod=automod_codes, screened=screened))
 
     def measure_page(self, query):
         """The playtest's measures (docs/PLAYTEST-2.md §4) as transport/measure.py counts them from the journal."""
@@ -1424,6 +1474,9 @@ def parser(p, common):
                       ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
             'morning': [('--day', dict(type=int, help='the clock day (default today)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))],
             'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [], 'overview': [],
+            'automod': [('verdict', dict(nargs='?', choices=('restore', 'confirm', 'hide'), help='none: list the screened texts')),
+                        ('key', dict(nargs='?', help='the screened text, by its key (from the list)')), ('--only', dict(choices=('hidden', 'review', 'confirmed', 'restored'), help='one state of screened texts')),
+                        ('--reading', dict(default=''))],
             'vacate': [('who', dict(nargs='?', help="a principal or handle; none: every revoked guest's and every quieted principal's places")),
                        ('--reading', dict(required=True))],
             'invite': [('name', dict(nargs='?', help='the guest: [a-z][a-z0-9-]{0,31}, ending in a letter or digit, its handle on cards; without it the code is open and the guest registers its own name')),
@@ -1467,6 +1520,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
                 'overview': h.overview, 'vacate': lambda: h.vacate(a.who, a.reading),
+                'automod': lambda: h.automod_review(a.key, a.verdict, a.reading) if a.verdict else h.automod(a.only),
                 'speak': lambda: cli_speak(h, a), 'morning': lambda: h.morning(a.day, a.topic, a.reply_to), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
                 'root': lambda: cli_root(h, a), 'invite': lambda: cli_invite(h, a), 'invites': h.guests,
                 'revoke-invite': lambda: h.revoke_guest(a.name), 'limits': lambda: h.limits(a.reading), 'slow': lambda: h.slow(a.switch == 'on', a.reading),

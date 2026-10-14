@@ -81,7 +81,7 @@ class Instances(unittest.TestCase):
     def test_the_open_instance_owns_nothing_of_the_live_town(self):
         live = self.all[instance.LIVE].paths
         for what, path in self.open.paths.items():
-            if what in ('anthropic_key', 'watch_zuliprc'):  # shared on purpose: the one key and the one watch bot
+            if what in ('anthropic_key', 'zai_key', 'watch_zuliprc'):  # shared on purpose: the two model keys and the one watch bot
                 self.assertEqual(path, live[what])
                 continue
             self.assertFalse(path == live[what] or path.startswith(live[what].rstrip('/') + '/'), (what, path))

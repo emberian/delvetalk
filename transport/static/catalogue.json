@@ -409,6 +409,13 @@
    "does": "HTML: the card's paint, its exact card folded beneath, what it wants, its doors, and on demand its law, source and last 20 receipts; logged in, a link to play it; a / in the id is %2F"
   },
   {
+   "name": "live",
+   "method": "GET",
+   "href": "/live/{object}",
+   "auth": "cookie",
+   "does": "Server-Sent Events: a thing's view (docs/VIEWS.md) drawn again for you whenever the thing moves past the version a page drew (`?v=`, or Last-Event-ID), event `view` with its version as `id`; held 55 s, then the browser comes back; 404 for a thing with no view, 503 past 16 at once"
+  },
+  {
    "name": "book",
    "method": "GET",
    "href": "/o/{handle}/book",
@@ -441,10 +448,11 @@
    "method": "POST",
    "href": "/play/{object}",
    "auth": "cookie",
-   "feed": "HTML form: `text` goes to receive {text, post: \"\"} as a reply in the feed would; the page shows the receipt line, what came back (a waiting turn's offer is awaited up to 30 s) and the card after",
-   "does": "HTML form: `text` goes to receive {text, post: \"\"} as a Delve reply would; the page shows the receipt line, what came back (a waiting turn's offer is awaited up to 30 s) and the card after",
+   "feed": "HTML form: `text` goes to receive {text, post: \"\"} as a reply in the feed would; the page shows the receipt line, what came back (a waiting turn's offer is awaited up to 30 s) and the card after; or `do` (a view's button or tile: `action?field=value&...`, with `f.<field>` a field the reader typed): one of the thing's forms offered to you, cast as you, its receipt shown open",
+   "does": "HTML form: `text` goes to receive {text, post: \"\"} as a Delve reply would; the page shows the receipt line, what came back (a waiting turn's offer is awaited up to 30 s) and the card after; or `do` (a view's button or tile: `action?field=value&...`, with `f.<field>` a field the reader typed): one of the thing's forms offered to you, cast as you, its receipt shown open",
    "body": {
-    "text": "text: a spell or prose"
+    "text": "text: a spell or prose",
+    "do": "text: a view's act, action?field=value"
    }
   },
   {

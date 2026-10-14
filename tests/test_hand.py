@@ -1189,9 +1189,11 @@ class Portal(RouteCase):
                    'invite', 'invites', 'revoke-invite', 'welcome', 'root', *root.POWERS, 'settings',
                    'limits',  # an open town's root page, "Newcomers" (tests/test_newcomers.py)
                    'slow', 'held', 'let-in', 'turn-away', 'flag', 'unflag',  # the root page's slow, the worlds page's door (tests/test_moderation.py)
-                   'overview', 'vacate'}  # the overview page (read only); the root page's vacate (tests/test_moderation.py Gone)
+                   'overview', 'vacate',  # the overview page (read only); the root page's vacate (tests/test_moderation.py Gone)
+                   'automod'}  # the automod page: its list, and restore, confirm and hide on each row (tests/test_automod.py)
         self.assertIn('/hand/town/vacate', pages['root/'].actions)
         self.assertIn('/hand/town/overview', pages[''].links)
+        self.assertIn('/hand/town/automod', pages[''].links)
         self.assertEqual(set(verbs), covered | {'serve'})  # starts a listener; cannot run inside its own page
 
     def test_console_forwards_inbox_filters_and_all_outbox_without_hiding_finished_drafts(self):

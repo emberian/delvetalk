@@ -16,7 +16,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import anchors, bridge, oauth, pages, sessions
+from transport import anchors, bridge, oauth, pages, sessions, views
 from transport.pages import guide_text
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
@@ -43,6 +43,9 @@ EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
 REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to send a request; bytes of a reply; JSON nesting of a body
 HAND_TOKEN_HEADER = 'X-Delvetalk-Hand-Token'  # the hand's secret as the anchor's Caddy sets it, behind its password (docs/DEPLOY.md "Open the hand")
 WORKERS = 48  # requests served at once (the container allows 64 tasks); one more is told `busy`
+LIVE_MAX, LIVE_SECONDS, LIVE_BEAT, TAIL_STEP = 16, 55, 15, 0.2  # live views (docs/VIEWS.md): streams at once (each holds a worker), seconds one is held before the browser comes back, seconds between keep-alives, seconds between looks at the journal's tail
+VIEW_POLICY = ("default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; "
+               "form-action 'self' https:; frame-ancestors 'none'; base-uri 'none'; object-src 'none'")  # a page drawing a view: no script, style or image but the town's own and a view's data images
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'receipt', False): 'intent', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
           ('POST', 'check', False): 'check', ('POST', 'cite', False): 'cite', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke',
@@ -98,6 +101,8 @@ def resolve(method, path):
         return {('GET', 'enter'): 'door', ('POST', 'enter'): 'comeIn', ('GET', 'leave'): 'leave', ('POST', 'leave'): 'signOut'}[method, parts[0]], {}
     if parts == ['feed'] and method in ('GET', 'POST'):  # the town's own feed, for people (transport/feed.py)
         return ('feed' if method == 'GET' else 'feedSay'), {}
+    if parts[:1] == ['live'] and len(parts) >= 2 and all(parts[1:]) and method == 'GET':  # a view's live channel (docs/VIEWS.md)
+        return 'live', {'object': '/'.join(parts[1:])}
     if parts == ['history'] and method == 'GET':
         return 'history', {}
     if parts == ['map'] and method == 'GET':
@@ -376,6 +381,9 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         info = host.send({'op': 'serve-status'})
         self.host_sha256, self.host_timeout = info.get('hostSha256', 'unknown'), getattr(host, 'timeout', HOST_TIMEOUT)
         self.bounds = host.send({'op': 'bounds'})  # the kernel's and the host's bounds: the front restates none
+        # Live views (docs/VIEWS.md): one thread follows the journal's tail while any page listens, and wakes them.
+        self.live_slots, self.live_seconds, self.live_beat = threading.BoundedSemaphore(LIVE_MAX), LIVE_SECONDS, LIVE_BEAT
+        self.tail, self.tail_height, self.watching, self.follower = threading.Condition(), None, 0, None
         if not hand and c.firehose_port:
             try:
                 self.firehose = Firehose(self.repo, host, st.firehose,
@@ -471,6 +479,47 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             from transport.feed import Feed
             self._feed = Feed(self.st)
         return self._feed
+
+    def shown(self, host, reader, name, inspected=None, unless=None):
+        """A thing's own view as `reader` sees it (docs/VIEWS.md): {html, version}, drawn by transport/views.py from the
+        host's `world-derived` of its `view` with the forms the host offers the reader; None for a thing with no view;
+        {version} alone when its version is still `unless` (a live view that has it drawn)."""
+        r = host.send({'op': 'world-derived', 'principal': reader or PUBLIC, 'object': name, 'view': 'view'})
+        if r.get('status') != 'derived':
+            return None
+        if unless is not None and str(r.get('version')) == str(unless):
+            return {'version': r.get('version')}
+        if (inspected or {}).get('status') != 'inspected':
+            inspected = host.send({'op': 'world-inspect', 'principal': reader or PUBLIC, 'object': name})
+        forms = views.forms_of(inspected) if inspected.get('status') == 'inspected' else {}
+        return {'html': views.render(r['value'], name, forms, self.bounds['host']['maxViewNodes']), 'version': r.get('version')}
+
+    def watch(self):
+        """A live view begins listening: the tail is followed while any does (`follow`)."""
+        with self.tail:
+            self.watching += 1
+            if self.follower is None:
+                self.follower = threading.Thread(target=self.follow, daemon=True)
+                self.follower.start()
+
+    def unwatch(self):
+        with self.tail:
+            self.watching -= 1
+
+    def follow(self):
+        """The journal's tail: the host's height every TAIL_STEP seconds while a view listens, every listener woken when it
+        moves. One host op a step for the whole front, however many listen."""
+        while True:
+            with self.tail:
+                if self.watching <= 0:
+                    self.follower = None
+                    return
+            height = self.host.send({'op': 'world-status'}).get('height')
+            with self.tail:
+                if height != self.tail_height:
+                    self.tail_height = height
+                    self.tail.notify_all()
+            time.sleep(TAIL_STEP)
 
     def newest(self, ids, n=6):
         """The newest makings among `ids` (not residents' avatars): (object, principal, height) of the first journal entry
@@ -838,7 +887,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.xrpc(method, p.get('nsid', 'did.json'))
         if name in ('feed', 'feedSay'):
             return self.feed_page(name == 'feedSay')
-        if name in ('home', 'page', 'book', 'history', 'map'):  # pages ask the host: limited per account, or per address, before they do
+        if name in ('home', 'page', 'book', 'history', 'map', 'live'):  # pages ask the host: limited per account, or per address, before they do
             key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
             wait = self.server.limited(key)
             if wait:
@@ -853,6 +902,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.play(p['object'] or 'commonplace', name == 'reply')
         if name == 'page':
             return self.object_page(p['object'])
+        if name == 'live':
+            return self.live(p['object'])
         if name == 'book':
             return self.surface('book', p['object'])
         if name == 'history':
@@ -1340,11 +1391,28 @@ class Handler(BaseHTTPRequestHandler):
     def feed_threads(self, q, thread=None):
         from transport.delve import Failure
         try:
-            return self.server.feed.threads(q.get('before'), q.get('limit', 30), thread=thread or q.get('thread'),
-                                            replies_before=q.get('replies_before'))
+            threads, more = self.server.feed.threads(q.get('before'), q.get('limit', 30), thread=thread or q.get('thread'),
+                                                     replies_before=q.get('replies_before'))
         except Failure as f:
             self.fail('badRequest', f'{f.code}: {f.detail}')
             return None
+        shown = iter(self.feed_shown([p for h, rs, _ in threads for p in (h, *rs)]))
+        return [(next(shown), [next(shown) for _ in rs], earlier) for h, rs, earlier in threads], more
+
+    def feed_shown(self, rows):
+        """Feed posts as a public page shows them: a post the automatic moderation hid, or a hidden text inside one, is
+        the host's placeholder (`world-redact`, docs/ROOT.md section 2.4); the feed's store keeps the words."""
+        rows = [dict(r) for r in rows if r is not None]
+        if not rows:
+            return rows
+        r = self.server.host.send({'op': 'world-redact', 'principal': PUBLIC,
+                                   'items': [{'source': 'feed:' + x['uri'], 'text': x['text']} for x in rows]})
+        texts = r.get('texts') if r.get('status') == 'redacted' and len(r.get('texts') or []) == len(rows) else None
+        return [dict(x, text=t) for x, t in zip(rows, texts)] if texts is not None else rows
+
+    def feed_get(self, uri):
+        row = self.server.feed.get(uri) if isinstance(uri, str) else None
+        return self.feed_shown([row])[0] if row is not None else None
 
     def feed_json(self, who, posting):
         """Read a bounded feed page or render the common submission driver's result as JSON."""
@@ -1380,16 +1448,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(303, '', 'text/plain', [('Location', '/enter')])
                 if who is None:
                     return self.fail(err[0], err[1])
-                return self.html(429 if err[0] == 'rateLimited' else 400, pages.feed(self.server.feed.threads()[0], who['handle'], note=err[1],
+                return self.html(429 if err[0] == 'rateLimited' else 400, pages.feed(self.feed_threads({})[0], who['handle'], note=err[1],
                                   said=data.get('text') if isinstance(data.get('text'), str) else '',
-                                  reply=self.server.feed.get(data.get('reply_to')) if isinstance(data.get('reply_to'), str) else None,
+                                  reply=self.feed_get(data.get('reply_to')),
                                   submission=data.get('idempotencyKey') if isinstance(data.get('idempotencyKey'), str) else None))
             return self.reply(303, '', 'text/plain', [('Location', '/feed?posted=' + urllib.parse.quote(row['uri'], safe='') + '#' + pages.anchor(row['uri']))])
         who = self.principal(self.credential())
         if self.server.limited(self.credential() if who else 'page:' + self.client_ip()):
             return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds')
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
-        posted = self.server.feed.get(q.get('answer') or q.get('posted') or '')
+        posted = self.feed_get(q.get('answer') or q.get('posted') or '')
         selected = self.feed_threads(q, thread=(posted['root'] or posted['uri']) if posted else None)
         if selected is None:
             return
@@ -1399,7 +1467,7 @@ class Handler(BaseHTTPRequestHandler):
             tries = int(q['wait']) if digits(q.get('wait', '')) and len(q['wait']) <= 2 else 0
             refresh = answer + '&wait=' + str(tries + 1) if posted is not None and not self.server.feed.answered(posted['uri']) and tries < 8 else None
             return self.html(200, pages.feed(threads, who and who['handle'], posted=posted, refresh=refresh, composer=False))
-        self.html(200, pages.feed(threads, who and who['handle'], more=more, reply=self.server.feed.get(q.get('reply') or ''),
+        self.html(200, pages.feed(threads, who and who['handle'], more=more, reply=self.feed_get(q.get('reply') or ''),
                                  posted=posted, waiting=answer, limit=q.get('limit', 30)))
 
     def me(self, credential, who):
@@ -1467,9 +1535,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             intent = f'play:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
             text = str(data.get('text', ''))
-            if data.get('try'):  # "Try it first": the same words under `delvetalk try`, which writes nothing (docs/POSTING.md §2)
-                text = 'delvetalk try\n' + '\n'.join('  ' + line for line in text.strip().split('\n'))
-            r = self.server.turn(host, did, name, 'receive', {'intent': intent, 'argument': typed({'text': text, 'post': ''})})
+            if 'do' in data:  # a view's button, tile or box (docs/VIEWS.md): one of the thing's own forms offered to this reader, as them
+                picked = views.chosen(data['do'], views.forms_of(host.send({'op': 'world-inspect', 'principal': did, 'object': name})),
+                                      {k[2:]: v for k, v in data.items() if k.startswith('f.') and isinstance(v, str)})
+                if picked is None:
+                    return self.html(400, pages.refusal(name, who['handle'], {'message': f"that is none of {name}'s spells offered to you, as its view gave it"}, 'badSpell'))
+                acted, data = picked, {**data, 'text': '\n'.join([f'delvetalk {name} {picked[0]}', *(f'{k}: {v}' for k, v in picked[1].items())])}
+                r = self.server.turn(host, did, name, picked[0], {'intent': intent, 'fields': picked[1], **({'try': True} if data.get('try') else {})})
+            else:
+                acted = None
+                if data.get('try'):  # "Try it first": the same words under `delvetalk try`, which writes nothing (docs/POSTING.md §2)
+                    text = 'delvetalk try\n' + '\n'.join('  ' + line for line in text.strip().split('\n'))
+                r = self.server.turn(host, did, name, 'receive', {'intent': intent, 'argument': typed({'text': text, 'post': ''})})
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
             if r.get('tried'):  # a try journaled nothing: its preview is what came back, and doing it is one suggestion away
                 preview = bridge.preview_text(r, self.server.handles(pages.A_DID.findall(json.dumps(r))))
@@ -1485,6 +1562,8 @@ class Handler(BaseHTTPRequestHandler):
                 usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
                 answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))
                                                                            for t in turns], offers, usage)
+                if acted:  # a view's act shows its receipt where it was clicked: open
+                    answer = answer.replace('<details class="receipt">', '<details class="receipt" open>')
         here = place(host, did, name, self.server.sleep)
         if here['card'] is None and not answer:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], here.get('cardReply') or here['view'], (here.get('cardReply') or here['view']).get('status')))
@@ -1495,7 +1574,8 @@ class Handler(BaseHTTPRequestHandler):
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
         self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered, paint=here['paint'], wants=here['wants'],
                                   view=here['view'], ways=self.ways(host, did, name), entries=self.history(host, name, did, pages.LATELY),
-                                  said=say, told=told, did=did, town=self.server.town(), spent=here.get('spent')))
+                                  said=say, told=told, did=did, town=self.server.town(), spent=here.get('spent'),
+                                  drawn=self.server.shown(host, did, name)))
 
     def html(self, code, body, headers=()):
         if not self.server.hand and pages.POST_FORM.search(body):
@@ -1505,7 +1585,56 @@ class Handler(BaseHTTPRequestHandler):
                 headers = [*headers, *self.login_cookie(self.browser_nonce, 'dt_browser')]
             body = pages.csrf_forms(body, self.csrf_token())
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
+        if 'id="view"' in body:  # a page drawing a resident's view: nothing but the town's own script, style and images, and a view's data images
+            headers = [*headers, ('Content-Security-Policy', VIEW_POLICY)]
         self.reply(code, *((pages.text(body), 'text/plain') if self.textual() else (body, 'text/html')), headers)
+
+    def live(self, name):
+        """`GET /live/<id>` (docs/VIEWS.md): the thing's view as Server-Sent Events, for as long as `live_seconds`: an event
+        `view` (its `id` the thing's version, its data the view drawn for this reader) whenever the thing has moved past the
+        version the page was drawn at (`?v=`, or the browser's `Last-Event-ID` when it comes back), checked each time the
+        journal's tail moves; a comment every `live_beat` seconds between. A thing with no view this reader may see is 404,
+        and past LIVE_MAX streams at once 503: the page stays as it was drawn, fresh at its next load."""
+        who = self.principal(self.cookie())
+        reader, host = who['did'] if who else PUBLIC, self.server.host
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        seen = self.headers.get('Last-Event-ID') or (q.get('v') or [''])[0]
+        first = self.server.shown(host, reader, name)
+        if first is None:
+            return self.fail('unknown', f'{name} has no view that you may see')
+        if not self.server.live_slots.acquire(blocking=False):
+            return self.fail('busy', 'every live view is taken; the page is fresh at its next load', headers=[('Retry-After', '30')])
+        self.server.watch()
+        try:
+            self.replied, self.private = True, True
+            self.send_response(200)
+            for k, v in (('Content-Type', 'text/event-stream; charset=utf-8'), ('Cache-Control', 'no-cache, no-transform'),
+                         ('X-Accel-Buffering', 'no'), ('Connection', 'close')):
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(b'retry: 2000\n\n')
+            self.wfile.flush()
+            drawn, began, beat = first, time.monotonic(), time.monotonic()
+            while time.monotonic() - began < self.server.live_seconds:
+                if str(drawn['version']) != seen and 'html' in drawn:
+                    fragment = pages.named(pages.csrf_forms(drawn['html'], self.csrf_token()) if who else drawn['html'],
+                                           self.server.handles(pages.A_DID.findall(drawn['html'])))
+                    self.wfile.write(f"event: view\nid: {drawn['version']}\n".encode() + b''.join(b'data: ' + line.encode() + b'\n' for line in fragment.split('\n')) + b'\n')
+                    self.wfile.flush()
+                    seen, beat = str(drawn['version']), time.monotonic()
+                with self.server.tail:
+                    height = self.server.tail_height
+                    self.server.tail.wait_for(lambda: self.server.tail_height != height, timeout=min(self.server.live_beat, self.server.live_seconds))
+                    moved = self.server.tail_height != height
+                if moved:
+                    drawn = self.server.shown(host, reader, name, unless=seen) or drawn
+                elif time.monotonic() - beat >= self.server.live_beat:
+                    self.wfile.write(b': still here\n\n')
+                    self.wfile.flush()
+                    beat = time.monotonic()
+        finally:
+            self.server.unwatch()
+            self.server.live_slots.release()
 
     def home(self):
         """The town alive, as its reader may see it: today's chronicle and its paint, the commonplace's doors, what wants a
@@ -1552,7 +1681,7 @@ class Handler(BaseHTTPRequestHandler):
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
                                  self.ways(host, principal, name) if here['card'] is not None else (), seen, here['wants'], brief, here['paint'], told,
-                                 town=self.server.town(), spent=here.get('spent')))
+                                 town=self.server.town(), spent=here.get('spent'), drawn=self.server.shown(host, principal, name, seen)))
 
     SURFACE_FIELDS = ('page', 'day', 'from', 'to')
     TITLES = {'chronicle': "the town's history", 'map': 'the door map'}

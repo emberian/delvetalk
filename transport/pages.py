@@ -356,12 +356,21 @@ def reply(turns, offers=(), usage=None):
     return T['reply'].format(lines=answers, offers=body + receipts), spells
 
 
+def shown(path, drawn, signed_in):
+    """A thing's own view (docs/VIEWS.md), as transport/views.py drew it for this reader (`drawn` {html, version}; trusted
+    markup, every word in it escaped there), live from `/live/<id>` once say.js runs; nothing for a thing with none."""
+    if not drawn:
+        return ''
+    return T['view'].format(live=e(f"/live/{path}?v={drawn['version']}"), body=drawn['html'], do=T['view_do'].format(path=e(path)) if signed_in else '')
+
+
 def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), view=None, ways=(), entries=(), said='', told=None, did=None, town='',
-         spent=None):
+         spent=None, drawn=None):
     """An object to play: its name, a place's telling when the reply just sent entered it, what came back, the place, the
     one box and its suggestions (the reply's spells, then what the thing wants, then the card's own), then what is around it."""
     wanted = [(' '.join(w['asks'].split()[1:3]), w['asks']) for w in wants if w.get('asks')]
     return page(name, who, T['play'].format(heading=heading(name, view, did, town), name=e(name), path=e(path), reply=telling(told) + answer, said=e(said),
+                                            view=shown(path, drawn, True),
                                             place=(place(card, paint, wants, spent) + ring(view)) if card is not None else '',
                                             suggestions=suggestions(path, [*offered, *wanted, *(speech(card)[1] if card else [])], f'delvetalk {name} ?'),
                                             around=around(name, view, ways, entries, town=town) if card is not None else ''))
@@ -370,19 +379,20 @@ def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), 
 BRIEF = 5  # receipts the brief text view keeps
 
 
-def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), brief=None, paint=None, told=None, town='', spent=None):
+def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), brief=None, paint=None, told=None, town='', spent=None, drawn=None):
     """An object as anyone may read it: its name, a place's telling for a signed-in reader, the place (paint, exact card,
     wants), a way to speak to it (or in), what is around it, then its law, source and journal on demand. `brief` (the text
     view's default, the href of the whole page): the place, the doors and the newest BRIEF entries; the law and the source
     are a link away."""
-    shown = telling(told) + (place(card, paint, wants, spent) + ring(view) if card else T['state'].format(state=dl(view.get('state'))))
+    place_shown = telling(told) + (place(card, paint, wants, spent) + ring(view) if card else T['state'].format(state=dl(view.get('state'))))
     play = T['playlink'].format(href=e(quote(name, safe='/:'))) if who else T['comein'] if card else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
     source = T['source'].format(law=e(seen.get('law') or ''), pin=e(str(seen.get('pinSlug') or '')), source=e(seen.get('source') or ''),
                                 lines=len((seen.get('source') or '').splitlines())) if seen else ''
     if brief:
         source, entries = T['whole'].format(href=e(brief)), entries[:BRIEF]
-    return page(name, who, T['object'].format(heading=heading(name, view, did, town), shown=shown, play=play, source=source,
+    return page(name, who, T['object'].format(heading=heading(name, view, did, town), view=shown(quote(name, safe='/:'), drawn, bool(who)),
+                                              shown=place_shown, play=play, source=source,
                                               around=around(name, view, ways, entries, lambda o: '/o/' + quote(o, safe=':'), town) if card else '',
                                               receipts=T['receipts'].format(n=len(entries), slips=''.join(slip(x, did) for x in entries)) if entries else ''))
 

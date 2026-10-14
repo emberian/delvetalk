@@ -1,7 +1,7 @@
 <!-- foot: the hand's footer -->
 The owner's console. Nothing reaches a town without the owner: his own post, given here by its link, or Post with a credential file; every act is a line in the hand's log, every root act an entry in the journal.
 <!-- nav: one world's pages -->
-<nav><a href="{base}/overview">overview</a><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/status">read</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
+<nav><a href="{base}/overview">overview</a><a href="{base}/automod">automod</a><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/status">read</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
 <!-- worlds: every world serve holds, and the scratch worlds -->
 <h1 class="title">The worlds<small>every world this host holds, each a journal with a name; beneath them the scratch worlds, with their owners and their hours</small></h1>{note}
 <p class="codes">{codes}</p>
@@ -89,7 +89,18 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <section><h2>Refusals by class</h2><ol class="receipts">{refusals}</ol></section>
 <section><h2>Budgets</h2><p class="codes">{budgets}</p></section>
 <section><h2>Moderation</h2><p class="codes">{state}</p><ol class="receipts">{quiets}</ol><h3>The hand's last acts</h3><ol class="receipts">{acts}</ol><p class="doors"><a class="door" href="{base}/root/">ROOT</a><a class="door" href="/hand/">GUESTS</a></p></section>
+<section><h2>Automatic moderation</h2><p class="codes">{automod}</p><ol class="receipts">{screened}</ol><p class="doors"><a class="door" href="{base}/automod">REVIEW</a></p></section>
 <section><h2>The newest feed posts</h2><ol class="receipts">{feed}</ol></section>
+<!-- automod: the automatic moderation's review: what it hid and what it holds for the owner, each restorable -->
+<h1 class="title">Automatic moderation<small>{world}: residents' public texts screened after they were admitted (docs/ROOT.md 2.4); a hidden text is shown nowhere public, the journal keeps it</small></h1>
+<p class="codes">{codes}</p>
+<section><h2>For review</h2><p>Low-confidence flags: hidden from nothing until you hide or restore them.</p><ol class="receipts">{review}</ol></section>
+<section><h2>Hidden</h2><p>Restore shows the text again everywhere and lifts the quiet the moderation set on its author; confirm keeps it hidden.</p><ol class="receipts">{hidden}</ol></section>
+<section><h2>Settled</h2><ol class="receipts">{settled}</ol></section>
+<!-- screened: one screened text, its verdict and the owner's buttons -->
+<li class="slip {fate}"><span class="stamp">{state}</span><span class="code">{category} · {confidence}</span><span class="name">{author}</span><span class="line">{text}</span><span class="by">{reading} · {by} · {source} · entry {height}</span><span class="foot">{buttons}</span></li>
+<!-- screen_button: one verdict on a screened text -->
+<form method="post" action="{base}/automod/{verdict}" class="inline"><input type="hidden" name="key" value="{key}"><input name="reading" placeholder="reading (optional)"><button class="door">{verdict}</button></form>
 <!-- arrival: one arrival of the last day, how it came and how it stands -->
 <li class="slip {fate}"><span class="stamp">{standing}</span><span class="code">{at}</span><span class="name">{name}</span><span class="by">{came} · {principal}</span></li>
 <!-- busy: one hand, its turns -->
