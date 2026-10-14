@@ -12,11 +12,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from transport import interpret, model
+from transport import bridge, interpret, model
 from transport.config import Config
 from transport.state import State
 
-from transport.host import HostProcess
+from transport.host import HostProcess, plain, typed
 
 REQ = {'system': 'You interpret utterances.', 'user': 'plant a fern'}
 
@@ -66,10 +66,11 @@ import json, sys
 state = json.load(open(%r))
 for line in sys.stdin:
     req = json.loads(line)
+    if req['op'] != 'world-test':
+        open(%r, 'a').write(json.dumps(req) + chr(10))
     if req['op'] == 'world-interpretations':
         out = {'status': 'interpretations', 'pending': state['pending']}
     elif req['op'] == 'world-interpretation':
-        open(%r, 'a').write(json.dumps(req) + chr(10))
         reply = req['reply']
         if reply.get('status') == 'failed' and reply.get('reason') in ('transport', 'rate'):  # the host's to retry
             for p in state['pending']:
@@ -79,6 +80,19 @@ for line in sys.stdin:
         else:
             state['pending'] = [p for p in state['pending'] if p['id'] != req['id']]
             out = {'status': 'interpreted', 'id': req['id']}
+    elif req['op'] == 'world-receipt':
+        out = next((r for r in state.get('receipts', []) if r['receipt']['identity'] == {'principal': req['principal'], 'intent': req['identity']}),
+                   {'status': 'unknown'})
+    elif req['op'] == 'world-turn' and req['method'] == 'mentions':
+        if req['object'] in state.get('missing', []):
+            out = {'status': 'error', 'message': 'missing avatar'}
+        else:
+            notes = state.setdefault('notes', {})
+            notes.setdefault(req['identity'], req)
+            out = {'status': 'admitted', 'receipt': {'identity': req['identity']}}
+    elif req['op'] == 'world-test':
+        state.update(req.get('state', {}))
+        out = {'status': 'configured', 'notes': list(state.get('notes', {}).values())}
     else:
         out = {'status': 'error', 'message': 'unknown world operation ' + req['op']}
     print(json.dumps(out), flush=True)
@@ -87,6 +101,7 @@ for line in sys.stdin:
 
 def item(n):
     return {'id': f'i{n}', 'object': 'garden', 'policy': {'model': 'claude-haiku-5-5', 'system': 'sys', 'examples': [{'u': 'a'}]},
+            'identity': {'principal': 'did:plc:resident', 'intent': f'plant-{n}'},
             'utterance': f'plant {n}', 'offers': [{'form': 'plant'}]}
 
 
@@ -110,7 +125,108 @@ class Interpret(unittest.TestCase):
         return {'status': 'replied', 'raw': f'delvetalk garden plant\nseed: {len(self.calls)}', 'model': req['model'], 'usage': {}}
 
     def settled(self):
+        return [r for r in self.operations() if r['op'] == 'world-interpretation']
+
+    def operations(self):
         return [json.loads(x) for x in self.log.read_text().splitlines()] if self.log.exists() else []
+
+    def refusal(self, principal='did:plc:resident', intent='make-pianist-2'):
+        return {'status': 'receipt', 'inPublic': False,
+                'receipt': {'identity': {'principal': principal, 'intent': intent}, 'slug': 'famaj-rumij', 'height': 1352,
+                            'outcome': {'tag': 'refused', 'class': 'badSpell', 'clause': 'unknownField',
+                                        'reason': 'place is not a field of kind/inhabitant make'}},
+                'public': {'class': 'badSpell', 'hint': 'delvetalk kind/inhabitant make / name: pianist'}}
+
+    def resume(self, *receipts, **extra):
+        pending = [{**item(n), 'identity': r['receipt']['identity']} for n, r in enumerate(receipts, 1)]
+        self.host.send({'op': 'world-test', 'state': {'pending': pending, 'receipts': list(receipts), **extra}})
+
+    def notes(self):
+        return self.host.send({'op': 'world-test'})['notes']
+
+    def test_a_resumed_refusal_tells_the_avatar_its_intent_clause_hint_and_receipt_once(self):
+        got = self.refusal()
+        self.resume(got)
+        interpret.run(self.state, self.host, self.ask)
+        [turn] = self.notes()
+        text = ('receipt famaj-rumij; intent make-pianist-2; refused unknownField: '
+                'place is not a field of kind/inhabitant make; hint: delvetalk kind/inhabitant make / name: pianist')
+        self.assertEqual(turn, {'op': 'world-turn', 'principal': self.state.config.opener, 'object': 'did:plc:resident',
+                               'method': 'mentions', 'identity': turn['identity'],
+                               'argument': typed({'notes': [{'from': self.state.config.opener, 'handle': 'the town',
+                                                            'text': text, 'post': 'make-pianist-2'}]})})
+        self.assertIn({'op': 'world-receipt', 'principal': 'did:plc:resident', 'identity': 'make-pianist-2'}, self.operations())
+        self.resume(got)  # the same settlement after a restored journal
+        interpret.run(self.state, self.host, self.ask)
+        self.assertEqual(self.notes(), [turn])  # host idempotency, not a local sent marker
+        sent = [r for r in self.operations() if r['op'] == 'world-turn']
+        self.assertEqual(sent, [turn, turn])
+
+    def test_bridge_owned_turns_the_town_and_hobs_none_leave_no_note(self):
+        waiting, town, quiet = self.refusal(intent='post'), self.refusal(self.state.config.opener), self.refusal(intent='quiet')
+        quiet['receipt']['outcome'] = {'tag': 'admitted', 'writes': []}
+        self.state.write(bridge.awaiting_path(self.state, 'post'), {'principal': 'did:plc:resident', 'settled': True})
+        self.resume(waiting, town, quiet)
+        interpret.run(self.state, self.host, self.ask)
+        self.assertEqual(self.notes(), [])
+
+    def test_a_missing_avatar_does_not_stop_other_notes_or_interpretations(self):
+        self.resume(self.refusal('missing'), self.refusal(), missing=['missing'])
+        done = interpret.run(self.state, self.host, self.ask)
+        self.assertEqual(done['settled'], ['i1', 'i2'])
+        self.assertEqual([t['object'] for t in self.notes()], ['did:plc:resident'])
+
+    def test_long_refusals_keep_the_slug_outcome_clause_and_hint_inside_280_characters(self):
+        got = self.refusal(intent='😀' * 256)
+        got['receipt']['outcome']['reason'] += 'é' * 4000
+        got['public']['hint'] = 'corrected spell ' + '☃' * 4000
+        self.resume(got)
+        interpret.run(self.state, self.host, self.ask)
+        [turn] = self.notes()
+        [note] = plain(turn['argument'])['notes']
+        self.assertLessEqual(len(note['text']), bridge.NOTE_TEXT)
+        for words in ('receipt famaj-rumij', 'intent 😀', 'refused unknownField', 'hint: corrected spell'):
+            self.assertIn(words, note['text'])
+        self.assertFalse(note['text'].endswith('famaj-rumij'))
+        self.assertEqual(note['post'], '😀' * 256)
+
+    def test_equal_intents_from_two_principals_have_distinct_note_identities(self):
+        self.resume(self.refusal('one'), self.refusal('two'))
+        interpret.run(self.state, self.host, self.ask)
+        self.assertEqual(len(self.notes()), 2)
+
+    def test_admitted_turns_with_an_offer_or_a_write_tell_the_sender(self):
+        offered, written = self.refusal(intent='offered'), self.refusal(intent='written')
+        offered['receipt']['outcome'] = {'tag': 'admitted', 'writes': []}
+        offered['receipt']['offers'] = [{'text': 'hob: that still needs a name'}]
+        written['receipt']['outcome'] = {'tag': 'admitted', 'writes': [{'object': 'bell', 'version': 2}]}
+        self.resume(offered, written)
+        interpret.run(self.state, self.host, self.ask)
+        notes = [plain(t['argument'])['notes'][0] for t in self.notes()]
+        self.assertEqual([n['post'] for n in notes], ['offered', 'written'])
+        self.assertTrue(all('admitted' in n['text'] and 'famaj-rumij' in n['text'] for n in notes))
+
+    def test_a_still_suspended_or_absent_receipt_leaves_no_note(self):
+        waiting = self.refusal(intent='still-reading')
+        waiting['receipt']['outcome'] = {'tag': 'suspended'}
+        self.resume(waiting)
+        self.host.send({'op': 'world-test', 'state': {'pending': [
+            {**item(1), 'identity': waiting['receipt']['identity']}, item(2)]}})
+        done = interpret.run(self.state, self.host, self.ask)
+        self.assertEqual(done['settled'], ['i1', 'i2'])
+        self.assertEqual(self.notes(), [])
+
+    def test_a_cached_reply_tells_the_identity_from_the_current_pending_listing(self):
+        got = self.refusal('did:plc:current', 'current-intent')
+        self.state.write(interpret.cache_path(self.state, 'i1'), {
+            'id': 'i1', 'object': 'garden', 'identity': {'principal': 'old', 'intent': 'old'},
+            'reply': {'status': 'replied', 'raw': 'none', 'model': 'm'}})
+        self.resume(got)
+        interpret.run(self.state, self.host, self.ask)
+        [turn] = self.notes()
+        self.assertEqual(self.calls, [])
+        self.assertEqual(turn['object'], 'did:plc:current')
+        self.assertEqual(plain(turn['argument'])['notes'][0]['post'], 'current-intent')
 
     def test_each_request_is_asked_once_and_settled_verbatim(self):
         r = interpret.run(self.state, self.host, self.ask)

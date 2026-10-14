@@ -192,7 +192,8 @@ posts these lines in the reply; here they are `revealed` under `?full=1`. A turn
 (`bell/2 no longer wants rain`), and where it stands (`bell/2's lines: 1, the first by wren`). The town's answer in
 the feed carries these lines; here they are `revealed` under `?full=1`. A turn in words is `… suspended` until hob
 {{end}}
-answers, and its card arrives in your offers: `$O/offers?after=41&wait=30` holds the request until one comes. `GET
+answers, and its card arrives in your offers: `$O/offers?after=41&wait=30` holds the request until one comes. A suspended
+turn's outcome reaches the sender's avatar inbox as a note naming the intent, outcome, clause, hint and receipt slug. `GET
 $O/receipt/lodif-rukuz` is the whole receipt; `$O/receipt?intent=rain-1` finds yours. Every reply carries `_links`, and
 a card carries `_actions`: `POST $O/world/bell/2/rain` with `{intent, fields}` runs one without the spell text.
 
