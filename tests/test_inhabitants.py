@@ -64,6 +64,9 @@ class Inhabitants(test_scenarios.Arc):
     def rules(self, obj):
         return self.town.send(op="world-rules", principal=OPENER, object=obj)["rows"]
 
+    def objects(self):
+        return genesis.existing(self.town.client, OPENER)
+
     def lines(self, obj):
         rows = self.field(obj, "lines")["payload"]["fields"][0]["value"]["items"]
         return [{f["name"]: f["value"]["value"] for f in r["fields"]} for r in rows]
@@ -274,15 +277,15 @@ class Inhabitants(test_scenarios.Arc):
         for kind in TIDE_FIELDS:
             for action in ("make", "place"):
                 with self.subTest(kind=kind, action=action):
-                    before = set(genesis.existing(self.town.client, OPENER))
+                    before = set(self.objects())
                     reply = self.say(OPENER, "kind/" + kind, self.tide_spell(kind, "a phrase with spaces", action))
                     out = (self.hob_says_none(reply, OPENER) if reply["status"] == "suspended"
                            else reply["receipt"])["outcome"]
                     self.assertEqual(out["tag"], "refused", out)
                     self.assertIn("tide takes an object id", out["reason"])
-                    self.assertEqual(set(genesis.existing(self.town.client, OPENER)), before)
+                    self.assertEqual(set(self.objects()), before)
                     self.admitted(OPENER, "kind/" + kind, self.tide_spell(kind, action=action))
-                    made = set(genesis.existing(self.town.client, OPENER)) - before
+                    made = set(self.objects()) - before
                     self.assertEqual(len(made), 1, made)
                     [obj] = made
                     if action == "place":

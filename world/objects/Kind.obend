@@ -375,7 +375,7 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
 # with them and the exact `id`.
 def layerSource(of: String, form: String) -> String:
   let items = Forms.specs(form)
-  let place = if of == "kind" then "" else actionSource("place", Lists.append(items, {name: "id", kind: "text 1..64"}))
+  let place = if of == "kind" then "" else actionSource("place", Lists.append(items, {name: "id", kind: "object 1..64"}))
   "layer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\ntype State = Super.State\n{actionSource(\"make\", items)}{place}"
 def actionSource(action: String, items: Lists.List<Forms.Spec>) -> String:
   let formLines = textJoin(Lists.map(items, Forms.formLine), "")

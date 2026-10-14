@@ -83,9 +83,11 @@ def resting(after: State, context: Abi.Context) -> Activity<Card.Replied>:
   let amends = Super.field(after, "amends")
   if amends == "" then answered(Card.Replied.done({action: "countersign"}), "Countersigned, {context.handle}: at rest.", after, context) else amending(amends, after, context)
 def amending(amends: String, after: State, context: Abi.Context) -> Activity<Card.Replied>:
+  if Text.isObjectId(amends) then amendOn(amends, after, context) else answered(Card.Replied.done({action: "countersign"}), "Countersigned, {context.handle}: at rest, but {Text.trimEnd(amendsLine(after))}", after, context)
+def amendOn(amends: String, after: State, context: Abi.Context) -> Activity<Card.Replied>:
   match world.amend({object: {world: context.world, object: amends}, law: Super.field(after, "law")}):
     case amended(_): answered(Card.Replied.done({action: "countersign"}), "Countersigned, {context.handle}: at rest, and {amends} is amended.", after, context)
-    case refused(r): answered(Card.Replied.done({action: "countersign"}), "Countersigned, {context.handle}: at rest, but {amends} refused the amendment ({r.clause}).", after, context)
+    case refused(r): answered(Card.Replied.done({action: "countersign"}), if r.clause == "unknownObject" then "Countersigned, {context.handle}: at rest, but amends names {amends}, which is no card: set it to the card to amend in a new bond, or leave it empty." else "Countersigned, {context.handle}: at rest, but {amends} refused the amendment ({r.clause}).{if r.reading == \"\" then \"\" else \" {r.reading}\"} Ask its owner to permit the law, then make a new bond.", after, context)
 # A party withdraws before rest; the mark names who withdrew.
 def withdraw(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   if void(state) then told(Why.tooMany({n: named(state)}), state, context) else if party(state, context.handle) == false then told(Why.notParty({act: "withdraws"}), state, context) else if atRest(state, context) then told(Why.atRest({}), state, context) else if withdrawn(state) then told(Why.withdrawn({}), state, context) else withdrawing(state, context)
@@ -109,7 +111,7 @@ def standing(state: State, context: Abi.Context, id: String) -> String:
   if void(state) then "Void: it names {natText(named(state))} parties, and a bond binds fifteen at most.\n" else if withdrawn(state) then "Withdrawn.\n" else if atRest(state, context) then "At rest: every party signed. Its signers are a circle: request.subject in \"{id}\".marks.who\n" else "Waiting for {Text.countWord(Lists.length(unsigned(state)))} of the parties.\n"
 def amendsLine(state: State) -> String:
   let amends = Super.field(state, "amends")
-  if amends == "" then "" else "At rest it amends {amends} to:\n  {Super.field(state, \"law\")}\n"
+  if amends == "" then "" else if Text.isObjectId(amends) then "At rest it amends {amends} to:\n  {Super.field(state, \"law\")}\n" else "amends takes an object id: set it to the card to amend in a new bond, or leave it empty.\n"
 def yours(state: State, context: Abi.Context, id: String) -> String:
   if void(state) || party(state, context.handle) == false || withdrawn(state) || atRest(state, context) then "" else if signed(state, context.handle) then "You signed. Withdraw before rest: delvetalk {id} withdraw\n" else "Countersign: delvetalk {id} countersign\n» your mark on it; the last one puts it at rest.\n"
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:

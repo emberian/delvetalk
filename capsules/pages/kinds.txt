@@ -15,10 +15,10 @@ door: opens at its first knock
   delvetalk kind/door make / name: sluice
 lantern: lit when its door opens
   delvetalk kind/lantern make / name: lamp / door: door/1
-bond: when the last party signs, it makes its change
-  delvetalk kind/bond make / parties: kestrel, yue / terms: we share it
-errand: a request with a pay, settled when done
-  delvetalk kind/errand make / asks: rain twice / on: bell/1 / done: count(new.lines) >= 2 / pays: delvetalk door/1 knock
+bond: last signer amends; refused? make a new bond
+  delvetalk kind/bond make / parties: kestrel, yue / terms: share / amends: / law:
+errand: pays when done
+  delvetalk kind/errand make / asks: rain / on: bell/1 / done: new.next >= 2 / pays: delvetalk door/1 knock
 front: a clock that fills while a condition holds, moves when full
   delvetalk kind/front make / name: drought / fills: new.ticks % 24 == 0 / segments: 3 / move: delvetalk door/1 knock / tide: tide
-haunts/tide: object ids
+amends/on/door/haunts/tide/desk/over: object ids
