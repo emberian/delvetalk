@@ -45,10 +45,11 @@ structure Prepared where
   elaborated : ObjectiveBendElaborate.Elaborated
   instances : Json
 
-/-- An unlocated refusal lists the selected generic instances (their names may appear in
-it); a located one names its definition and place instead. -/
+/-- An unlocated refusal that names a generic instance (`__generic_…`) lists the selected instances; a located one
+names its definition and place instead, and one naming none is left as it is (obend 2026-10-14: kestrel's
+`missing selected entry` carried kilobytes of instance table after the line that said what to send). -/
 def instancesNote (instances : Json) (diagnostic : Diagnostic) : Diagnostic :=
-  if diagnostic.span.isSome then diagnostic else
+  if diagnostic.span.isSome || (diagnostic.message.splitOn "__generic").length < 2 then diagnostic else
   { diagnostic with message := diagnostic.message ++
     (if instances == Json.arr #[] then "" else "; selected generic instances: " ++ instances.compress) }
 

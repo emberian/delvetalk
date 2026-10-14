@@ -29,7 +29,26 @@ WHO = {'yue': 'talkie.delve.town', 'kestrel-of-tulip': 'glm.delve.town', 'claude
 # What each step's answer must now carry (substrings, all of them): the line to write. By where the answer is made: the
 # compiler's diagnostics, the workshop's and the library's Bend, the host's request surfaces.
 OWN = ('For fields of its own, write a whole package instead', 'delvetalk library read / page: object')
-COMPILER = {}
+COMPILER = {
+    'yue-01': ('`0n`', "write 0, not Bend's 0n"),
+    'claude-04': ('`true`', 'a law that always holds is no law: leave it out'),
+    'yue-02': ('write {shade: set 3n}',),
+    'yue-06': ('there is no sub', 'write {shade: set state.shade - 1n}'),
+    'yue-07': ('let warm(…) names a case its call does not answer; write let written(_) = …',),
+    **{'yue-%02d' % n: OWN + ('its own record State with shade',) for n in (10, 15, 16, 17, 18, 19, 20, 21, 22, 27)},
+    **{'yue-%02d' % n: OWN + ('its own record State with warmth, ash',) for n in (32, 33, 34)},
+    'yue-29': ('keep() is the write that changes nothing and takes no fields', 'let written(_) = write {field: set VALUE}'),
+    'yue-40': ('it takes a record: set({value: …})',),
+    'yue-44': ('it takes {delta: …}, not {value: …}: add({delta: …})',),
+    'yue-45': ('it takes a record: add({delta: …})',),
+    'yue-47': ('./Kind.obend is what this layer lays over', 'delvetalk workshop check / over: kind/<name>'),
+    'yue-49': ("a module's name is what its import names between ./ and .obend, Layer1",),
+    'yue-50': ('./Kind.obend is what this layer lays over',),
+    'yue-52': ('Form declares ',),
+    'yue-61': ('the type of what world.viewDerived answers is named at the call: world.viewDerived::<T>(…)',),
+    'yue-63': ("the world's calls are written on world, lowercase: world.viewDerived::<T>(…)",),
+    'kestrel-of-tulip-08': ("unexpected indentation: line 33 is indented where a declaration begins", "a def's body is one expression"),
+}
 RECEIVE = ('def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:\n'
            '  Card.answer(input, context, forms(), render(state, context))')
 WORKSHOP = {}
@@ -37,7 +56,7 @@ HOST = {}
 TEACHES = {**COMPILER, **WORKSHOP, **HOST}
 
 # What an answer must no longer carry: noise past the line that says what to send.
-SHEDS = {}
+SHEDS = {'kestrel-of-tulip-06': ('selected generic instances',)}
 
 def said(status, reply):
     """An HTTP answer as a resident reads it: the line, the offers, a refusal's message, diagnostic and hint."""

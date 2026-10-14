@@ -941,7 +941,11 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
     if let .specialize target types span := e then
       let some name := path names target |
         throw "type arguments `::<…>` follow the name of a declaration this module can see, before its call: Plans.Edit::<Nat, {}>.set(...), never after a call or on a local name"
-      let some declaration ← resolve site.origin name | throw ("unknown generic declaration: " ++ name)
+      let some declaration ← resolve site.origin name | throw ("unknown generic declaration: " ++ name ++
+        -- obend 2026-10-14: yue's `World.viewDerived::<Nat>(…)`; the world's calls are on `world`, the running world.
+        (match name.splitOn "." with
+          | ["World", call] => "; the world's calls are written on world, lowercase: world." ++ call ++ "::<T>(…)"
+          | _ => ""))
       let args ← types.mapM (typeOf fuel site.origin site.bindings)
       let .named module name _ ← instantiate fuel declaration args | throw "generic instance has no declaration"
       return ← ref module name span
@@ -1443,7 +1447,9 @@ def checkFixed (index : Nat) : M Unit := do
     let owner := (((← get).sources[home]?).map (·.module.name)).getD source.module.name
     let layered := if home == index then "" else
       "; a layer keeps the State of the one beneath it, so a value of its own lives in a field it has: a number or a word in " ++
-      "vars (Scenes.Var, as kind/counter keeps its count), a line by Super.inscribe"
+      "vars (Scenes.Var, as kind/counter keeps its count), a line by Super.inscribe. For fields of its own, write a whole " ++
+      "package instead (no layer over, its own record State with " ++ ", ".intercalate (unknown.map (·.1)).eraseDups ++
+      ", and a receive), as the coin jar is: delvetalk library read / page: object"
     derivedAt source.module.name at_ ("write names no field of the State (" ++ owner ++ "'s): " ++
       ", ".intercalate (unknown.map (·.1)).eraseDups ++ "; its fields: " ++ ", ".intercalate names ++ layered) "unknown-field"
   let fixed := (fields.filter (·.fixed)).map (·.name)

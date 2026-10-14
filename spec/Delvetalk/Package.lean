@@ -91,6 +91,17 @@ def parsedModule (name source : String) :
     Except Diagnostic (Delvetalk.Compiler.ObjectiveBendSurface.Module × String) :=
   parsedModuleCold name source
 
+/-- A module name that is not one, and the name meant: obend 2026-10-14, yue sent `Main.obend`, the
+name as an import writes it (`import ./Main.obend`). -/
+def invalidModuleName (name : String) : String :=
+  let bare := ((name.dropPrefix? "./").map (·.toString)).getD name
+  let meant := ((bare.dropSuffix? ".obend").map (·.toString)).getD bare
+  "invalid module name " ++ name ++ (if meant != name && Delvetalk.Compiler.ObjectiveBendParse.isIdent meant.toList then
+    ": a module's name is what its import names between ./ and .obend, " ++ meant
+  else ": a module's name is a letter or _, then letters, digits and _")
+
+#guard invalidModuleName "Main.obend" == "invalid module name Main.obend: a module's name is what its import names between ./ and .obend, Main"
+
 /-- A sealed in-memory package: imports name earlier modules explicitly supplied
 by the caller. The adapter never reads an import path from the filesystem. -/
 def modulesAndAsts (j : Json) :
@@ -105,7 +116,7 @@ def modulesAndAsts (j : Json) :
   for value in raw do
     let name ← lift (value.getObjValAs? String "name")
     let source ← lift (value.getObjValAs? String "source")
-    unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw (requestRefusal "invalid module name")
+    unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw (requestRefusal (invalidModuleName name))
     if modules.any (fun m => m.name == name) then throw (requestRefusal "duplicate module name")
     if source.utf8ByteSize > Bounds.maxModuleBytes then throw (requestRefusal s!"module {name} exceeds maxModuleBytes ({Bounds.maxModuleBytes} bytes)")
     let missing := missingLibraries source (raw.toList.filterMap fun m => (m.getObjValAs? String "name").toOption)
@@ -118,7 +129,12 @@ def modulesAndAsts (j : Json) :
       let some target := modules.zipIdx.find? (fun (m,_) => edge.path == "./" ++ m.name ++ ".obend")
         | throw { stage := "package-request", sourceModule := some name, span := some edge.span,
                   message := s!"import must name an earlier supplied module: {edge.path}; the modules before {name}: " ++
-                    ", ".intercalate (modules.map (·.name)) ++ " (each imported as import ./NAME.obend as ALIAS)" }
+                    ", ".intercalate (modules.map (·.name)) ++ " (each imported as import ./NAME.obend as ALIAS)" ++
+                    -- obend 2026-10-14: yue's scratch checks of a layer over ./Kind.obend, a kind's body sent alone.
+                    (if ast.layerOver == some edge.path then
+                      s!"; {edge.path} is what this layer lays over, and this check was not sent it: a kind's body is checked " ++
+                        "over its kind, delvetalk workshop check / over: kind/<name>, and a body over a record lays over ./Record.obend"
+                    else "") }
       imports := imports ++ [⟨edge.path, edge.importAlias, edge.span, target.2, target.1.name, target.1.sha256⟩]
     let module : SourceModule := ⟨name,source,sha,imports⟩
     checkImports module ast
@@ -901,7 +917,7 @@ def job (j : Json) : Except String Json := do
     let mut parsed : Array Json := #[]
     for value in raw do
       let name ← value.getObjValAs? String "name"
-      unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw "invalid module name"
+      unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw (invalidModuleName name)
       if names.contains name then throw "duplicate module name"
       names := name :: names
       let source ← value.getObjValAs? String "source"
