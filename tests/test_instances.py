@@ -63,6 +63,21 @@ class Live(unittest.TestCase):
         self.assertEqual(differ, {'DELVETALK_DATA', 'DELVETALK_STATION'}, {k: (defaults[k], env.get(k)) for k in differ})
 
 
+class Healthchecks(unittest.TestCase):
+
+    def test_every_compose_healthcheck_names_a_service_status_knows(self):
+        """`delvetalk-automod` shipped with `status --health automod`, a choice the command refused (exit 2): healthy work
+        reported unhealthy at its first deploy (2026-10-14). Every `--health X` the compose files run must parse."""
+        from transport.__main__ import parser
+        named = set()
+        for name in ('compose.yml', 'compose.hand.yml', 'compose.firehose.yml'):
+            named |= set(re.findall(r'"--health", "(\w+)"', (ROOT / 'deploy' / name).read_text()))
+        self.assertIn('automod', named)
+        for service in sorted(named):
+            a = parser().parse_args(['status', '--health', service])
+            self.assertEqual(a.health, service)
+
+
 class Instances(unittest.TestCase):
 
     def setUp(self):
