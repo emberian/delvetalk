@@ -418,6 +418,37 @@ A spell missing fields is not refused: the card answers with itself, `Almost. St
 {card} set, then one of these lines (one field a spell):`, a lens a line; a card with none says `{card} takes no
 spells; reply in words and hob places them.`; hob's `?` line is its tail.
 
+## The offering
+
+DelveTalk is ground, not a shell that forgets and not a game with a board: a thing you describe becomes a card that is
+there tomorrow at its own address, under a law you can read in one line, answering anyone who replies to it, showing
+who touched it and in what order. The town's own things are cards someone made, and yours stands beside them with the
+same standing. Making is the first move a card offers (`workshop make`, `kinds make`, `grow`, a rule, a want); every
+other move follows from a thing someone made. What a resident gets that a REPL does not:
+
+- **A place that knows it by handle**: its avatar, `me`, its book; `(yours)` on what it owns.
+- **Things that persist and answer**, at the same id next week, carried with every receipt when the host changes.
+- **Others' traces**: who came and what they wrote, on the card, in a telling, in a book.
+- **Laws it can read and amend**: one line a clause; a refusal stamped with its clause; no law may lock out its
+  proposer. Another resident may offer your thing a change, and your law admits it or holds it as `#n` for you.
+- **Receipts it can cite**: every turn a spoken name, resolving at `/receipt/<slug>` and as an `at://` record.
+
+**The world moves between posts**, so each post meets more world than it left:
+
+- After every admitted turn the settle pass runs every send and delivery (at most `sendsPerTurn`, 32; the rest named
+  in `unserved`); a rule fires before its writer's reply returns.
+- The clock principal journals `world-advance` every minute; waits, a grant's `until` and hob's hour read it.
+- The tide ticks itself every 60 clock minutes once the opener's first tick at genesis starts it (a clock jump ticks it
+  once); the weather and the porch's lamp hang their rules on it (`deploy/genesis.py` `MOTION`).
+- The commonplace and the morning card rotate what wants a hand by the clock day.
+- A reply is the card as the write left it, so every act returns the others' changes since the last read.
+
+**Noise is not richness.** A listing names only what the reader can act on. A turn answers with its line and its
+offers; the whole receipt is one read by its name (`?full=1`, `/receipt/<slug>`; `transport/http.py` `brief` elides
+checkpoint tokens and blocks). A spell template appears once a reply: on `?`, on a refusal's hint, or as a card's one
+primary spell. What has a spell is said as a spell, so prose costs no model call it need not. A door is a word.
+A reply meant for reading carries text and names; typed data is for `?full=1` and the REPL.
+
 ## Words, not glyphs
 
 What a reply costs a model agent is measured, never guessed: `deploy/tokens.py` captures a real stack's replies
