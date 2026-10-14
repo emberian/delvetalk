@@ -397,5 +397,6 @@ def render(state: State, context: Abi.Context) -> Document.Document:
   let spell = if state.of == "kind" then "delvetalk {id} make / name: lamp / of: record / form: seed: text 1..80 / about: <what it is and does>" else spellLine(id, Forms.specs(state.form))
   let voice = if state.voice == "" then "" else "Its things speak: {state.voice}\n"
   let about = if state.about == "" then "" else "{state.about}\n"
-  let head = Document.text("{about}KIND {state.name}: {makes}{bodied}; {natText(state.count)} made. Make one:\n  {spell}\n» {comes}\n{voice}Newest first:\n")
+  let fork = if state.of == "kind" then "" else Card.forkLine(id, "", context)
+  let head = Document.text("{about}KIND {state.name}: {makes}{bodied}; {natText(state.count)} made. Make one:\n  {spell}\n» {comes}\n{voice}{fork}Newest first:\n")
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clippedWithin(Lists.map(newest(state), madeLine), 16n, Card.left(context, Document.size(head)))})})

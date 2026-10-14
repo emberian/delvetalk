@@ -416,6 +416,41 @@ class Carry(Reflection):
         self.assertIn("holds no nobody", p.stderr)
 
 
+class QuietCarry(Reflection):
+    """A quiet the opener set is the world's moderation, carried as a standing index (Snapshot.carriedKeys `quiets`)."""
+    plant, carry, opened = Carry.plant, Carry.carry, Carry.opened
+
+    def setUp(self):
+        super().setUp()
+        self.open_library(opener="ember")
+        town_garden(self.host.send)
+
+    def test_a_quieted_hand_is_still_quiet_after_the_carry(self):
+        """The hand lane: a quiet set before a carry must survive it (the moderation is the world's, not its chain's)."""
+        q = self.host.send(op="world-root", principal="ember", reason="shouting on the porch",
+                           act={"kind": "quiet", "principal": "glm", "hours": 5})
+        self.assertEqual(q["status"], "root", q)
+        # and kim by the moderated power the hand's guest list casts (transport/root.py `request`, POWERS quiet)
+        power = self.host.send(op="world-turn", principal="ember", object="world", method="quiet", identity="hand:quiet:1",
+                               argument=record(who=label("kim"), hours=nat(5), reading=label("shouting too")))
+        self.assertEqual(power["status"], "moderated", power)
+        for who in ("glm", "kim"):
+            self.assertEqual(self.plant(who, f"{who}-while-quiet")["receipt"]["outcome"].get("class"), "quiet", who)
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        new = self.opened(out)
+        for who in ("glm", "kim"):
+            refused = self.plant(who, f"{who}-after-carry", new)
+            self.assertEqual((refused["status"], refused["receipt"]["outcome"].get("class")), ("refused", "quiet"), refused)
+        self.assertEqual(self.plant("mimo", "mimo-after", new)["status"], "admitted")  # only the quieted hands
+        head = new.send(op="world-status")["head"]
+        new.close()
+        again = self.opened(out)  # replayed from the carried genesis, still quiet
+        self.assertEqual(again.send(op="world-status")["head"], head)
+        for who in ("glm", "kim"):
+            self.assertEqual(self.plant(who, f"{who}-after-reopen", again)["receipt"]["outcome"].get("class"), "quiet")
+
+
 class AnotherEdition(Reflection):
     """A journal written under another replay edition does not reopen here; it is carried."""
 

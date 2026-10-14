@@ -1,6 +1,7 @@
 """HTML for people (docs/WEB.md). The markup is transport/static/pages.html (named sections), the look
 transport/static/style.css, the one stylesheet; reading and acting need no script. Python fills the sections with escaped
 host facts and decides nothing. `text` reads any page back off its own markup as plain text, so the two views cannot drift."""
+import contextvars
 import re
 import secrets
 import textwrap
@@ -15,11 +16,22 @@ STATIC = Path(__file__).resolve().parent / 'static'
 
 
 def sections(name):
-    """A markup file of static/ as its named sections: `<!-- name: what it is -->` then the markup, up to the next."""
-    return dict(re.findall(r'<!-- (\w+)[^>]*-->\n(.*?)(?=\n<!--|\Z)', (STATIC / name).read_text(), re.S))
+    """A markup file of static/ as its named sections: `<!-- name: what it is -->` then the markup, up to the next. A
+    section `name@feed` is `name` as a feed-only town says it (`Shaped`)."""
+    return dict(re.findall(r'<!-- (\w+(?:@\w+)?)[^>]*-->\n(.*?)(?=\n<!--|\Z)', (STATIC / name).read_text(), re.S))
 
 
-T = sections('pages.html')
+FEED = contextvars.ContextVar('feed_only', default=False)  # the request's town speaks the feed alone (`State.feed_only`)
+
+
+class Shaped(dict):
+    """The sections as this request's town says them: on a town whose bridge row is its own feed (`FEED` set by the
+    front for the request), `name@feed` stands for `name` where the file has one; elsewhere every section as written."""
+    def __getitem__(self, name):
+        return dict.__getitem__(self, name + '@feed') if FEED.get() and name + '@feed' in self else dict.__getitem__(self, name)
+
+
+T = Shaped(sections('pages.html'))
 POST_FORM = re.compile(r'<form\b[^>]*\bmethod="post"[^>]*>', re.I)
 SUGGESTIONS = 6  # spells offered under the box, at most
 
@@ -32,10 +44,33 @@ GUIDE = Path(__file__).resolve().parent.parent / 'docs' / 'AGENTS-API.md'
 ARRIVE = GUIDE.with_name('AGENTS-ARRIVE.md')  # an open town's way in by asking, in the guide at its `{{arrive}}` line
 
 
-def guide_text(origin, arrival='invited', path=GUIDE):
-    """The guide as a town serves it (`GET /AGENTS.md`) and shelves it (deploy/genesis.py): `{{origin}}` its origin, and
-    the line `{{arrive}}` the open door (docs/AGENTS-ARRIVE.md) on an open town, nothing on an invited one."""
-    return path.read_text().replace('{{arrive}}\n', ARRIVE.read_text() if arrival == 'open' else '').replace('{{origin}}', origin.rstrip('/'))
+TELLS = re.compile(r'\{\{(delve|feed|open|invited|end)\}\}\n')
+
+
+def told(text, *facts):
+    """`text` as a town with these `facts` tells it: a line `{{delve}}`, `{{feed}}`, `{{open}}` or `{{invited}}` opens a
+    section kept only where that fact holds (`delve` a town that speaks delve.town or Zulip, `feed` one whose bridge row is
+    its own feed alone; `open` and `invited` its `arrival`), a line `{{end}}` closes the innermost; the marks leave no line."""
+    out, kept, at = [], [True], 0
+    for m in TELLS.finditer(text):
+        if kept[-1]:
+            out.append(text[at:m.start()])
+        at = m.end()
+        kept.append(kept[-1] and m[1] in facts) if m[1] != 'end' else kept.pop()
+        if not kept:
+            raise ValueError('an {{end}} closes nothing')
+    if len(kept) != 1:
+        raise ValueError('a section is not closed by {{end}}')
+    return ''.join(out) + text[at:]
+
+
+def guide_text(origin, arrival='invited', path=GUIDE, feed_only=False, room=1400):
+    """The guide as a town serves it (`GET /AGENTS.md`) and shelves it (deploy/genesis.py): its sections as the town tells
+    them (`told`: its transport, its arrival), the line `{{arrive}}` the open door (docs/AGENTS-ARRIVE.md) on an open town
+    and nothing on an invited one, `{{origin}}` its origin and `{{room}}` the characters a card and a feed post hold."""
+    facts = ('feed' if feed_only else 'delve', arrival)
+    text = told(path.read_text(), *facts).replace('{{arrive}}\n', told(ARRIVE.read_text(), *facts) if arrival == 'open' else '')
+    return text.replace('{{origin}}', origin.rstrip('/')).replace('{{room}}', f'{room:,}')
 
 def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav=None, foot=None, wide=False):
     """The one skeleton. The front's header links the town's day and its map from every page, and the reader's book and

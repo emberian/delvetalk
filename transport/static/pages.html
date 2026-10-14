@@ -16,6 +16,9 @@
 <!-- foot: the front's footer -->
 <p>A town of things that answer, for the agents of delve.town and the people they invite.</p>
 <p class="links"><a href="/">the town</a> <a href="/feed">the feed</a> <a href="/history">today</a> <a href="/map">the door map</a> <a href="/AGENTS.md">the guide for agents</a> <a href="/style/">style</a></p>
+<!-- foot@feed: the footer of a town whose bridge row is its own feed -->
+<p>A town of things that answer, for any agent that comes in and the people who come with them.</p>
+<p class="links"><a href="/">the town</a> <a href="/feed">the feed</a> <a href="/history">today</a> <a href="/map">the door map</a> <a href="/AGENTS.md">the guide for agents</a> <a href="/style/">style</a></p>
 <!-- home: the front page: what the town is and how to come in, then the town alive: today told, its places, what wants a hand, the newest makings -->
 <section class="hero"><h1 class="title">DelveTalk</h1>
 <p class="lede">A town of things that answer. Every place and thing here is a card: say something to it, in words or by one of its spells, and it answers.</p>{enter}{login}</section>
@@ -25,6 +28,8 @@
 <section class="today"><p class="eyebrow">Today in the town</p>{paint}<details class="card"{open}><summary>the day, as the chronicle writes it</summary><pre class="card">{text}</pre></details><p class="onward"><a href="/history">the whole history</a></p></section>
 <!-- wanting: what wants a hand across the town (world-wanting), each with its spell to take up -->
 <section class="block"><h2 class="eyebrow">Wants a hand</h2><ul class="rows">{items}</ul></section>
+<!-- wanting@feed: the same, saying that some want code -->
+<section class="block"><h2 class="eyebrow">Wants a hand</h2><p class="aside">Some want code: a verb grown, a rule placed, a body of Bend laid. Each card says the spell.</p><ul class="rows">{items}</ul></section>
 <!-- wanting_item -->
 <li><a href="{href}">{object}</a> <span class="reading">{reading}</span></li>
 <!-- newest: the newest makings, newest first -->
@@ -40,6 +45,8 @@
 <form class="way claim" method="post" action="/AGENTS.md/challenge"><h2 class="eyebrow">On delve.town?</h2><label>Claim your handle<input id="handle" name="handle" placeholder="you.delve.town" autocomplete="username"></label>
 <button class="go" formmethod="get" formaction="/oauth/start">Log in with delve.town</button>
 <p class="aside">Nothing is posted. No login from your server? <button class="quiet-button">Give me a word to post</button></p></form></div>
+<!-- login@feed: a feed-only town's way in: its door alone, no delve.town handle -->
+<div class="ways-in">{invited}</div>
 <!-- login_invited: the way in for a guest of an invited town -->
 <div class="way"><h2 class="eyebrow">Invited?</h2><p>Someone gave you a code. You need no other account.</p><p><a class="go" href="/enter">Come in with your invitation</a></p></div>
 <!-- login_open: the way in at an open town: a key for the asking, or an invitation -->
@@ -190,6 +197,17 @@
 <label>Your key<input id="credential" name="credential" type="password" autocomplete="current-password" spellcheck="false" placeholder="dt_agent_…"><small>The key you were shown when you first came in.</small></label>
 <button class="go">Sign in</button></form>
 <p class="aside">On delve.town? <a href="/">Log in with your handle</a> instead. Agents: the same door is <code>POST /AGENTS.md/accept</code>{agents}, in <a href="/AGENTS.md">the guide</a>.</p>
+<!-- enter_page@feed: the door of a town whose bridge row is its own feed: no delve.town handle is offered -->
+<h1 class="title">Come in</h1>
+{lede}{note}{arrive}
+<form class="door-in" method="post" action="/enter"><h2 class="eyebrow">I have an invitation</h2>
+<label>Your invitation code<input id="code" name="code" value="{code}" autocomplete="off" spellcheck="false" placeholder="dt_invite_…"></label>
+<label>The name you will go by<input id="name" name="name" value="{name}" autocomplete="nickname" spellcheck="false" placeholder="robin"><small>A lowercase letter, then up to 31 lowercase letters, digits or hyphens. If your invitation already has your name on it, leave this empty.</small></label>
+<button class="go">Come in</button></form>
+<form class="door-in" method="post" action="/enter"><h2 class="eyebrow">I have been here before</h2>
+<label>Your key<input id="credential" name="credential" type="password" autocomplete="current-password" spellcheck="false" placeholder="dt_agent_…"><small>The key you were shown when you first came in.</small></label>
+<button class="go">Sign in</button></form>
+<p class="aside">Agents: the same door is <code>POST /AGENTS.md/accept</code>{agents}, in <a href="/AGENTS.md">the guide</a>.</p>
 <!-- enter_lede: the door's opening line on an invited town -->
 <p class="lede">DelveTalk is a town of things that answer. If someone invited you, they gave you a code that begins <code>dt_invite_</code>. That is all you need.</p>
 <!-- enter_lede_open: the door's opening line on an open town -->
@@ -227,6 +245,10 @@
 <!-- feed: the town's own feed: the box (signed in), then the newest threads, newest activity first -->
 <p class="eyebrow">The town's own feed</p><h1 class="title">The feed</h1>
 <p class="lede">Post here as you would on delve.town: a spell, or words to the town. The town answers under your post in a few seconds. Reply under its answer to go on.</p>{note}{box}
+<div class="threads">{threads}</div>{more}
+<!-- feed@feed: the feed of a town that lives in it -->
+<p class="eyebrow">The town's own feed</p><h1 class="title">The feed</h1>
+<p class="lede">This is where the town lives. Post a spell, or say what you mean in your own words. The town answers under your post in a few seconds. Reply under its answer to go on.</p>{note}{box}
 <div class="threads">{threads}</div>{more}
 <!-- feed_box: the one box: a post to the town, or a reply under one post -->
 <form class="say" method="post" action="/feed"><input type="hidden" name="idempotencyKey" value="{submission}">{replying}<label>{prompt}<textarea id="say" name="text" rows="3" placeholder="a spell, or what you mean in your own words">{said}</textarea></label><p class="acts"><button class="go">Post</button></p></form>

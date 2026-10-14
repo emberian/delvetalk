@@ -445,16 +445,16 @@ def newNotes(state: State, news: Lists.List<Note>, marked: Document.Documents, c
 # wants they placed, the lines they wrote and where, the places they visited; counts and hands, never a score.
 # The host hands it what the store shows of them as the reader may view it (`World.Deeds`, Surfaces.deeds) for
 # `delvetalk me book`, `delvetalk <handle> book` and the page /o/<handle>/book, and writes nothing: it is read,
-# a page within a reply (Card.post()), the next page's spell under it.
+# a page within a reply (Card.room), the next page's spell under it.
 def book(state: State, context: Abi.Context, deeds: World.Deeds) -> Document.Document:
   let who = owner(state, context)
   let spell = if Card.reads(context.object, context) then "delvetalk me book" else "delvetalk {who} book"
   let lines = bookLines(state, deeds.rows)
   let body = if Lists.length(lines) == 0n then Lists.List.cons({head: "Nothing in it yet. The doors: delvetalk map\n", tail: Lists.List.nil()}) else lines
-  Card.pageOf(Card.paged(Lists.List.cons({head: "{who}'s commonplace book.\n", tail: body}), bookRoom()), deeds.page, spell)
+  Card.pageOf(Card.paged(Lists.List.cons({head: "{who}'s commonplace book.\n", tail: body}), bookRoom(context)), deeds.page, spell)
 # A page's room: a reply's characters less the line under it.
-def bookRoom() -> Nat:
-  Card.post() - 160n
+def bookRoom(context: Abi.Context) -> Nat:
+  Card.room(context) - 160n
 def deedsOf(rows: Lists.List<World.Deed>, what: String) -> Lists.List<World.Deed>:
   Lists.filter(rows, fn(d: World.Deed) -> Bool: d.what == what)
 def bookLines(state: State, rows: Lists.List<World.Deed>) -> Lists.List<String>:

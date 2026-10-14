@@ -94,6 +94,7 @@ class FrontCase(ServeCase):
     fresh_world = False
     hosted_accounts = False
     config = {}  # the front's config beyond its socket and key directory (an open town's door: tests/test_arrival.py)
+    transport = None  # its bridge row's transport (`open --transport`): 'feed' is a town that speaks its own feed alone
 
     @classmethod
     def setUpClass(cls):
@@ -115,6 +116,8 @@ class FrontCase(ServeCase):
         st = State(self.tmp.name, config=Config(host_socket=self.socket, hosted_accounts=self.hosted_accounts, repo_keys=str(Path(self.tmp.name) / 'repo'), **self.config))
         if self.hosted_accounts:
             write_repo_key(st)
+        if self.transport:
+            st.write(st.row, {'world': st.world, 'transport': self.transport, 'realm': None, 'channel': None, 'zuliprc': None})
         ident = identity.Identity(st, delve.Client(self.provider), clock=lambda: self.now[0])
         self.outbox = st.outbox  # the hand's: an HTTP turn that writes a public object drafts here
         self.front = serve(Front(st, self.host, ident, ('127.0.0.1', 0), clock=lambda: self.now[0]))

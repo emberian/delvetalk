@@ -17,7 +17,7 @@ ROOT = {
     'delete': (('object', 'text'),),
     'as': (('principal', 'text'), ('object', 'text'), ('method', 'text'), ('argument', 'json'), ('intent', 'text')),
     'settings': (('clock', 'int?'), ('postQuota', 'int?'), ('interpretQuota', 'int?'), ('modelQuota', 'int?'), ('turnQuota', 'int?'),
-                 ('objectQuota', 'int?'), ('paintQuota', 'int?')),
+                 ('objectQuota', 'int?'), ('paintQuota', 'int?'), ('cardRoom', 'int?')),
     'library': (('dir', 'text'),),
     'ignore': (('height', 'int'),), 'unignore': (('height', 'int'),),
     'card': (('object', 'text'), ('text', 'text?')),
@@ -27,7 +27,7 @@ ROOT = {
     'expire': (('principal', 'text'), ('scratch', 'text')),  # a scratch world is serve's: discarded now, in the hand's log only
 }
 MOD_SETTINGS = (('postQuota', 'int?'), ('interpretQuota', 'int?'), ('modelQuota', 'int?'), ('turnQuota', 'int?'), ('objectQuota', 'int?'),
-                ('paintQuota', 'int?'))  # the host's quotaKeys
+                ('paintQuota', 'int?'), ('cardRoom', 'int?'))  # the host's settingKeys
 POWERS = {  # (the object the power is cast on: a field's value, or `world`), its fields
     'quiet': ('world', (('who', 'text'), ('hours', 'int'))), 'unquiet': ('world', (('who', 'text'),)),
     'retire': ('object', (('object', 'text'),)), 'unretire': ('object', (('object', 'text'),)),
@@ -38,9 +38,10 @@ POWERS = {  # (the object the power is cast on: a field's value, or `world`), it
 
 def newcomers(config):
     """An open town's limits for newcomers as the host's quotas (config `turn_quota`, `object_quota`, `paint_budget`,
-    `hob_budget`; docs/DEPLOY.md "A second instance"): what `hand limits` sets with a reading."""
+    `hob_budget`; docs/DEPLOY.md "A second instance"), and the room its cards are shown in when the config gives one
+    (`card_room`, the host's `cardRoom`): what `hand limits` sets with a reading."""
     return {'turnQuota': config.turn_quota, 'objectQuota': config.object_quota, 'paintQuota': config.paint_budget,
-            'modelQuota': config.hob_budget}
+            'modelQuota': config.hob_budget, **({'cardRoom': config.card_room} if config.card_room else {})}
 
 
 def value(kind, raw):

@@ -23,6 +23,12 @@ CLIP = 1400  # what a reader of the town reads of one post (world/lib/Card.obend
 NOTE = 64  # room each part keeps for its number, and for saying when the next part follows
 
 
+def holds(st):
+    """What one post holds where a world's drafts go: on a feed-only town (`State.feed_only`) its `card_room` (config),
+    the room its cards are shown in, so an answer is posted whole up to it; where posts go to delve.town or Zulip, CLIP."""
+    return st.config.room if st.feed_only() else CLIP
+
+
 def reply_ref(client, parent_uri):
     """AT Protocol reply refs: parent is the post replied to; root is the parent's own root, or the parent."""
     got = client.record(parent_uri)

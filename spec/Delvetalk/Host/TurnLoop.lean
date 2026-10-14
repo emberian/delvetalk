@@ -874,6 +874,7 @@ def hasMethod (o : Object) (name : String) : Bool :=
     object (`caller`, "" for `world-card`), and the turn's intent and height. -/
 def cardContext (w : World) (id reader caller intent : String) (height : Nat) (method : String) (whole : Bool := false) : Data :=
   contextData id reader (handleShown w reader) w.opener caller intent height w.clock (if whole then Card.wholeKind else "card") method
+    (room := w.cardRoom)
 
 /-- A pure definition of `id`'s package run on its committed state (the first argument) through the
     stored path under this turn's ticks (KERNEL-HANDOFF §15): only the rows it forces are fetched,
@@ -1035,6 +1036,7 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   let c ← compiledMethod obj "handle"
   let entry ← entryOf c
   let context := contextData handler s.subject (handleShown s.world s.subject) s.world.opener self s.intent s.world.height s.world.clock "handle" "" s.post s.sender
+    s.world.cardRoom
   let (domain, arguments) := match c.type with
     | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ ct _)) => (d, [obj.state, plan, fitRecord c.bounds ct context])
     | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
@@ -1681,17 +1683,6 @@ def actArgument (verb : String) (argument : Data) : Data :=
 def madeReceipt (w : World) (id : String) : String :=
   (((w.touched[id]?).bind (·[0]?)).bind w.entries.hashAt?).getD ""
 
-/-- Where a card's code came from (`Object.madeFrom`), one line: the object it was made from, whoever
-    turned the entry it cites, and that entry's height; "" for code given whole. -/
-def lineageLine (w : World) (o : Object) : String := Id.run do
-  let some m := o.madeFrom | return ""
-  let some object := (m.getObjValAs? String "object").toOption | return ""
-  let receipt := (m.getObjValAs? String "receipt").toOption.getD ""
-  let some i := w.entries.indexOf? receipt | return s!"After {object}.\n"
-  let by_ := ((w.entries.get? i).bind fun e => ((e.getObjVal? "identity").toOption.bind
-    (·.getObjValAs? String "principal" |>.toOption))).map (handleShown w ·)
-  return s!"After {object}{(by_.map (s!" by {·}")).getD ""}, entry {i + 1}.\n"
-
 /-- The workshop a verb grown with a body is written by (`growBody`). -/
 def workshopId : String := "workshop"
 
@@ -2021,7 +2012,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
           (some ((← expectedNow).setObjVal! "cases" (Json.mkObj [("at", toJson path), ("given", toJson word), ("cases", toJson cases)]))))
     else pure argument
   let context := contextData id s.subject (handleShown s.world s.subject) s.world.opener caller s.intent s.world.height s.world.clock
-    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post s.sender
+    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post s.sender s.world.cardRoom
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([storedState obj, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([storedState obj, fitRecord compiled.bounds ct context], r)
@@ -2654,6 +2645,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
       recordCells id o.version { scalar := true }
       let context := contextData id s.subject (handleShown s.world s.subject) s.world.opener self s.intent s.world.height s.world.clock "view" view s.post s.sender
+        s.world.cardRoom
       match ← derivedView id o view context with
       | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause
@@ -2951,6 +2943,22 @@ def inPublic (w : World) (entry : Json) : List (String × Json) :=
     (·.getObjValAs? String "object" |>.toOption)
   [("inPublic", toJson (objects.all (viewable w "" ·)))]
 
+/-- A law's refusal that teaches (a world with more than one post's room, `cardRoom`): whose law it is, and the one line
+    that has it your way, your own thing of its kind or your own kind over it; none for any other refusal, or a world
+    whose cards are post-sized (its refusal reads as before). Said in the reply, never journaled. -/
+def teaching (w : World) (entry : Json) : Option String := do
+  guard (w.cardRoom > Limits.cardShownChars && tagOf entry == "refused")
+  let outcome ← (entry.getObjVal? "outcome").toOption
+  guard ((outcome.getObjValAs? String "class").toOption == some "lawRefused")
+  let id ← (outcome.getObjValAs? String "object").toOption
+  let o ← w.objects[id]?
+  let owner := ownerOf o.state
+  let whose := if owner.isEmpty then s!"{id}'s law" else s!"{shownName w owner}'s law on {id}"
+  let kind := (text? (fieldsOf o.state) "kind").getD ""
+  let over := if kind.isEmpty then (if id.startsWith "kind/" then id else "record") else kind
+  let yours := if kind.isEmpty then "" else s!"delvetalk {kind} make (a {kind.drop 5} of your own, under the same law), or "
+  return s!"It is {whose}. To have it your way: {yours}delvetalk kinds make / name: <yours> / of: {over} / law: <your law>; its law read whole: delvetalk library laws / card: {id}"
+
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
     offers the entry retains for the turn's own principal (others are read with `world-offers`), and an
     admitted entry's three lines (`revealed`) and whether they may be posted (`inPublic`). -/
@@ -2972,8 +2980,9 @@ def turnReply (w : World) (r : Json) : Json :=
       ((entry.getObjVal? "plan").toOption.map fun p => [("plan", match planRefusedAct entry with
         | some (n, _) => p.setObjVal! "refused" (toJson n)
         | none => p)]).getD [] ++
-      -- What a refusal may say in public, for transport to draft from.
-      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
+      -- What a refusal may say in public, for transport to draft from; a law's, on a roomy world, how to have it otherwise.
+      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
+      ((teaching w entry).map fun t => [("hint", toJson t)]).getD [])
 
 /-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
     reader, `identity`), projected under the reader's authority; a refusal with its `public` projection.
@@ -4473,18 +4482,18 @@ def cardRendered (w : World) (id reader : String) : Option String :=
     | (.ok (.ok document), _) => (Delvetalk.Document.render document).toOption
     | _ => none
 
-/-- `text` followed by `block` within `Limits.cardShownChars` characters, the one place the bound is applied to a
-    card: over it, `text` is cut to leave room for a closing line that says so and where the rest is read, and
-    `block` (whole lines) stands after it. -/
-def clipCard (id text block : String) : String :=
-  let bound := Limits.cardShownChars
+/-- `text` followed by `block` within `bound` characters (`Limits.cardShownChars`, or a world's `cardRoom`), the one
+    place the bound is applied to a card: over it, `text` is cut to leave room for a closing line that says so and
+    where the rest is read, and `block` (whole lines) stands after it. -/
+def clipCard (id text block : String) (bound : Nat := Limits.cardShownChars) : String :=
   let whole := if block.isEmpty then text else (if text.isEmpty || text.endsWith "\n" then text else text ++ "\n") ++ block
   if whole.length ≤ bound then whole else
   let note := s!"\n[clipped at {bound} characters; world-inspect {id} reads its source]\n"
   (text.take (bound - note.length - block.length)).toString ++ note ++ block
 
-/-- The card `id` shows its readers as `text`, clipped by `clipCard`, with one line for each want it holds
-    (`wants <name>: <reading>: <spell>`, `wantRows` for `reader`) while the lines stay within a quarter of the bound. -/
+/-- The card `id` shows its readers as `text`, clipped by `clipCard` at the world's `cardRoom`, with one line for each
+    want it holds (`wants <name>: <reading>: <spell>`, `wantRows` for `reader`) while the lines stay within a quarter of
+    the one-post bound (`Limits.cardShownChars`). -/
 def shownCard (w : World) (id reader text : String) : String :=
   let lines : List String := match w.objects[id]? with
     | some o => (wantRows w reader id o).map fun (row : Json) =>
@@ -4494,7 +4503,7 @@ def shownCard (w : World) (id reader text : String) : String :=
     | none => []
   let (block, _) := lines.foldl (init := ("", true)) fun (held : String × Bool) (l : String) =>
     if held.2 && held.1.length + l.length ≤ Limits.cardShownChars / 4 then (held.1 ++ l, true) else (held.1, false)
-  clipCard id text block
+  clipCard id text block w.cardRoom
 
 /-- `cardRendered` within `Limits.cardShownChars` characters, "" for none: what an interpretation shows the model
     of the card answered (its wants go with it as `wants`, whole). -/

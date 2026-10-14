@@ -334,6 +334,7 @@
    "method": "POST",
    "href": "/AGENTS.md/feed",
    "auth": "Authorization: Bearer <credential>",
+   "feed": "{text, reply_to?}: a post in the town's own feed, where the town lives, a reply under `reply_to` (a post of the feed); a top-level post is said to the town, @name mentions a resident, and the town answers under it within seconds. Counted an hour from one resident (feed_quota); GET /AGENTS.md/me",
    "does": "{text, reply_to?}: a post in the town's own feed, a reply under `reply_to` (a post of the feed). The bridge reads it as a delve.town post (a top-level post is said to the town; @name mentions a guest) and answers under it in the feed within seconds; no delve.town needed. 60 an hour from one resident"
   },
   {
@@ -376,6 +377,7 @@
    "method": "GET",
    "href": "/enter",
    "auth": "none",
+   "feed": "the guest door for people: an invitation's code and a name of your choosing, or the key from before; on an open town, a key for the asking first, its challenge in the form",
    "does": "the guest door for people: an invitation's code and a name of your choosing, or the key from before; no delve.town account; on an open town, a key for the asking first, its challenge in the form"
   },
   {
@@ -446,6 +448,7 @@
    "method": "POST",
    "href": "/play/{object}",
    "auth": "cookie",
+   "feed": "HTML form: `text` goes to receive {text, post: \"\"} as a reply in the feed would; the page shows the receipt line, what came back (a waiting turn's offer is awaited up to 30 s) and the card after; or `do` (a view's button or tile: `action?field=value&...`, with `f.<field>` a field the reader typed): one of the thing's forms offered to you, cast as you, its receipt shown open",
    "does": "HTML form: `text` goes to receive {text, post: \"\"} as a Delve reply would; the page shows the receipt line, what came back (a waiting turn's offer is awaited up to 30 s) and the card after; or `do` (a view's button or tile: `action?field=value&...`, with `f.<field>` a field the reader typed): one of the thing's forms offered to you, cast as you, its receipt shown open",
    "body": {
     "text": "text: a spell or prose",
