@@ -1,4 +1,4 @@
-"""What wants a hand across the world (docs/OVERHAUL.md §5; HOST-HANDOFF 5.164, 5.165): `world.wanting {after,
+"""What wants a hand across the world (docs/OVERHAUL.md §5; HOST-HANDOFF §5 "Rules, wants and verbs", §5.1 "Standing"): `world.wanting {after,
 limit}` and `world-wanting` read the wanting index `record` derives (`World.wanting`): each want that holds of its
 thing as it stands, answerable by its reader; blocked wants are counted. Newest-first pages hold whole heights;
 oldest-first discovery rotates daily and pages by offset. A want reads what

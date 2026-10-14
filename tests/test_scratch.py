@@ -1,4 +1,4 @@
-"""Scratch worlds and references across worlds (docs/FEDERATION.md §2, §3; HOST-HANDOFF 5.140).
+"""Scratch worlds and references across worlds (docs/FEDERATION.md §2, §3; HOST-HANDOFF §5 "Serve").
 
 Evidence for FOUNDATION §7 (layer: host). A principal opens a world of its own, empty or forked from the town at a
 height with what it may view; it expires 360 town clock minutes after its last op, files and all, and says so; at

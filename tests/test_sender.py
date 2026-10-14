@@ -1,7 +1,7 @@
 """`context.sender`: the object whose send a turn delivers, the same in every frame of that turn and in
 its law's context, "" for a turn a principal began; `caller` stays the frame's calling object.
 
-Evidence for HOST-HANDOFF 5.155 (layer: host). Refuted by a delivered turn whose frames or law see
+Evidence for HOST-HANDOFF §5.1 (layer: host). Refuted by a delivered turn whose frames or law see
 another sender, a direct turn that sees one, or a replay that judges the law otherwise.
 
     python3 -W error -m unittest tests.test_sender -v

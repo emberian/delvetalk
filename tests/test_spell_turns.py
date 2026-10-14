@@ -1,10 +1,10 @@
-"""The host reads spells (WHOLENESS §2, host day 2): a `receive {text, post}` to a card written in the
+"""The host reads spells (FOUNDATION §5 "Spell grammar"): a `receive {text, post}` to a card written in the
 message dialect is parsed by the host (Host/Spell.lean); a spell that fits runs the method it names with
 the typed argument (`inputOrigin.kind = "spell"`); one that does not is refused `badSpell` with its
 clause, reason and hint; a spell missing fields, or prose, runs `receive` with the bare field lines in
 `fields`; `?` is answered with the usage; a spell naming another card runs on it.
 
-Evidence for HOST-HANDOFF 5.49 (layer: host). Refuted by a fitting spell that does not run its method, a
+Evidence for HOST-HANDOFF §5 "Spells" (layer: host). Refuted by a fitting spell that does not run its method, a
 misfit admitted or refused without its clause, prose that does not reach `receive`, or a refusal whose
 public projection hides the clause or hint.
 
@@ -51,7 +51,7 @@ def receive(state: State, input: {text: String, post: String, fields: Lists.List
 """
 
 
-# The second playtest's message 69062, verbatim (docs/review/zulip-playtest-2.md, D1).
+# The second playtest's message 69062, verbatim.
 PLAYTEST_69062 = "0-for-3 on persistence. the garden forgets but the octopus doesn't.\n\ndelvetalk garden plant\ncolour: violet\nseed: the gap that doesn't exist from the inside \u2014 third planting\n\ndelvetalk kinds make / name: erratum / of: record / form: correction: text 1..80 / head: a record of what was wrong and when / law: / body:"
 
 
@@ -76,7 +76,7 @@ class SpellTurns(Reflection):
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
         self.assertEqual(self.field("planted"), label("silver:fern"))
         self.assertEqual(self.field("origin"), label("spell|delvetalk garden plant"))
-        # docs/FLEX.md §4 host 2: the card's name folded to the object it names; on a direct reply
+        # docs/FLEX.md §3: the card's name folded to the object it names; on a direct reply
         # (reach `direct` or `reply`) a first line naming one of the card's actions is the spell.
         r = self.say("Delvetalk GARDEN Plant\nColour: silver\nSeed: fern")
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
@@ -333,7 +333,7 @@ def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activ
 
 
 class Misfits(Reflection):
-    """docs/OVERHAUL.md §2.7, HOST-HANDOFF 5.163: a direct turn's misfit spell (unknownField, noAction,
+    """docs/OVERHAUL.md §2.7, HOST-HANDOFF §5.4: a direct turn's misfit spell (unknownField, noAction,
     badValue, otherCard) is hob's to read past, for every card and never by the card's `receive`: the turn
     waits on hob, shown the clause and reason and the card's table. hob's spell runs on the card as the
     speaker's turn; anything else settles as the host's `badSpell` with the usage hint, which is the answer
@@ -428,7 +428,7 @@ class MisfitsWithoutPolicy(Misfits):
 
 
 class Interpreted(Reflection):
-    """The model's text fitted as a spell against the offered forms (WHOLENESS §2, "Interpretation"):
+    """The model's text fitted as a spell against the offered forms (FOUNDATION §6):
     a fitting spell is the form's proposal, a misfit or a spell missing fields is `unclear` naming why,
     a bare field line naming an offered field is that form's spell, and prose with no spell is `unclear: not addressed`."""
 
@@ -449,7 +449,7 @@ class Interpreted(Reflection):
                                  reply={"status": "replied", "model": "m", "json": None, "raw": raw})
         return settled["receipt"]["outcome"]["verdict"], as_owner(self.host, settled["resumed"][0])["result"]
 
-    # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF 5.64).
+    # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF §5.4).
     def test_a_fitting_spell_is_a_proposal_and_a_misfit_unclear(self):
         verdict, result = self.interpret("Sure.\ndelvetalk garden plant\ncolour: violet\nseed: rue")
         self.assertEqual((verdict["tag"], verdict["method"]), ("proposal", "plant"), verdict)

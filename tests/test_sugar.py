@@ -263,7 +263,7 @@ WRITE_SUGARED = GARDEN + """  let written(_) = write {planted: add 1n, children:
 """
 
 
-# KERNEL-HANDOFF §16 item 8c: a form block declares its method's input record and, without a
+# KERNEL-HANDOFF §10: a form block declares its method's input record and, without a
 # hand-written forms(), forms() of the blocks in source order.
 FORM_STATE = FORM_HEAD + """sum Colour:
   amber: {}
@@ -338,7 +338,7 @@ def initial() -> State:
 """
 
 
-# KERNEL-HANDOFF §16 item 8a: a module with a State and the Plan library and neither `Edits` nor
+# KERNEL-HANDOFF §10: a module with a State and the Plan library and neither `Edits` nor
 # `keep` gets both, at the end of the module: lists and relations `Entries<X, X>`, a Nat `Edit<Nat, Nat>`,
 # anything else `Edit<T, {}>`; `keep()` keeps every field.
 DERIVED_HEAD = HEAD + """import ./Abi.obend as Abi
@@ -451,7 +451,7 @@ EQUIVALENT = (
        ("form blocks: values, inputs and the derived forms()", FORM_STATE + FORM_BLOCKS_EXPLICIT + FORM_INPUTS_EXPLICIT,
         FORM_STATE + FORM_BLOCKS, ("plant", "water", "planting", "waterForm", "forms"), FORM_LIB, False, ()),
        ("write {...}", WRITE_EXPLICIT, WRITE_SUGARED, ("plant",), ABI_LIB, False, ())]
-    # RELATIONAL section 3: insert/upsert/retract; `remove ITEM` is removeItem, `amend ITEM with CHANGE` amendItem.
+    # FOUNDATION §9 "Edits": insert/upsert/retract; `remove ITEM` is removeItem, `amend ITEM with CHANGE` amendItem.
     + [("write " + s.split(": ")[1].split(" ")[0], *edit(s, x), ("plant",), ABI_LIB, False, ()) for s, x in (
         ("children: insert input.child", "children: P.Entries::<P.Reference, P.Reference>.insert({row: input.child})"),
         ("children: upsert input.child", "children: P.Entries::<P.Reference, P.Reference>.upsert({row: input.child})"),
@@ -599,7 +599,7 @@ class Sugar(unittest.TestCase):
 
     def test_each_derived_refusal_names_its_source_line(self):
         # `compile` does not localize (check-package's `localize` recompiles each function alone to
-        # find a spanless refusal): a span here is the generics pass's own (KERNEL-HANDOFF §16 item 9).
+        # find a spanless refusal): a span here is the generics pass's own (KERNEL-HANDOFF §8, "Located refusals").
         tags = ("refused (fixed): note", "refused (form-kind)", "refused (form-input): form", "refused (derived-edits): the State's fields",
                 "refused (derived-forms): forms()")
         seen = set()
@@ -643,7 +643,7 @@ class Sugar(unittest.TestCase):
         self.assertEqual(second["status"], "yielded", second)
         self.assertEqual(self.h.resume(art, second["checkpoint"], variant("written"))["reason"], "unexpected response written")
         # In both branches of a tail `if`, refuse is where the activity finishes; its reason is any
-        # String, computed before the turn ends (KERNEL-HANDOFF section 26).
+        # String, computed before the turn ends (KERNEL-HANDOFF §8, `refuse(line)`).
         art = self.compiled(TURN_HEAD + "def h(n: Nat) -> Activity<Nat>:\n  if n < 2n then refuse(\"refused small: {natText(n)} is under 2\") else n\n", "h", world=True)
         self.assertEqual((self.h.start(art, [nat(0)])["status"], self.h.start(art, [nat(1)])["reason"]),
                          ("refused", "refused small: 1 is under 2"))
@@ -671,7 +671,7 @@ class Sugar(unittest.TestCase):
         self.assertEqual(reply["status"], "refused", reply)
 
     def test_the_artifact_lists_relations_fixed_fields_and_declarations_through_layers_and_aliases(self):
-        # RELATIONAL section 11: a limit (0 is the host's default) and the retention past it.
+        # FOUNDATION §9 "Canonical form": a limit (0 is the host's default) and the retention past it.
         art = self.compiled(RELATIONS_BOUNDED, "initial", ("List",))
         self.assertEqual(art["relations"], [{"field": "rains", "key": ["author", "at"], "limit": 64, "retain": "dropOldest"}])
         # Refuted by an artifact without `fixed` whose effective State has fixed fields: a layer with no
