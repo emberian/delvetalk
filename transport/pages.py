@@ -37,14 +37,15 @@ def guide_text(origin, arrival='invited', path=GUIDE):
     the line `{{arrive}}` the open door (docs/AGENTS-ARRIVE.md) on an open town, nothing on an invited one."""
     return path.read_text().replace('{{arrive}}\n', ARRIVE.read_text() if arrival == 'open' else '').replace('{{origin}}', origin.rstrip('/'))
 
-def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav=None, foot=None, wide=False):
+def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav=None, foot=None, layout=''):
     """The one skeleton. The front's header links the town's day and its map from every page, and the reader's book and
     signing out (or the way in); the hand passes its own `head` (the stylesheet inlined), `nav` and `foot`, and its
-    header names the world it shows. `wide`: a page laid out in columns on a wide screen (the front page)."""
+    header names the world it shows. `layout`: the body's class, how the page uses a wide screen (style.css "A wide
+    screen": `wide` the frame only, `home`, `place`, `feed`, `surface`, `hand`); a phone reads every page as one column."""
     front = nav is None
     you = (T['who_in'].format(who=e(who), book=e(quote(who, safe=''))) if who else T['who_out']) if front else T['who'].format(who=e(who or ''))
     return T['shell'].format(title=e(title), site=e(site), home=e(home), head=T['head'] if head is None else head, nav=T['nav'] if front else nav,
-                             who=you, wide=' class="wide"' if wide else '', body=body, foot=T['foot'] if foot is None else foot)
+                             who=you, layout=f' class="{e(layout)}"' if layout else '', body=body, foot=T['foot'] if foot is None else foot)
 
 
 STAMPS = {'admitted': '●', 'refused': '§', 'suspended': '…', 'quiet': '—'}  # a receipt's stamp: an icon beside its word, never colour alone
@@ -84,9 +85,7 @@ def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), new
     items = ''.join(T['place_item'].format(href=e(quote(d['to']['object'], safe=':')), label=e(d.get('label') or d['to']['object']),
                                            yours=yours(d['to']['object'], did), about=e(d.get('description') or d.get('head') or d['to']['object'])) for d in doors)
     places = T['places'].format(items=items, residents=T['residents'].format(n=n)) if doors or n else ''
-    go = (lambda o: '/play/' + quote(o, safe='/:')) if who else (lambda o: '/o/' + quote(o, safe=':'))
-    wants = T['wanting'].format(items=''.join(T['wanting_item'].format(href=e(go(w['object'])), object=e(w['object']), reading=e(w.get('reading') or w.get('name', '')))
-                                              for w in wanting)) if wanting else ''
+    wants = wanted(wanting, who)
     made = T['newest'].format(items=''.join(T['newest_item'].format(href=e('/o/' + quote(o, safe=':')), object=e(o), who=e(guest_name(p)), height=e(str(h)))
                                             for o, p, h in newest)) if newest else ''
     told = T['today'].format(paint=painting((today or {}).get('paint')), open='' if (today or {}).get('paint') else ' open',
@@ -94,7 +93,26 @@ def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), new
     return page('a town of things that answer', who, T['home'].format(
         height=e(str(status.get('height'))), objects=e(str(status.get('objects'))), enter=T['enter'].format(book=e(quote(who or '', safe=''))) if who else '',
         login='' if who else T['login'].format(invited=T['login_open'] if open_door else T['login_invited']), today=told, places=places,
-        wanting=wants, newest=made), wide=True)
+        wanting=wants, newest=made), layout='wide home')
+
+
+def wanted(wanting, who):
+    """What wants a hand across the town (world-wanting's rows), each a link to play it (or read it, nobody signed in)."""
+    go = (lambda o: '/play/' + quote(o, safe='/:')) if who else (lambda o: '/o/' + quote(o, safe=':'))
+    return T['wanting'].format(items=''.join(T['wanting_item'].format(href=e(go(w['object'])), object=e(w['object']), reading=e(w.get('reading') or w.get('name', '')))
+                                             for w in wanting)) if wanting else ''
+
+
+CLIPPED = 90  # characters of a feed post shown beside a place
+
+
+def elsewhere(wanting, posts, who):
+    """Beside a place on a wide screen: what wants a hand in the rest of the town and the feed's newest posts (rows as
+    /feed shows them), `hidden` on a phone and in the text view; nothing when the town is quiet."""
+    clip = lambda t: ' '.join(t.split())[:CLIPPED] + ('…' if len(' '.join(t.split())) > CLIPPED else '')
+    feed = T['feed_newest'].format(items=''.join(T['feed_newest_item'].format(anchor=e(anchor(r['uri'])), who=e(r['handle']), text=e(clip(r['text'])))
+                                                 for r in posts)) if posts else ''
+    return T['elsewhere'].format(wanting=wanted(wanting, who), feed=feed) if wanting or posts else ''
 
 
 def items(ids, words, did):
@@ -330,25 +348,28 @@ def shown(path, drawn, signed_in):
 
 
 def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), view=None, ways=(), entries=(), said='', told=None, did=None, town='',
-         spent=None, drawn=None):
+         spent=None, drawn=None, others=((), ())):
     """An object to play: its name, a place's telling when the reply just sent entered it, what came back, the place, the
-    one box and its suggestions (the reply's spells, then what the thing wants, then the card's own), then what is around it."""
+    one box and its suggestions (the reply's spells, then what the thing wants, then the card's own), then what is around it
+    and, on a wide screen, `others` (world-wanting's rows, the feed's newest posts) beside it."""
     wanted = [(' '.join(w['asks'].split()[1:3]), w['asks']) for w in wants if w.get('asks')]
     return page(name, who, T['play'].format(heading=heading(name, view, did, town), name=e(name), path=e(path), reply=telling(told) + answer, said=e(said),
                                             view=shown(path, drawn, True),
                                             place=(place(card, paint, wants, spent) + ring(view)) if card is not None else '',
                                             suggestions=suggestions(path, [*offered, *wanted, *(speech(card)[1] if card else [])], f'delvetalk {name} ?'),
-                                            around=around(name, view, ways, entries, town=town) if card is not None else ''))
+                                            around=around(name, view, ways, entries, town=town) if card is not None else '',
+                                            elsewhere=elsewhere(*others, who)), layout='place')
 
 
 BRIEF = 5  # receipts the brief text view keeps
 
 
-def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), brief=None, paint=None, told=None, town='', spent=None, drawn=None):
+def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), brief=None, paint=None, told=None, town='', spent=None, drawn=None,
+        others=((), ())):
     """An object as anyone may read it: its name, a place's telling for a signed-in reader, the place (paint, exact card,
     wants), a way to speak to it (or in), what is around it, then its law, source and journal on demand. `brief` (the text
     view's default, the href of the whole page): the place, the doors and the newest BRIEF entries; the law and the source
-    are a link away."""
+    are a link away. `others` as `play`'s."""
     place_shown = telling(told) + (place(card, paint, wants, spent) + ring(view) if card else T['state'].format(state=dl(view.get('state'))))
     play = T['playlink'].format(href=e(quote(name, safe='/:'))) if who else T['comein'] if card else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
@@ -359,13 +380,14 @@ def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), 
     return page(name, who, T['object'].format(heading=heading(name, view, did, town), view=shown(quote(name, safe='/:'), drawn, bool(who)),
                                               shown=place_shown, play=play, source=source,
                                               around=around(name, view, ways, entries, lambda o: '/o/' + quote(o, safe=':'), town) if card else '',
-                                              receipts=T['receipts'].format(n=len(entries), slips=''.join(slip(x, did) for x in entries)) if entries else ''))
+                                              receipts=T['receipts'].format(n=len(entries), slips=''.join(slip(x, did) for x in entries)) if entries else '',
+                                              elsewhere=elsewhere(*others, who)), layout='place')
 
 
 def surface(title, who, text, paint=None, drawing=''):
     """A read as a page (the book, the history, the map): its paint above, the exact text a post of its spell carries,
     a drawing of it beside when it has one."""
-    return page(title, who, T['surface'].format(title=e(title), paint=painting(paint), text=e(text), drawing=drawing))
+    return page(title, who, T['surface'].format(title=e(title), paint=painting(paint), text=e(text), drawing=drawing), layout='surface')
 
 
 MAP_WIDTH, MAP_ROW, MAP_PER_ROW, MAP_NODES = 360, 56, 3, 36
@@ -501,7 +523,8 @@ def feed(threads, who, *, more=None, reply=None, posted=None, refresh=None, wait
         note = 'Posted. The town is answering below.' if waiting or refresh else 'Posted.'
     head = '<link rel="stylesheet" href="/static/style.css">' + (f'<meta http-equiv="refresh" content="3;url={e(refresh)}">' if refresh and not composer else '')
     return page('the feed', who, T['feed'].format(note=T['feed_note'].format(note=e(note)) if note else '', box=box, threads=shown,
-                                                  more=T['more'].format(href=e('/feed?before=' + quote(more, safe='') + '&limit=' + str(limit))) if more else ''), head=head)
+                                                  more=T['more'].format(href=e('/feed?before=' + quote(more, safe='') + '&limit=' + str(limit))) if more else ''), head=head,
+                layout='feed' if composer else '')
 
 
 def catalogue(api, who):
@@ -509,7 +532,7 @@ def catalogue(api, who):
     return page('the catalogue', who, T['catalogue'].format(
         routes=''.join(row(r['method'], r['href'], r['auth'], r['does']) for r in api['routes']),
         errors=''.join(row(v['code'], k, v['status'], v['when']) for k, v in api['errors'].items()),
-        refusals=''.join(row(k, v['transient'], v['hint'], v['means']) for k, v in api['refusals'].items()), limits=dl(api['limits'])))
+        refusals=''.join(row(k, v['transient'], v['hint'], v['means']) for k, v in api['refusals'].items()), limits=dl(api['limits'])), layout='wide')
 
 
 def refusal(title, who, body, code_class=None):

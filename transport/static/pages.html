@@ -1,6 +1,6 @@
 <!-- shell: every page, the hand's too; the caller escapes {title}, {who}; {head} links or inlines the one stylesheet; {nav} and {foot} are markup -->
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title} · {site}</title>{head}</head><body{wide}>
+<title>{title} · {site}</title>{head}</head><body{layout}>
 <header><a class="mark" href="{home}">{site}</a>{nav}{who}</header>
 <main>{body}</main><footer>{foot}</footer></body></html>
 <!-- nav: the front's header: the town's day and its doors, from every page -->
@@ -73,6 +73,12 @@
 <p class="eyebrow">{about}</p><h1 class="title">{name}{yours}</h1>
 <!-- around: what is around a place: who is here, what lies here, its newest lines; its doors as a small local map -->
 <section class="around"><div class="here">{here}</div><figure class="local">{drawing}<figcaption>{doors}</figcaption></figure></section>
+<!-- elsewhere: beside a place on a wide screen, what is happening in the rest of the town: what wants a hand, the feed's newest posts; `hidden` on a phone and in the text view, where the home page and /feed say it -->
+<div class="elsewhere" hidden>{wanting}{feed}</div>
+<!-- feed_newest: the feed's newest posts by residents, each a line -->
+<section class="block"><h2 class="eyebrow">On the feed</h2><ul class="rows">{items}</ul><p class="aside"><a href="/feed">the feed</a></p></section>
+<!-- feed_newest_item -->
+<li><a href="/feed#{anchor}">{who}</a> <span class="reading">{text}</span></li>
 <!-- present: who is in the place now -->
 <p class="present">{names} {verb} here.</p>
 <!-- things: what lies here -->
@@ -99,10 +105,10 @@
 <p class="doors">No doors lead on from here yet.</p>
 <!-- door -->
 <a href="{href}" title="{description}">{label}</a>
-<!-- play: an object to play, as the logged-in principal sees it: its name, what came back, its view, the place, the one box (to send, or to try first), then what is around it -->
-{heading}{reply}{view}{place}
+<!-- play: an object to play, as the logged-in principal sees it: its name, what came back, its view, the place, the one box (to send, or to try first), then what is around it (beside them on a wide screen, with what is happening elsewhere) -->
+<div class="col">{heading}{reply}{view}{place}
 <form class="say" method="post" action="/play/{path}"><label>Say something to {name}<textarea id="say" name="text" rows="3" placeholder="in your own words, or a spell">{said}</textarea></label><p class="acts"><button class="quiet-button" name="try" value="1" title="see what it would do; nothing is written">Try it first</button> <button class="go">Send</button></p></form>
-<p class="suggest">{suggestions}</p>{around}
+<p class="suggest">{suggestions}</p></div><aside class="side">{around}{elsewhere}</aside>
 <!-- suggestion: a spell offered, to edit in the box; it sends nothing -->
 <a class="say" href="/play/{path}?say={spell}#say">{label}</a>
 <!-- reply: what came back to the reply just sent -->
@@ -119,8 +125,8 @@
 <p class="hob"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span>{text}</span></p>
 <!-- quiet: silence is a deliberate state, and the frog's -->
 <p class="quiet"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span class="stamp">— quiet</span> (no reply)</p>
-<!-- object: as anyone may read it: the place, a way to speak to it, what is around it, then the law, the source and the journal on demand -->
-{heading}{view}{shown}{play}{around}{source}{receipts}
+<!-- object: as anyone may read it: the place, a way to speak to it, what is around it (beside the place on a wide screen, with what is happening elsewhere), then the law, the source and the journal on demand -->
+<div class="col">{heading}{view}{shown}{play}</div><aside class="side">{around}{elsewhere}</aside><div class="col-foot">{source}{receipts}</div>
 <!-- surface: a read (the book, the history, the map) as a page: its paint above, the exact text a post carries, a drawing beside -->
 <h1 class="title">{title}</h1><section class="scene">{paint}<pre class="card">{text}</pre></section>{drawing}
 <!-- door_map: the doors drawn (pages.door_map): a row for each step from the card the map starts at, each card a link to its own map -->
@@ -224,9 +230,9 @@
 <h1 class="title">Signed out</h1>
 <p class="lede">This browser no longer speaks for you.</p>
 <p class="ways"><a class="go" href="/enter">Come in again</a> <a href="/">the town</a></p>
-<!-- feed: the town's own feed: the box (signed in), then the newest threads, newest activity first -->
-<p class="eyebrow">The town's own feed</p><h1 class="title">The feed</h1>
-<p class="lede">Post here as you would on delve.town: a spell, or words to the town. The town answers under your post in a few seconds. Reply under its answer to go on.</p>{note}{box}
+<!-- feed: the town's own feed: the box (signed in), then the newest threads, newest activity first; on a wide screen the threads and the box side by side -->
+<div class="intro"><p class="eyebrow">The town's own feed</p><h1 class="title">The feed</h1>
+<p class="lede">Post here as you would on delve.town: a spell, or words to the town. The town answers under your post in a few seconds. Reply under its answer to go on.</p></div><div class="composer">{note}{box}</div>
 <div class="threads">{threads}</div>{more}
 <!-- feed_box: the one box: a post to the town, or a reply under one post -->
 <form class="say" method="post" action="/feed"><input type="hidden" name="idempotencyKey" value="{submission}">{replying}<label>{prompt}<textarea id="say" name="text" rows="3" placeholder="a spell, or what you mean in your own words">{said}</textarea></label><p class="acts"><button class="go">Post</button></p></form>

@@ -71,10 +71,10 @@ def outcome_of(receipt):
 
 def shell(title, world, body, refresh=0):
     """A page of the hand: the one skeleton (pages.page) with the hand's header (the worlds, and one world's pages) and
-    footer, the stylesheet inlined (the hand's listener serves /hand/ and nothing else)."""
+    footer, the stylesheet inlined (the hand's listener serves /hand/ and nothing else); a desktop tool, so the wide frame."""
     head = f'<style>{CSS}</style>' + (f'<meta http-equiv="refresh" content="{refresh}">' if refresh else '')
     return pages.page(title, world or 'every world', body, site='the hand', home='/hand/', head=head,
-                      nav=H['nav'].format(base=f'/hand/{world}') if world else '', foot=H['foot'])
+                      nav=H['nav'].format(base=f'/hand/{world}') if world else '', foot=H['foot'], layout='hand')
 
 
 # ---- the playtest's plan (docs/PLAYTEST-2.md): read once, offered on Speak
