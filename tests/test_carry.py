@@ -291,6 +291,17 @@ class Carry(Reflection):
         again = self.opened(out)
         self.assertEqual((again.send(op="world-status")["head"], self.children(again)), (head, ["garden/bell/1", "garden/bell/2", "garden/bell/3"]))
 
+    def test_the_check_names_a_cardless_object_and_counts_it_no_problem(self):
+        """obend's `beacon-jar` (2026-10-14), a resident's module with no card, refuses `noCard` under every binary: the
+        check names it in `cardless` and still checks its state, where it had counted it a problem and failed the carry."""
+        from transport.carry import check
+        self.assertEqual(self.host.send(op="world-card", principal="ember", object="c").get("clause"), "noCard")
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        got = check(binary(), self.path, out)
+        self.assertEqual((got["problems"], got["cardless"]), ([], ["c"]), got)
+        self.assertEqual(got["rendered"] + len(got["cardless"]), got["objects"], got)
+
     def test_a_retry_after_the_carry_answers_the_receipt_and_repeats_nothing(self):
         # codex 2026-10-12 host 8: the carry kept no identity, so a retried plant planted a second bell.
         old = {e["identity"]["intent"]: e for e in journal_entries(self.path) if e.get("identity", {}).get("principal") == "glm"}
