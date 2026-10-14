@@ -942,6 +942,16 @@ def derivedView (id : String) (o : Object) (view : String) (context : Data) (det
   -- `detailed` (`world-derived`, for the view's author) keeps the machine's words after the clause.
   return ran.mapError fun e => (if e == "budget" || (e.splitOn "tick").length > 1 then "budget" else "view") ++ (if detailed then s!": {e}" else "")
 
+/-- A refused `viewDerived`'s reading: what the target must declare (obend 2026-10-14: yue's gauge read ember2's
+    `banked`, which no views() named, and heard only a bare refusal for an hour). -/
+def derivedReading (id : String) (o : Object) (view clause : String) : M String := do
+  if clause == "noView" then
+    let views ← declaredViews o
+    return s!"{id} declares no view {view}" ++ (if views.isEmpty then "" else s!" (its views: {", ".intercalate views})") ++
+      s!"; a view is a pure def that views() names: def views() -> Lists.List<String>: Text.words(\"{view}\"), and def {view}(state: State, context: Abi.Context) -> T"
+  if clause == "budget" then return s!"{view} of {id} ran out of ticks"
+  return s!"{view} of {id} failed, or answered something other than data"
+
 /-- The kernel's refusal of an argument that does not conform to the entry's input type. -/
 def argumentRefusal : String := "turn refused: argument does not conform to its type"
 
@@ -2011,6 +2021,17 @@ def dataShape : Data → String
   | .record _ => "a record"
   | .variant l _ => if l == "cons" || l == "nil" then "a list" else s!"the case {l}"
 
+/-- Why a pure method's answer is no turn: a method with no Activity returns the State record it writes. `render` and a
+    view are read, not cast (obend 2026-10-14: claude's POST of room/3's render, #577; yue's of bond/1's view atRest,
+    #985), so the reading says where they are read. -/
+def pureMisfit (o : Object) (id method : String) (value : Data) : M String := do
+  if method == "render" then
+    return s!"render of {id} draws its card and is read, not cast: read its card (delvetalk {id}, or GET its card)"
+  if (← declaredViews o).contains method then
+    return method ++ " of " ++ id ++ " is a view, read, not cast: in a turn, world.viewDerived::<T>({object: {world: \"\", object: \"" ++
+      id ++ "\"}, view: \"" ++ method ++ "\"}), matched derived(v), denied(_), refused(r)"
+  return s!"{method} of {id} returned {dataShape value}, and a method with no Activity returns its State record (what it writes); one that answers a value is def {method}(state: State, …) -> Activity<T>"
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
@@ -2115,7 +2136,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .ok (.finished value _ _ usage, reads) =>
       held.note reads
       spend (usage.ticksUsed + usage.conversionNodes)
-      let .record fields := value | evaluation s!"{method} of {id} returned {dataShape value}, and a method with no Activity returns its State record (what it writes); one that answers a value is def {method}(state: State, …) -> Activity<T>"
+      let .record fields := value | do evaluation (← pureMisfit obj id method value)
       addWrite id caller (fields.map fun (k, v) => (⟨k, .set v⟩ : Edit))
       return value
 
@@ -2713,7 +2734,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         s.world.cardRoom
       match ← derivedView id o view context with
       | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
-      | .error clause => refusedWith bounds responseType clause
+      | .error clause => refusedReading bounds responseType clause (← derivedReading id o view clause)
   -- `check {package, layers}`: `package` as `create` takes it, with `layers` laid over it (`checkStack`).
   | .variant "check" (.record f) =>
     let some (.label source) := f.lookup "package" | evaluation "malformed check plan"

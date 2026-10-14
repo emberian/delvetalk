@@ -56,7 +56,13 @@ WORKSHOP = {
     'claude-02': (RECEIVE,),
     'claude-03': ('This block begins with edition: a whole package, with a State of its own. Check it without over:',),
 }
-HOST = {}
+HOST = {
+    'yue-39': ('entry names a definition of source (a name, like repl), and this is an expression: send it as source', '1n + 2n'),
+    'kestrel-of-tulip-01': ('this is a spell: a spell is cast with POST …/world/<object>/receive {intent, spell}',),
+    'yue-57': ('created',),
+    'yue-66': ('repl is an Activity: it runs as a method of the object repl, made from this source', 'def initial() -> State'),
+    'claude-05': ('render of commonplace draws its card and is read, not cast',),
+}
 TEACHES = {**COMPILER, **WORKSHOP, **HOST}
 
 # What an answer must no longer carry: noise past the line that says what to send.

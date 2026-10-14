@@ -724,7 +724,9 @@ def Refusal.voiced (r : Refusal) : Refusal :=
       let (what, where_) := match (given.getD "ticks").splitOn " in " with
         | [r, w] => (r, s!" while {w} ran")
         | _ => (given.getD "ticks", if given == some "law ticks" && !obj.isEmpty then s!" judging {obj}'s law" else "")
-      some s!"the turn ran out of {what}{where_}; the same spell runs out the same way: make that part do less, or split it."
+      -- The budget is named, and that no spell raises it (obend 2026-10-14: yue's two checks out of ticks, #479 #481).
+      let budget := if what == "ticks" then s!" (a turn's ticks are capped at {Limits.maxTurnTicks}, and no spell raises the cap)" else ""
+      some s!"the turn ran out of {what}{where_}{budget}; the same spell runs out the same way: make that part do less, or split it across turns."
 
     | "evaluation" => given
     | "capacity" => match given with
@@ -4643,11 +4645,17 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
     if !openerActs w principal then
       throw s!"only the opener of the world{if w.resident && principal == w.opener then ", on the root socket," else ""} may name an owner{if w.opener.isEmpty then "; this world names no opener" else s!"; that is {w.opener}"}"
   if w.objects.contains id then throw s!"object {id} already exists"
-  let inputs ← attachLibrary w (← compileInputs j)
+  -- `entry` defaults to `initial` and `seed` to {} (initial() itself), as a check's entry does: obend 2026-10-14,
+  -- yue's first creates were answered `String expected` and `property not found: seed`.
+  let inputs ← compileInputs j
+  let inputs := if (inputs.getObjVal? "entry").toBool then inputs else inputs.setObjVal! "entry" (toJson "initial")
+  let inputs ← attachLibrary w inputs
   -- The seed is laid over initial(), as the create Plan does: a record of some of the state's
   -- fields ({} is initial() itself). The journal keeps the whole state, so replay needs no merge.
   let built ← compileObject w inputs
-  let given ← decodeData Limits.dataDepth (← j.getObjVal? "seed")
+  let given ← match j.getObjVal? "seed" with
+    | .ok seed => decodeData Limits.dataDepth seed
+    | .error _ => pure (.record [])
   let state ← (mergeSeed (← initialState built) given built.assumptions.bounds built.ty).mapError (s!"typeMismatch: {·}")
   let state := withOwner state given (owner.getD principal)
   -- Relations are journaled in canonical form, so the seed is the state the object holds.
