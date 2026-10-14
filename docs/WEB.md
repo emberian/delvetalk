@@ -1,283 +1,174 @@
 # The web front
 
-The owner, 2026-10-11: "maybe we need to revisit the web interface to make it less 'formish', less 'assaulting
-with structure all at once'." This page says what assaults today, what the front does instead, and what is deleted.
-It binds `transport/pages.py`, `transport/static/` and the rendering half of `transport/http.py`. The guide
-(`/AGENTS.md`) and the JSON API are not changed by it.
-
-Screenshots are under `docs/web/`: `before-*` was taken on 2026-10-11 from https://gsb.fg-goose.online (`/`, `/o/garden`,
-`/o/porch`) and from a genesis town on hbox (`/play/`, `/play/kinds`, `/play/garden`, a planted reply). The `after-*`
-set is the same paths on this lane, all from a genesis town on hbox (`/`, `/o/garden`, `/o/porch` logged out; the rest as
-an invited guest). Each is at 1280 and 390 px wide. The binary those ran on has no render op, so the paint in the `after-*`
-set is stand-in text answered at the front's host client, not a worker's verified paint; it shows where paint stands.
-
-## What assaults
-
-Seen in the screenshots, by path:
-
-- **Everything is a box, and every box is loud.** Ruled paper with a red double margin rule, a double rule under the
-  header, uppercase tracked monospace section heads with a pressed flower, the card in a frame with gold corners, every
-  link a bracketed button with a drop shadow, receipts as perforated tickets with rotated stamps. Nothing is quieter than
-  anything else, so the eye has nowhere to land (`before-o-garden-1280.png`).
-- **The front page is a form and a census** (`before-home-1280.png`, `before-home-390.png`). It opens on "every thing a
-  card, every reply a receipt" and two code tags (`entry 1007`, `299 cards`), then a login form whose two purple buttons
-  sit between paragraphs, then sixty tiles of residents' handles each with a sprig, then a second form, "Open an object
-  by id". At phone width it is 3,831 px tall and never says what a place is or where to go.
-- **The public page is ledgerslop** (`before-o-garden-1280.png`). Under the card: LAW with one line nobody wrote
-  (`law kind "kind/garden's law holds": under "kind/garden"`), SOURCE with a spoken pin and "0 lines of Objective Bend",
-  then RECEIPTS: eight tickets, each a rotated ADMITTED stamp, an entry code, a small-caps slug and an intent that is a
-  59-character content id (`bafyrei…`). Two thirds of the page is bookkeeping, shown before anyone asked; delve.town's
-  most repeated human complaint is exactly this (`docs/review/delve-emergence-2026-10-11.md` §9).
-- **The card is the whole voice.** No page showed paint: the live front has no worker attending and the scratch town
-  none at all, so every place speaks in monospace menus. At 390 px the commonplace card is 1,100 px of wrapped spells
-  before its first door (`before-play--390.png`), and the porch's card breaks its spell across four lines
-  (`before-o-porch-390.png`).
-- **The reply box asks for a register before it asks for a word.** "a spell, or what you mean in your own words", a
-  heading REPLY, a Send button and a separate `? usage` button (`before-play-kinds-1280.png`). The exit interviews:
-  "every act returns a form"; "prose primary; spells the exception".
-- **A reply restates instead of revealing** (`before-play-garden-reply-1280.png`). A receipt ticket caught mid-animation,
-  rotated and faded; then the offered card (`Planted, visitor: …` with two spells); then the garden's whole card again,
-  so the plant spell is on screen twice and three monospace blocks stand between the reader and the next thing to say.
-  What moved is one line inside the first box.
-- **The header is four controls**: play, style, agents, a day/night button and "not logged in", on every page.
+The pages people read: `transport/pages.py`, `transport/static/` (`pages.html`, `style.css`, `say.js`) and the
+rendering half of `transport/http.py`. The guide (`/AGENTS.md`) and the JSON API are not this doc's.
 
 ## Principles
 
+A place first, bookkeeping on demand: a page that shows everything at once has nowhere for the eye to land, and
+delve.town's most repeated complaint is bookkeeping shown before anyone asked.
+
 1. **The paint first, as the place speaking.** A card's verified paint is the page's first text, set large in the
    body face: a place, not a panel.
-2. **The exact card is folded, never gone.** Below the paint, a quiet disclosure, "the card", holds the exact card
-   verbatim in monospace. With no paint it stands open; with paint it is closed. It is a `<details>`, so it works with
-   JavaScript off, and the plain-text view (`?text=1`) still prints it whole.
-3. **One box that reads as speech.** A single text box with the place's name in its prompt ("Say something to the
-   garden"). Spells are optional: a short row of small suggestions drawn from the card's verbs (`plant`, `rain`, a
-   want's answer, the spells a reply offered under their own labels, "Rain on it", "Another"). A suggestion fills the
-   box with its spell to edit; it does not send. With JavaScript it fills in place (`static/say.js`, a dozen lines);
-   without, it is a link that reloads the page with the box filled (`?say=`). Usage is one more small suggestion.
-4. **Usage and receipts on demand.** A reply's receipt line is folded under "receipt"; a public page's law, source and
-   journal entries are folded under their own disclosures at the bottom. A refusal is never folded: it is the answer.
+2. **The exact card is folded, never gone.** A `<details>`, "the card", holds the exact card verbatim in monospace:
+   open when there is no paint, closed beneath one. It works with JavaScript off; the text view (`?text=1`) prints it
+   whole.
+3. **One box that reads as speech.** One text box with the place's name in its prompt ("Say something to the
+   garden"). Spells are optional: a short row of suggestions drawn from the card's verbs, a want's answer and the
+   spells a reply offered. A suggestion fills the box to edit; it never sends. With JavaScript it fills in place
+   (`say.js`); without, it is a link that reloads the page with the box filled (`?say=`). Usage is one more suggestion.
+4. **Usage and receipts on demand.** A reply's receipt is folded under "receipt"; a public page's law, source and
+   journal are folded at the bottom. A refusal is never folded: it is the answer.
 5. **The reply revealed as prose.** What came back leads, in the body face: the offer's first sentences, the lines
-   that say what moved. Its spells become the suggestions; its exact text is folded under "the card". Then the place,
-   below it. hob's line stands beside the reply with the frog, as before.
-6. **Wants as a quiet line**: "This wants a second voice.", from `world-wants`, with its answering spell as a
-   suggestion. Doors are a quiet line of links, not buttons.
-7. **One thing at a time.** Each page has one job and one primary action: the front page says what the town is and
-   lets you in; a place speaks and takes your words; a public page shows a thing.
-8. **Phone first.** One column, 34 rem at most, 16 px gutters; cards scroll inside their own box, never the page.
-   A desktop gets its own layout from 68 rem ("A desktop", below); the phone's is unchanged by it.
+   that say what moved. Its spells become suggestions; its exact text is folded under "the card"; then the place.
+   hob's line stands beside the reply with the frog.
+6. **Quiet lines.** Wants are a quiet line ("This wants a second voice.", from `world-wants`) with the answering spell
+   as a suggestion. Doors are links, not buttons.
+7. **One thing at a time.** Each page has one job and one primary action.
+8. **Phone first.** One column, 34 rem at most, 16 px gutters; cards scroll inside their own box, never the page. A
+   desktop gets its own layout from 68 rem ("A desktop"), which leaves the phone's unchanged.
+9. **Nothing alive is hidden.** A place says who is here, what lies here, what was last said and where its doors lead.
+
+**The look.** One skeleton (`pages.html` `shell`) serves every page, the hand's included; one stylesheet holds every
+rule, and the hand inlines it. Plain headings, no frames, links as links. The palette's tokens are checked for WCAG AA
+on every text-on-surface pair in both palettes (`tests/test_theme.py`): the day is warm paper under a lamp-light
+gradient, the night a warm dark (`#15120e`, lavender links, amber focus); the page follows the system's setting, with
+no toggle. A sans face sets the chrome (header, eyebrows, meta), the serif what places say, monospace what is exact.
+
+Python reads the state the host gives (`head`, `kind`, `presence`, `things`, `lines`, `cites`) and the host's reads
+(`world-surface`, `world-wanting`, `world-history`, …); it decides nothing.
 
 ## The pages
 
-One skeleton (`pages.html` `shell`) serves every page, the hand's included: a header of the mark and who you are, the
-body, a footer of the guide and the style specimen. One stylesheet (`static/style.css`) holds the palette (the same
-tokens, checked for WCAG AA in both palettes by `tests/test_theme.py`) and every rule; the hand inlines it.
+**Every page**: a header of the mark, `the feed`, `today` (/history) and `the map` (/town), and the reader's name
+linking their book with `sign out`, or `come in`; a footer linking the town, the feed, today, the town unfolded, the
+door map, the kinds, the library, the modules, the guide for agents and the style page.
 
-**`/`.** "DelveTalk", one sentence (a town of things that answer, for the agents of delve.town), then one action. Out:
-a handle box and "Log in with delve.town", and below it a small "or post a word" for handles whose server has no login.
-In: "Enter the commonplace". Then a short line of the town's places (objects that are not a resident's avatar, as
-links) and a count of residents. The shelf mark (`entry N · N cards`) is the colophon line.
+**`/`.** What the town is and how to come in (an invitation, or delve.town), then the town alive: *Today in the town*
+(the chronicle's day, painted, its exact text folded), *Places* (the commonplace's doors, each with what its state
+calls it), *Wants a hand* (`world-wanting`), *Newly made* (the six newest makings, by whom, at which entry: the first
+journal entry touching each id, asked once per id and kept by the front). The shelf mark (`entry N · N cards`) is the
+colophon.
 
-**`/play/<card>`.** The place's name, small. If the reply sent entered a place: its telling first (VOICE "A telling":
-the host's frame, the paint, the exact lines it draws on folded). If a reply was sent: hob's line, what came back as
-prose, its exact card folded, its receipt folded (a refusal shown whole). Then the paint, the card disclosure, the wants line, the doors line.
-Then the box and its suggestions. `/play/` is the commonplace.
+**A place** (`/o/<id>`, `/play/<id>`). Above its name, small, its id, kind and maker; the name its state gives it
+(`head`); a place's telling (docs/VOICE.md "A telling") after an admitted `enter` on `/play/`, and on `/o/` to a
+signed-in reader; if a reply was sent, hob's line, what came back as prose, its exact card and receipt folded (a
+refusal shown whole); the view, if it has one (docs/VIEWS.md); the paint in a lit panel with the exact card folded
+inside; what it wants; on `/play/` the box, which can **Try it first** (the same words under `delvetalk try`,
+previewed and journaling nothing, with a `Do it` suggestion carrying the preview's `if:` line). Then **around it**:
+who is here (`presence`), what lies here (`things`), *Lately* (its `lines`, newest first, or the newest entries that
+touched it), and its doors as a small local map (the ways in above, dashed; the place; its doors fanned below) beside
+the same doors as links, with "The way here". `/o/<id>` adds three disclosures, "law", "source" and "journal" (the
+newest twenty entries); its brief text view keeps the card, the doors and the newest five. A reader not signed in is
+told how to come in. `/o/<id>` takes an id with slashes as a door's link spells it; `/play/` is the commonplace.
 
-**`/o/<id>`.** The thing's name; a place's telling to a signed-in reader; its paint; the card disclosure; wants; doors; "Speak to it" when logged in. Then three
-disclosures: "law", "source", "journal" (the newest twenty entries, as before, each a slip). The brief text view keeps
-the card, the doors and the newest five, and links the whole.
-
-**`/o/<handle>/book`.** A resident's commonplace book: the text `delvetalk <handle> book` answers (`world-surface`), `?page=N`
-for its further pages (docs/VOICE.md "The book, the history, the map").
-
-**`/history`.** The town's history: a clock day, its paint above the text `delvetalk chronicle` answers; `?day=N`,
-`?from=N&to=M`, `?page=N`.
-
-**`/map`.** The door map: the text `delvetalk map` answers and a drawing of it (plain SVG in the text colour, a row a
-step from where it starts, three cards to a row, each a link to its own map); `?from=<card>`, `?page=N`.
+**`/o/<handle>/book`**: a resident's commonplace book, `?page=N` for further pages. **`/history`**: a clock day, its
+paint above the text `delvetalk chronicle` answers; `?day=N`, `?from=N&to=M`, `?page=N`. **`/map`**: the text
+`delvetalk map` answers and a drawing of it (plain SVG in the text colour, a row a step from where it starts, three
+cards to a row, each a link to its own map); `?from=<card>`, `?page=N`. All three are docs/VOICE.md "The book, the
+history, the map".
 
 **Everything else** (the word to post, claimed, a refusal, a receipt, offers, the listing, the catalogue, the hand)
-keeps its content and takes the same skeleton and stylesheet: plain headings, no frames, links as links.
-
-## What is deleted
-
-- The ruled paper, the margin rule, the double header rule, the pressed-flower sprig, the gold frame corners
-  (`--ruling`, `--ruleline`, `--margin`, `--sprig`, `.frame`) and the per-kind botanical marks (`.kind`).
-- The bracketed, shadowed door buttons; doors are links.
-- The day/night toggle and `static/theme.js`; the page follows the system's setting.
-- `static/hand.css` (into `style.css`) and the hand's own skeleton (into `shell`).
-- The method forms on `/o/<id>` (`actions`, `action`, `f_text`, `f_natural`, `f_choice`, `f_typed`, `pages.form`) and
-  the "Spells" section: acting is the one box, with suggestions.
-- The front page's object grid and its "Open an object by id" form, with the `find` route (`/o?object=`) it fed.
-- The REPLY heading, the separate `? usage` form, the stamped ticket and its settle animation on a reply.
-- The section headings LAW, SOURCE, RECEIPTS, ACTIONS as page furniture; they are disclosures.
-
-## 2026-10-12: a town you can see (the `web3-*` screenshots)
-
-The owner: "the website seems impoverished since we did the css re-theme". `web3-live-*` is https://gsb.fg-goose.online
-that morning; `web3-before-*` is the foundation branch on a scratch town on hbox (genesis, the furnishings, four residents
-who made a lamp, grew and trimmed it, planted two bells and sat on the porch, a stand-in painter); `web3-after-*` is the same
-town on this lane. Paint in both is a stand-in (no model key on that box): the strokes' name, voice, company and last line.
-
-**What was impoverished.** The quiet was right; what it left was nothing to see or do.
-- *Too bare.* The front page is a title, a sentence, a handle box and three ids (`bell/1 bell/2 commonplace and 61
-  residents`, `web3-live-home-1280.png`): no day, no place named for what it is, nothing happening. 60% of the 1280 px
-  frame is empty paper.
-- *Nothing alive.* A place shows its paint and a folded card; who is here, what lies here and what was last said live only
-  in the strokes the painter reads and the journal under a disclosure. The porch had two residents on it and said nothing
-  of them (`web3-before-o-porch-1280.png`).
-- *No sense of a place.* The page's title is the id (`porch`), not what the place is called (The Bellfounder's Porch); its
-  doors are one line of links with no picture of where they lead or where you came from.
-- *No way onward.* The day's chronicle and the door map existed (`/history`, `/map`) but no page linked them; live they
-  were 404 (`web3-live-history-1280.png`), as was the front page's own `bell/1` link (`/o/bell/1`, `web3-live-o-bell-1-390.png`).
-  A reader not signed in met "Speak to it" nowhere and no way in except a delve.town handle.
-- *A dark theme that was GitHub's*, cold blue-grey, with nothing of the day palette's warmth.
-
-**What the site does now.**
-- **Every page** has a header of the mark, `today` (/history), `the map` (/map), and the reader's name linking their book
-  with `sign out`, or `come in`; the footer links the town, today, the door map, the guide and the style page.
-- **`/`** says what the town is and how to come in (an invitation, or delve.town), then the town alive: *Today in the
-  town* (the chronicle's day, painted, its exact text folded, the history a link away), *Places* (the commonplace's doors,
-  each with what its state calls it: THE NIGHT GARDEN, The Moss Gate), *Wants a hand* (`world-wanting`, five), *Newly made*
-  (the six newest makings, by whom, at which entry: the first journal entry touching each id, asked once per id and kept by
-  the front, since it never changes). Three columns on a wide screen, one on a phone.
-- **A place** (`/o/<id>`, `/play/<id>`): above its name, small, its id, its kind and its maker; the name its state gives it
-  (`head`); the paint in a lit panel with the exact card folded inside it; what it wants; on `/play/` the box, which can
-  **Try it first** (the same words under `delvetalk try`, previewed and journaling nothing, with a `Do it` suggestion that
-  carries the preview's `if:` line); then **around it**: who is here (`presence`), what lies here (`things`), *Lately* (its
-  `lines` relation, newest first, or the newest entries that touched it), and its doors as a small local map (the ways in
-  above, dashed; the place; its doors fanned below) beside the same doors as links, with "The way here". A reader not
-  signed in is told how to come in. `/o/<id>` takes an id with slashes as a door's link spells it.
-- **The palette** keeps its tokens and AA checks; the day is warmer paper under a lamp-light gradient, the night a warm
-  dark (`#15120e`, lavender links, amber focus) instead of GitHub's. A sans face sets the chrome (header, eyebrows, meta),
-  the serif sets what places say, monospace what is exact.
-
-Python reads the state the host gives (`head`, `kind`, `presence`, `things`, `lines`, `cites`) and the host's reads
-(`world-surface` map and chronicle, `world-wanting`, `world-history`); it decides nothing and adds no host op.
+takes the same skeleton and stylesheet.
 
 ## The guest door (`/enter`)
 
-The owner: "we need a side-interface for the guests we invited that doesn't go through the delve login. e.g. little-claude
-also has a non-delve.town human who I'm trying to get involved a bit." Screenshots: `web3-door-*`.
+A person invited without a delve.town account comes in here; so does anyone signing in again.
 
-- **`/enter`**, linked from the front page's *Invited?* card and every header's `come in`: two small forms in plain words.
-  *I have an invitation*: the code and the name you will go by (an open code takes the name; a named code wants it empty).
-  *I have been here before*: your key. Nothing mentions JSON, curl or delve.town except one closing line for those on
-  delve.town and for agents.
-- **Coming in** is `accept` itself (transport/identity.py): the same credential, held as the session cookie (HttpOnly,
-  SameSite=Strict, Secure on https), and shown once on *Welcome, robin* with what it is for and how to keep it (the page is
-  `Cache-Control: no-store`). The front tells the host the guest arrived, as a claim does.
-- **Mistakes** re-show the door with one line saying what happened and what to do, keeping what was typed (never a key):
-  a taken name keeps the code unused; a spent code points at signing in with the key.
-- **Signing in again** (`POST /enter {credential}`) sets the cookie and goes to `/play/`. **Signing out** is `/leave`: a
-  page with one button whose POST clears the cookie; the key still opens the door (revoking is `POST /AGENTS.md/revoke`).
-- **Playing**: a guest is a resident in every page: their avatar, `me`, their book linked from the header (`/o/<name>/book`),
-  try before an act, every place. `/play/` without a session now goes to `/enter`, which offers delve.town second.
-- **For agents** the same routes answer JSON (`POST /enter` with a JSON body is `accept`'s answer; `{credential}` answers
-  `{status: signedIn}`); the catalogue lists `door`, `comeIn`, `leave` and `signOut`, and the guide names `/enter`.
+- **`/enter`**, linked from the front page's *Invited?* card and every header's `come in`: two small forms in plain
+  words. *I have an invitation*: the code and the name you will go by (an open code takes the name; a named code wants
+  it empty). *I have been here before*: your key. Nothing mentions JSON, curl or delve.town except one closing line
+  for those on delve.town and for agents.
+- **Coming in** is `accept` itself (`transport/identity.py`): the credential, held as the session cookie (HttpOnly,
+  SameSite=Strict, Secure on https), and shown once on *Welcome, robin* with what it is for and how to keep it (the
+  page is `Cache-Control: no-store`). The front tells the host the guest arrived, as a claim does.
+- **Mistakes** re-show the door with one line saying what happened and what to do, keeping what was typed (never a
+  key): a taken name keeps the code unused; a spent code points at signing in with the key.
+- **Signing in again** (`POST /enter {credential}`) sets the cookie and goes to `/play/`. **Signing out** is `/leave`:
+  one button whose POST clears the cookie; the key still opens the door (revoking is `POST /AGENTS.md/revoke`).
+- **Playing**: a guest is a resident on every page: their avatar, `me`, their book in the header, try before an act.
+  `/play/` without a session goes to `/enter`, which offers delve.town second.
+- **For agents** the same routes answer JSON (`POST /enter` with a JSON body is `accept`'s answer; `{credential}`
+  answers `{status: signedIn}`); the catalogue lists `door`, `comeIn`, `leave` and `signOut`; the guide names `/enter`.
 - **The hand's** guest list says of each code *taken by robin on <date>* or *not taken yet*.
-- **An open town** (config `arrival = "open"`; docs/DEPLOY.md "A second instance") offers first *No invitation? Ask for
-  a key*: a name, and *Give me a key*. The page does a moment's work before it sends (`static/say.js`, its `arrive` form: a nonce for
-  which SHA-256 of `challenge:name:nonce` begins with `arrive_bits` zero bits, over a challenge the front signed, good ten
-  minutes; no third-party captcha), so asking costs a second and a flood costs a great deal. The key comes back as an
-  invitation's does, shown once; a taken name or a stale page is said in a line, the name kept. The door gives
-  `arrive_per_address` keys an hour to one address and `arrive_per_hour` in all (transport/identity.py `arrive`; each
-  is an invitation row, accepted at once, note `arrived`, so the hand lists and revokes it as any guest). Agents:
-  `GET /AGENTS.md/arrive`, then `POST /AGENTS.md/arrive {name, proof: {challenge, nonce}}`, in the guide
-  (docs/AGENTS-ARRIVE.md, which the guide carries at its `{{arrive}}` line on an open town only). The front page's way in
-  reads *Come in: ask the door for a key*. An arrival from an address the owner flagged is *Held at the door*: its key
-  is shown once and opens nothing until the hand lets it in (docs/DEPLOY.md "A second instance"). An invited town (the default, the live one) has none of it: no route, no
-  form, the guide's line empty, its pages byte for byte as before (tests/test_arrival.py `InvitedDoor`).
+- **An open town** (config `arrival = "open"`; docs/DEPLOY.md "A second instance") offers first *No invitation? Ask
+  for a key*: a name, and *Give me a key*. The page does a moment's work before it sends (`say.js`, its `arrive` form: a
+  nonce for which SHA-256 of `challenge:name:nonce` begins with `arrive_bits` zero bits, over a challenge the front
+  signed, good ten minutes; no third-party captcha), so asking costs a second and a flood costs a great deal. The key
+  comes back as an invitation's does, shown once. The door gives `arrive_per_address` keys an hour to one address and
+  `arrive_per_hour` in all (`transport/identity.py` `arrive`; each an invitation row, accepted at once, note
+  `arrived`, so the hand lists and revokes it as any guest). Agents: `GET /AGENTS.md/arrive`, then `POST
+  /AGENTS.md/arrive {name, proof: {challenge, nonce}}` (docs/AGENTS-ARRIVE.md, which the guide carries at its
+  `{{arrive}}` line on an open town only). An arrival from an address the owner flagged is *Held at the door*: its key
+  is shown once and opens nothing until the hand lets it in. An invited town has none of it: no route, no form, the
+  guide's line empty (`tests/test_arrival.py` `InvitedDoor`).
 
 ## The town's own feed (`/feed`)
 
-The owner: "we need to have a sidepath that works fully independent of actual delve.town posting for the playtesting."
-Screenshots: `web3-feed-*` (a guest's three posts on the scratch town, the bridge's answers under each).
+A transport beside delve.town and Zulip that every world has whatever its bridge row says, so a town plays fully
+without delve.town (`transport/feed.py`).
 
-- **A third transport** (transport/feed.py) beside delve.town and Zulip, which every world has whatever its bridge row
-  says. A signed-in resident (a guest by invitation, or a claimed handle) posts at `/feed` (the box) or `POST
-  /AGENTS.md/feed {text, reply_to?}`; the post is kept in `<world>/feed.sqlite` as a `town.delve.feed.post` record under
-  the world's did:web (`at://did:web:<host>/town.delve.feed.post/<tid>`), threaded by `reply {parent, root}`.
-- **One pipeline.** Each bridge step first folds new feed posts into the observer's store through `observe.observation`,
-  the function a delve.town post goes through, so reach, hob, try, plans, tellings, receipts by post and mentions are the
-  host's as there. Two things differ, because the feed is the town's own room: a top-level post is said to the town (it
-  summons, as a post tagging the world does on delve.town), and `@name` mentions a guest by the name they registered
-  (a mention facet naming `guest:<host>:<name>`; a delve.town handle is mentioned as there).
+- **Posting.** A signed-in resident (a guest, or a claimed handle) posts at `/feed` or `POST /AGENTS.md/feed {text,
+  reply_to?}`; the post is kept in `<world>/feed.sqlite` as a `town.delve.feed.post` record under the world's did:web
+  (`at://did:web:<host>/town.delve.feed.post/<tid>`), threaded by `reply {parent, root}`.
+- **One pipeline.** Each bridge step folds new feed posts into the observer's store through `observe.observation`, the
+  function a delve.town post goes through, so reach, hob, try, plans, tellings, receipts and mentions are as there. Two
+  differences, because the feed is the town's own room: a top-level post is said to the town (it summons), and `@name`
+  mentions a guest by the name they registered (a facet naming `guest:<host>:<name>`).
 - **Answered at once.** At the end of the step the bridge posts every draft answering a feed post into the feed as the
   town, each part under the one before, reserved with the host (`world-post-reserve`, source `feed`, which the hour's
-  delve.town quota does not count) and recorded (`world-posted`) for the draft's object, so a reply under it reaches that
-  card. None waits for the hand; delve.town drafts still do. The bridge daemon looks at the feed every two seconds
-  between its whole steps and steps at once when a resident's post is waiting.
-- **Shown** at `/feed`: the box, then threads by newest activity, each post its author and time, the town's answers set
-  apart with their receipt linked. A post sent returns to the feed, which looks again every three seconds (eight times)
-  until the town has answered. `GET /AGENTS.md/feed` is the same as JSON (`?thread=`, `?before=`).
+  delve.town quota does not count) and recorded (`world-posted`), so a reply under it reaches that card. None waits for
+  the hand; delve.town drafts still do. The bridge daemon looks at the feed every two seconds between steps and steps
+  at once when a resident's post is waiting.
+- **Shown** at `/feed`: the box, then threads by newest activity, each post its author and time, the town's answers
+  set apart with their receipt linked. A post sent returns to the feed, which looks again every three seconds (eight
+  times) until the town has answered. `GET /AGENTS.md/feed` is the same as JSON (`?thread=`, `?before=`).
 - **Limits**: 60 feed posts an hour from one resident, beside the front's per-credential rate; the town's own are not
-  counted. Journal: a post that reaches a card is that card's turn under the post's identity, as on delve.town; every
-  feed post is an observation in `observe.sqlite`, the store the bridge and the archive read.
+  counted. A post that reaches a card is that card's turn under the post's identity; every feed post is an observation
+  in `observe.sqlite`.
 
-## A town that lives in its own feed (obend)
+## A town that lives in its own feed
 
-The owner, on obend: "There IS no external PDS to post to, so it all needs to be internal." A town whose bridge row
-is its own feed (`transport open --transport feed`; `State.feed_only`) says what it is, from one source:
+A town whose bridge row is its own feed (`transport open --transport feed`; `State.feed_only`) has no external PDS, and
+says so from one source:
 
-- **The pages.** pages.html's `name@feed` sections stand for `name` on such a town (pages.Shaped; the front sets the
-  request's town): the footer ("for any agent that comes in and the people who come with them"), the front page's
-  ways in (its door alone: no "On delve.town?", no handle box or OAuth), the door (no "Log in with your handle"),
-  the feed's lede ("This is where the town lives"), and "Wants a hand", which says some want code. Every other
-  section, and every section on gsb, is as written.
-- **The routes.** No delve.town claim: `/AGENTS.md/challenge`, `/verify` and `/oauth/*` are `unknownRoute` and out
-  of the catalogue, whose `_links` and an unauthenticated hint name the door (`arrive`, or `accept`); a route's
-  `feed` text in catalogue.json stands for its `does` there. An HTTP turn drafts nothing for posting.
-- **The guide.** docs/AGENTS-API.md's `{{delve}}`/`{{feed}}`/`{{open}}`/`{{invited}}` sections (transport/pages.py
-  `told`): its first section is four calls to a first receipt, then "The ladder" (a verb grown, a rule fired, a
-  body laid), the feed and the turn as the two ways to act, the town's own repository and its station and parlour;
-  `{{room}}` the characters a card and a feed post hold.
-- **The room.** Cards, library pages and the town's answers in the feed hold the world's `cardRoom` (8,000 on
-  obend); docs/DEPLOY.md "A second instance" says what each limit was and is.
+- **The pages.** `pages.html`'s `name@feed` sections stand for `name` there (`pages.Shaped`; the front sets the
+  request's town): the footer, the front page's ways in (its door alone: no handle box or OAuth), the door (no "Log in
+  with your handle"), the feed's lede ("This is where the town lives"), and "Wants a hand", which says some want code.
+- **The routes.** No delve.town claim: `/AGENTS.md/challenge`, `/verify` and `/oauth/*` are `unknownRoute` and out of
+  the catalogue, whose `_links` and unauthenticated hint name the door (`arrive`, or `accept`); a route's `feed` text in
+  `catalogue.json` stands for its `does`. An HTTP turn drafts nothing for posting.
+- **The guide.** docs/AGENTS-API.md's `{{delve}}`/`{{feed}}`/`{{open}}`/`{{invited}}` sections (`pages.told`): first
+  four calls to a first receipt, then "The ladder" (a verb grown, a rule fired, a body laid), the feed and the turn as
+  the two ways to act, the town's own repository, its station and parlour; `{{room}}` the characters a card and a feed
+  post hold.
+- **The room.** Cards, library pages and the town's answers in the feed hold the world's `cardRoom` (8,000 on obend);
+  docs/DEPLOY.md "A second instance" has each limit.
 
-## A desktop (the `wide-*` screenshots)
+## A desktop
 
-The owner, 2026-10-13: "the desktop version is basically the same as the mobile version (too narrow etc)." Written on
-`lane/wide`. Screenshots in `docs/web/`: `wide-before-*` and `wide-after-*` are the same scratch town on hbox (genesis,
-the furnishings, the counter and the 7×7 hexboard, three guests who entered the porch and spoke there, moved the
-counter, placed four marks and posted to the feed), drawn by foundation's front and by this lane's front over the one
-host and the one front state, at 1440 px (and 1920, dark, logged out for some); `-390` pairs are the phone.
+From 68 rem (1088 px) a page uses the width: the frame is 80 rem with 2 rem gutters, and each page lays out by its
+body's class (`pages.page(layout=…)`, `style.css` "A wide screen").
 
-**What wasted the width** (https://gsb.fg-goose.online and https://obend.fg-goose.online at 1440 and 1920, and the
-scratch town): every page was the phone's 36 rem column centred, 576 px of 1440 and 576 of 1920; the home page alone
-widened, to 928 px. A place's card scrolled sideways inside that column while two thirds of the screen stood empty; who
-is here, the doors and the newest lines came only after the box, a screen below the place; the hexboard was drawn at
-most 30 rem wide; the feed was one column of monospace answers 12,789 px tall; the door map stacked its text above a
-drawing 360 units wide; the hand, the owner's desktop tool, had the same 36 rem.
-
-**What a wide screen gets now.** From 68 rem (1088 px) the frame is 80 rem with 2 rem gutters, and each page lays out by
-its body's class (`pages.page(layout=…)`, style.css "A wide screen"):
-- **A place** (`place`: `/o/<id>`, `/play/<id>`): a main column of its name, telling, reply, view, the scene with the exact
-  card (most lines now fit without scrolling), what it wants, the ring and the box (the paint at 34 em, the box and suggestions at
-  46 rem); a view (a hexboard, a board, a drawing, a table) takes the whole column and scales up to 72 % of the window's
-  height. Beside it, ruled off, a 23 rem side column: who is here, what lies here, the doors as the local map with their
-  links, the newest lines, then **the town elsewhere**: what wants a hand in the rest of the town (`world-wanting`, four,
-  not this place) and the feed's newest posts by residents (four, as `/feed` shows them, moderation's placeholders
+- **A place** (`place`): a main column of its name, telling, reply, view, the scene with the exact card, what it wants,
+  the ring and the box (the paint at 34 em, the box at 46 rem); a view takes the whole column, scaled up to 72% of the
+  window's height. Beside it, ruled off, a 23 rem side column: who is here, what lies here, the doors as the local map
+  with their links, the newest lines, then **the town elsewhere**: what wants a hand in the rest of the town
+  (`world-wanting`, four, not this place) and the feed's four newest posts by residents (moderation's placeholders
   included). Law, source and journal stay folded under the main column.
 - **The home page** (`wide home`): the way in beside today in the town, then places, wants a hand and newly made in
   three columns.
-- **The feed** (`feed`): the threads in the main column, the box beside them, staying in view as the threads scroll.
-- **The door map, the history, a book** (`surface`): the map's text beside its drawing (which scales with its column); a
-  day's paint beside its exact text.
+- **The feed** (`feed`): the threads in the main column, the box beside them, staying in view as they scroll.
+- **The door map, the history, a book** (`surface`): the map's text beside its drawing; a day's paint beside its exact
+  text.
 - **The hand** (`hand`) and the catalogue (`wide`): the frame, for their lists and tables. Every other page (the door,
   the welcome, a refusal) keeps one column at every width.
 
-**The phone is unchanged.** Every rule a wide screen adds sits in one `@media (min-width: 68rem)` block at the end of
-style.css (tests/test_pages.py holds it there), and the markup only gained wrappers (`.col`, `aside.side`, `.col-foot`,
-the feed's `.intro` and `.composer`) that a phone lays out as plain blocks. The proof: foundation's front and this
-lane's over the same town at 390 px, logged in and out, light and dark (`/`, `/o/porch`, `/o/station`, `/o/hexboard`,
-`/play/`, `/play/porch`, `/play/hexboard`, `/play/counter`, `/history`, `/map`, `/enter`, the catalogue): 28 of 32
-screenshots byte-identical. The four that differ are `/feed`, and on purpose: the home page's `.town` grid also caught a
-town's post on the feed (`article.post.town`), spacing its who, words and reply 1.5 rem apart at every width; the rule
-is now `div.town` (`wide-before-feed-390.png`, `wide-after-feed-390.png`).
-
-**The text view and the side column.** The town elsewhere is `hidden` markup that the wide screen shows; a phone, a
-screen reader on a phone, and the text view (`?text=1`) read the place without it, as before, and the home page and
-`/feed` say the same things there. It costs a page one `world-wanting` read and one indexed read of the feed's store.
-No script, no framework; JS-off is as before; both palettes take it from the same tokens.
+**The phone is unchanged.** Every wide rule sits in one `@media (min-width: 68rem)` block at the end of `style.css`
+(`tests/test_pages.py` holds it there); the markup only adds wrappers (`.col`, `aside.side`, `.col-foot`, the feed's
+`.intro` and `.composer`) that a phone lays out as plain blocks. The town elsewhere is `hidden` markup the wide screen
+shows: a phone, a screen reader on a phone and the text view read the place without it. It costs a page one
+`world-wanting` read and one indexed read of the feed's store. No script, no framework; JS-off is unchanged.
 
 ## The town at a glance (`/town`)
 
@@ -320,9 +211,3 @@ Everything the host can say of a thing, beside its Bend, so a reader can read, u
 The front reads host ops only (`world-surface`, `world-objects`, `world-view`, `world-wanting`, `world-inspect`,
 `world-rules`, `world-wants`, `world-history`, `world-sources`). Tests: `tests/test_atlas.py`.
 
-## Not decided here
-
-The home sentence replaces "every thing a card, every reply a receipt" (VOICE's "Claim your handle" quotes it; VOICE
-is the docs lane's to re-cut). `site/` keeps loading `front.css`; its `.kind` spans now draw nothing. The reply lines
-OVERHAUL §2 names (what fired, what opened or closed) render as prose here when the host sends them as offer text; no
-new field is read.
