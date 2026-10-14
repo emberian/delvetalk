@@ -1122,6 +1122,55 @@ def answersSpells (artifact : Json) : Bool :=
   (((artifact.getObjVal? "methods").toOption.bind (·.getArr?.toOption)).getD #[]).any fun m =>
     (m.getObjValAs? String "name").toOption == some "receive"
 
+/-- The labels of the View a page draws (`world/lib/View.obend`'s `sum View`; tests/test_view_pages.py reads them there). -/
+def viewLabels : List String :=
+  ["text", "heading", "stack", "row", "button", "ask", "progress", "table", "grid", "hexes", "drawing", "image", "rule"]
+
+open Delvetalk.Theory.ObjectiveBendTypes (Ty) in
+/-- The labels of a closed sum, a recursive sum's variable unfolded by its bound. -/
+def sumLabels (bounds : DataBounds) (t : Ty) : Option (List String) :=
+  let rec row : Ty → Option (List String)
+    | .emptyRow => some []
+    | .field n _ tail => (n :: ·) <$> row tail
+    | _ => none
+  match t with
+  | .variant r => row r
+  | .variable k => match bounds.lookup k with
+    | some (.variant r) => row r
+    | _ => none
+  | _ => none
+
+open Delvetalk.Theory.ObjectiveBendTypes (Ty) in
+/-- Why a `def view` of this type is no view a page draws (docs/VIEWS.md §2): none for `(state) -> View.View` and
+    `(state, context) -> View.View`. -/
+def viewRefusal (bounds : DataBounds) (ty : Ty) : Option String :=
+  let result := match ty with
+    | .arrow _ _ _ (.arrow _ _ _ r) => r
+    | .arrow _ _ _ r => r
+    | r => r
+  let drawn := (sumLabels bounds result).any fun ls => ls.length == viewLabels.length && ls.all viewLabels.contains
+  let what := match result with
+    | .arrow .. => some "it takes more than the state and the context"
+    | .computation .. => some "it returns an Activity, and a view is pure"
+    | _ => if drawn then none else some "it returns something other than View.View"
+  what.map fun w => s!"refused (view): {w}; {Delvetalk.Compiler.ObjectiveBendParse.viewShape}"
+
+/-- The line of an own module's `def view`, if it has one. -/
+def viewLine (source : String) : Option Nat :=
+  ((source.splitOn "\n").findIdx? fun l => l.startsWith "def view(").map (· + 1)
+
+/-- A clean dry run's view, checked: a `def view` in the own module (the last) must be one a page draws. -/
+def viewDiagnostics (modules : List (String × String)) : List String :=
+  match modules.getLast? with
+  | none => []
+  | some (name, source) => match viewLine source with
+    | none => []
+    | some line =>
+      let request := Json.mkObj [("entry", toJson "view"), ("limits", Package.defaultLimits), ("modules", modulesJson modules)]
+      match Package.compileEntry request with
+      | .ok c => ((viewRefusal c.entry.source.assumptions.bounds c.entry.type).map fun r => [s!"{name}:{line}: view: {r}"]).getD []
+      | .error _ => []
+
 /-- A dry-run compile's diagnostics, `"<module>:<line>: <stage>: <message>"` (the kernel's hint, when
     it has one, the next line at the same place), none when it is clean; `fallback` names the
     module when the kernel names none. A package that declares laws compiles, as it would at
@@ -1129,7 +1178,9 @@ def answersSpells (artifact : Json) : Bool :=
 def checkDiagnosticsCold (modules : List (String × String)) (entry fallback : String) : List String × Bool :=
   let request := Json.mkObj [("entry", toJson entry), ("limits", Package.defaultLimits), ("modules", modulesJson modules)]
   match Package.compileStructured request with
-  | .ok (artifact, _, _) => ([], answersSpells artifact)
+  | .ok (artifact, _, _) =>
+    let viewed := viewDiagnostics modules
+    (viewed, viewed.isEmpty && answersSpells artifact)
   | .error e =>
     let d := Package.localize modules Package.defaultLimits e
     let at_ := s!"{d.sourceModule.getD fallback}:{(d.span.map (·.line)).getD 0}"

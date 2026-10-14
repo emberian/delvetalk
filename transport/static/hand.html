@@ -1,7 +1,7 @@
 <!-- foot: the hand's footer -->
 The owner's console. Nothing reaches a town without the owner: his own post, given here by its link, or Post with a credential file; every act is a line in the hand's log, every root act an entry in the journal.
 <!-- nav: one world's pages -->
-<nav><a href="{base}/overview">overview</a><a href="{base}/automod">automod</a><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/status">read</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
+<nav><a href="{base}/overview">overview</a><a href="{base}/requests">requests</a><a href="{base}/automod">automod</a><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/status">read</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
 <!-- worlds: every world serve holds, and the scratch worlds -->
 <h1 class="title">The worlds<small>every world this host holds, each a journal with a name; beneath them the scratch worlds, with their owners and their hours</small></h1>{note}
 <p class="codes">{codes}</p>
@@ -84,6 +84,7 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <!-- overview: the town at a glance, read only: arrivals, the busiest hands, refusals, budgets, moderation, the feed -->
 <h1 class="title">Overview<small>{world} at entry {height}, read from the journal, the guest list, the hand's log and the feed; nothing here acts</small></h1>
 <p class="codes">{codes}</p>
+<section><h2>Waiting for the town</h2><p>Lines pending on the records the town keeps, and proposals held for its things: each the town's spell, one click, journaled. A resident's first line on the commonplace is admitted by its rule; a door onto the town's things waits for nobody.</p><ol class="receipts">{requests}</ol><p class="doors"><a class="door" href="{base}/requests">REQUESTS</a></p></section>
 <section><h2>Arrivals in the last day</h2><ol class="receipts">{arrivals}</ol></section>
 <section><h2>The busiest hands</h2><p>Turns in the last day, each with its last hour and its refusals; the town's own and the owner's are not counted.</p><ol class="receipts">{busiest}</ol></section>
 <section><h2>Refusals by class</h2><ol class="receipts">{refusals}</ol></section>
@@ -91,6 +92,14 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <section><h2>Moderation</h2><p class="codes">{state}</p><ol class="receipts">{quiets}</ol><h3>The hand's last acts</h3><ol class="receipts">{acts}</ol><p class="doors"><a class="door" href="{base}/root/">ROOT</a><a class="door" href="/hand/">GUESTS</a></p></section>
 <section><h2>Automatic moderation</h2><p class="codes">{automod}</p><ol class="receipts">{screened}</ol><p class="doors"><a class="door" href="{base}/automod">REVIEW</a></p></section>
 <section><h2>The newest feed posts</h2><ol class="receipts">{feed}</ol></section>
+<!-- requests: what waits for the town's own hand, each with its two buttons -->
+<h1 class="title">Requests<small>{world}: lines pending on the records the town keeps and proposals held for its things, oldest first; each button is the town's own spell, journaled as its turn and logged</small></h1>{note}
+<p class="codes">{codes}</p>
+<section><ol class="receipts">{rows}</ol></section>
+<!-- request: one line or proposal waiting for the town -->
+<li class="slip suspended"><span class="stamp">{kind}</span><span class="code">{object} #{n}</span><span class="name">{who}</span><span class="line">{text}</span><span class="by">{principal}</span><span class="foot">{buttons}</span></li>
+<!-- request_button: one answer to a request -->
+<form method="post" action="{base}/requests/{verb}" class="inline"><input type="hidden" name="kind" value="{kind}"><input type="hidden" name="object" value="{object}"><input type="hidden" name="n" value="{n}"><button class="door">{verb}</button></form>
 <!-- automod: the automatic moderation's review: what it hid and what it holds for the owner, each restorable -->
 <h1 class="title">Automatic moderation<small>{world}: residents' public texts screened after they were admitted (docs/ROOT.md 2.4); a hidden text is shown nowhere public, the journal keeps it</small></h1>
 <p class="codes">{codes}</p>

@@ -1047,7 +1047,7 @@ class Hand:
             if done is not None:
                 note = ' '.join(str(v) for v in done.values() if isinstance(v, (str, list)))
                 back = {'root': '/root/?', 'mod': '/root/?', 'newcomers': '/root/?', 'vacate': '/root/?', 'speak': '/speak?', 'invite': '/speak?',
-                        'morning': '/speak?', 'welcome': '/speak?', 'automod': '/automod?'}.get(rest.partition('/')[0], '/?')
+                        'morning': '/speak?', 'welcome': '/speak?', 'automod': '/automod?', 'requests': '/requests?'}.get(rest.partition('/')[0], '/?')
                 anchor = '#outbox' if back == '/?' else ''
                 back = '/hand/?' if rest == 'root/expire' else base + back  # a scratch world is expired from the worlds
                 more = {'came': done['intent']} if rest == 'speak' and done.get('intent') else {}
@@ -1056,7 +1056,7 @@ class Hand:
         if method == 'GET':
             page = (lambda query: h.read_page(rest, query)) if rest in READ_FORMS else {
                 '': h.page, 'speak': h.speak_page, 'plan': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page,
-                'overview': h.overview_page, 'automod': h.automod_page}.get(rest)
+                'overview': h.overview_page, 'automod': h.automod_page, 'requests': h.requests_page}.get(rest)
         if page is None:
             return 404, shell('not here', world, H['missing'].format(text=e(f'no page {rest} in the hand'))), []
         try:
@@ -1069,6 +1069,9 @@ class Hand:
         face, _, verb = rest.partition('/')
         if rest == 'root/save':
             return self.save(form.get('object', ''), form)
+        if face == 'requests' and verb in ('admit', 'adopt', 'decline'):
+            got = self.request(form.get('kind', ''), verb, form.get('object', ''), integer(form, 'n', 0), form.get('reading', '').strip())
+            return {'done': f"{verb} {got['object']} #{got['n']}: {got['line']}"}
         if face == 'automod' and verb in ('restore', 'confirm', 'hide'):
             got = self.automod_review(form.get('key', ''), verb, form.get('reading', '').strip())
             return {'done': f"{verb}: {got['state']}" + (', the quiet lifted' if got.get('unquieted') else '')}
@@ -1229,6 +1232,71 @@ class Hand:
     def overview(self):
         return overview.overview(self)
 
+    # ---- what waits for the town's own hand (playtest 5: Kestrel's and Yue's acts that waited unseen)
+
+    REQUEST_VERBS = {'line': ('admit', 'decline'), 'proposal': ('adopt', 'decline')}
+
+    def requests(self):
+        """What waits for the town itself, oldest first: lines pending on the records it keeps (a want `pending` the
+        opener answers: the commonplace's, a resident's first line there admitted by its rule `firstline`) and proposals
+        the workshop holds for things the town owns. A door onto the town's things waits for nobody: a resident hangs it
+        on their own card; the reverse door, on the town's thing, is the town's to hang. Read only."""
+        kept, after = [], 0
+        for _ in range(64):  # pages of the opener's wants, newest first, by `since`
+            got = self.host.send({'op': 'world-wanting', 'principal': self.owner, 'limit': 64, **({'after': after} if after else {})})
+            kept += [r['object'] for r in got.get('rows') or [] if r.get('name') == 'pending' and r.get('asks', '').endswith(' admit')]
+            if not got.get('more') or not got.get('next'):
+                break
+            after = got['next']
+        lines = []
+        for obj in dict.fromkeys(kept):
+            st = pages.state_of(self.host.send({'op': 'world-view', 'principal': self.owner, 'object': obj}))
+            if st.get('keeper') != self.owner:
+                continue
+            waiting = {r.get('n') for r in pages.rows(st.get('pending'))}
+            lines += [{'kind': 'line', 'object': obj, 'n': r['n'], 'who': r.get('handle') or self.handle_of(r.get('author', '')) or r.get('author', ''),
+                       'principal': r.get('author', ''), 'text': r.get('text', ''), 'at': r.get('at')}
+                      for r in pages.rows(st.get('lines')) if r.get('n') in waiting and r.get('author') != self.owner]  # the town's own wait on nobody
+        proposals = []
+        for h in pages.rows(pages.state_of(self.host.send({'op': 'world-view', 'principal': self.owner, 'object': 'workshop'})).get('held')):
+            target = h.get('target') or ''
+            if target and pages.state_of(self.host.send({'op': 'world-view', 'principal': self.owner, 'object': target})).get('owner') == self.owner:
+                proposals.append({'kind': 'proposal', 'object': target, 'n': h['n'], 'who': h.get('proposerHandle') or self.handle_of(h.get('proposer', '')) or h.get('proposer', ''),
+                                  'principal': h.get('proposer', ''), 'text': f"a new package for {target}" + (f", migrated by {h['migration']}" if h.get('migration') else ''), 'at': None})
+        return sorted(lines, key=lambda r: (r['at'] or 0, r['object'], r['n'])) + sorted(proposals, key=lambda r: r['n'])
+
+    def request(self, kind, verb, obj, n, reading=''):
+        """Admit or decline a line waiting on a record the town keeps (`kind` line), adopt or decline a proposal held for
+        a thing the town owns (`proposal`): the town's own spell, journaled as its turn, and a line in the hand's log."""
+        if verb not in self.REQUEST_VERBS.get(kind, ()):
+            raise HandError(f'{kind or "a request"} takes {" or ".join(self.REQUEST_VERBS.get(kind, ("line", "proposal")))}, not {verb}')
+        n = int(n)
+        card, spell = (obj, f'delvetalk {obj} {verb}\nnumber: {n}') if kind == 'line' else ('workshop', f'delvetalk workshop {verb}\nn: {n}')
+        intent = f'hand:request:{kind}:{verb}:{obj}:{n}'
+        reply = self.receive(card, spell, intent)
+        receipt = reply.get('receipt') or {}
+        if not receipt:
+            raise HandError(f"{verb} {obj} #{n}: {reply.get('message') or reply.get('status')}")
+        outcome = outcome_of(receipt)
+        self.log(f'request:{verb}', None, kind=kind, object=obj, n=n, reading=reading, height=receipt.get('height'), slug=receipt.get('slug'), outcome=outcome)
+        return {'kind': kind, 'verb': verb, 'object': obj, 'n': n, 'outcome': outcome, 'height': receipt.get('height'), 'slug': receipt.get('slug'),
+                'line': bridge.receipt_line(receipt, None, card).strip()}
+
+    def request_rows(self, rows, base, q):
+        """Requests as slips, each with its two buttons."""
+        return ''.join(H['request'].format(kind=q(r['kind']), object=q(r['object']), n=q(r['n']), who=q(r['who']), text=q(clip(r['text'], 280)),
+                                           principal=q(r['principal']), buttons=''.join(
+                                               H['request_button'].format(base=base, kind=q(r['kind']), verb=v, object=q(r['object']), n=q(r['n']))
+                                               for v in self.REQUEST_VERBS[r['kind']])) for r in rows)
+
+    def requests_page(self, query):
+        q, base = lambda t: e(str(t)), f'/hand/{e(self.st.world)}'
+        rows = self.requests()
+        none = '<li class="quiet">— nothing waits for the town —</li>'
+        return shell('requests', self.st.world, H['requests'].format(world=q(self.st.world), note=self.note(query),
+                     codes=self.codes([counted(sum(r['kind'] == 'line' for r in rows), 'line'), counted(sum(r['kind'] == 'proposal' for r in rows), 'proposal')]),
+                     rows=self.request_rows(rows, base, q) or none))
+
     # ---- the automatic moderation (docs/ROOT.md 2.4)
 
     def automod(self, state=None, limit=200):
@@ -1302,10 +1370,11 @@ class Hand:
         automod_codes = self.codes([am['state'], f"{s.get('pending', 0)} waiting", f"calls today {(s.get('today') or {}).get('calls', 0)}"] +
                                    [f"{k} {v}" for k, v in am['counts'].items()])
         screened = ''.join(self.screened_row(i, f'/hand/{q(self.st.world)}', q) for i in am['newest']) or none('nothing screened has been flagged')
+        requests = self.request_rows(o['requests'][:overview.REQUESTS], f'/hand/{q(self.st.world)}', q) or none('nothing waits for the town')
         return shell('overview', self.st.world, H['overview'].format(
             world=q(self.st.world), height=q(o['height']), codes=self.codes(overview.summary(o)), arrivals=arrivals, busiest=busiest,
             refusals=refusals, budgets=budgets, state=state, quiets=quiets, acts=acts, feed=feed, base=f'/hand/{q(self.st.world)}',
-            automod=automod_codes, screened=screened))
+            automod=automod_codes, screened=screened, requests=requests))
 
     def measure_page(self, query):
         """The playtest's measures (docs/PLAYTEST-2.md §4) as transport/measure.py counts them from the journal."""
@@ -1474,6 +1543,10 @@ def parser(p, common):
                       ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
             'morning': [('--day', dict(type=int, help='the clock day (default today)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))],
             'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [], 'overview': [],
+            'requests': [('verb', dict(nargs='?', choices=('admit', 'adopt', 'decline'), help="none: list what waits for the town")),
+                         ('object', dict(nargs='?', help='the record a line waits on, or the thing a proposal is for')),
+                         ('n', dict(nargs='?', type=int, help="the line's number, or the held proposal's")),
+                         ('--kind', dict(choices=('line', 'proposal'), default='line')), ('--reading', dict(default=''))],
             'automod': [('verdict', dict(nargs='?', choices=('restore', 'confirm', 'hide'), help='none: list the screened texts')),
                         ('key', dict(nargs='?', help='the screened text, by its key (from the list)')), ('--only', dict(choices=('hidden', 'review', 'confirmed', 'restored'), help='one state of screened texts')),
                         ('--reading', dict(default=''))],
@@ -1520,6 +1593,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
                 'overview': h.overview, 'vacate': lambda: h.vacate(a.who, a.reading),
+                'requests': lambda: h.request(a.kind, a.verb, a.object, a.n, a.reading) if a.verb else h.requests(),
                 'automod': lambda: h.automod_review(a.key, a.verdict, a.reading) if a.verdict else h.automod(a.only),
                 'speak': lambda: cli_speak(h, a), 'morning': lambda: h.morning(a.day, a.topic, a.reply_to), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
                 'root': lambda: cli_root(h, a), 'invite': lambda: cli_invite(h, a), 'invites': h.guests,

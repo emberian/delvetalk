@@ -241,5 +241,183 @@ class Gone(unittest.TestCase):
         self.assertIn(ash, self.hand.gone())
 
 
+JAR = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./World.obend as World
+record State:
+  owner: String
+  n: Nat
+def initial() -> State:
+  {owner: "", n: 0n}
+def receive(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  state.n
+"""
+
+
+class Waiting(unittest.TestCase):
+    """Playtest 5 (2026-10-14): Yue's hello waited for the keeper, unsaid; Kestrel's act seemed to wait for the town. A
+    resident's first line on the commonplace is admitted by the town's rule `firstline`; a later line, and a proposal held
+    for a thing the town owns, wait on the hand's requests page and its overview, each answered by one click, journaled
+    as the town's own turn and logged. Refuted by a first line left pending, a second line admitted by the rule, the
+    town's own line touched by the rule, a request missing from the page or the overview, a click that is not the
+    opener's journaled turn, a decline by anyone but the keeper or the target's owner, or a declined line shown standing."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.bend import closure
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+        st = State(cls.town.state, config=Config(root_socket=cls.town.process.root, host_socket=cls.town.process.sock, opener=cls.town.opener,
+                                                 origin='https://obend.example', arrival='open'))
+        cls.hand = hand.Hand(st, cls.town.client, token='t')
+        cls.town.send(op='world-arrive', principal=CLOCK, did=KIM, handle='kim')
+        made = cls.town.send(op='world-create', principal=cls.town.opener, identity='mk-jar', object='jar', entry='initial',
+                             modules=closure('Abi', 'World') + [{'name': 'Jar', 'source': JAR}], seed=record(owner=label(cls.town.opener)))
+        assert made['status'] == 'created', made
+        cls.n = 0
+
+    def say(self, who, card, text):
+        type(self).n += 1
+        return self.town.send(op='world-turn', principal=who, object=card, method='receive', identity=f'w-{self.n}',
+                              argument=record(text=label(text), post=label('')))
+
+    def status(self, n):
+        state = hand.pages.state_of(self.town.send(op='world-view', principal=self.town.opener, object='commonplace'))
+        admitted = {r['n'] for r in hand.pages.rows(state.get('admitted'))}
+        pending = {r['n'] for r in hand.pages.rows(state.get('pending'))}
+        return 'admitted' if n in admitted else 'pending' if n in pending else 'not admitted'
+
+    def test_a_first_line_is_admitted_by_the_towns_rule_and_the_rest_wait_on_the_hands_requests(self):
+        first = self.say(KIM, 'commonplace', 'delvetalk commonplace write / text: hello, I am kim')
+        self.assertEqual(first['status'], 'admitted', first)
+        one = first['result']['value'] if isinstance(first.get('result'), dict) else None
+        self.assertIn('rule firstline of the town fired: delvetalk commonplace admit / number:', ' '.join(first.get('revealed') or []), first)
+        lines = hand.pages.rows(hand.pages.state_of(self.town.send(op='world-view', principal=self.town.opener, object='commonplace')).get('lines'))
+        mine = [r['n'] for r in lines if r['author'] == KIM]
+        self.assertEqual([self.status(n) for n in mine], ['admitted'], (one, mine))
+        second = self.say(KIM, 'commonplace', 'delvetalk commonplace write / text: and a second word')
+        third = self.say(KIM, 'commonplace', 'delvetalk commonplace write / text: and a third')
+        self.assertNotIn('firstline', json.dumps(second.get('revealed') or []))
+        own = self.say(self.town.opener, 'commonplace', 'delvetalk commonplace write / text: the town speaks')
+        self.assertNotIn('firstline', json.dumps(own.get('revealed') or []))  # the keeper's own line is its own to admit
+        lines = hand.pages.rows(hand.pages.state_of(self.town.send(op='world-view', principal=self.town.opener, object='commonplace')).get('lines'))
+        n2, n3 = [r['n'] for r in lines if r['author'] == KIM][1:]
+        self.assertEqual((self.status(n2), self.status(n3)), ('pending', 'pending'))
+        # The commonplace's lines say who admits and when.
+        head = ''.join(o.get('text', '') for o in self.say(KIM, 'commonplace', 'delvetalk commonplace lines / from: 1').get('offers') or [])
+        self.assertIn("A resident's first line here is admitted at once, by the town's rule firstline", head)
+        # A proposal held for a thing the town owns.
+        held = self.say(KIM, 'workshop', 'delvetalk workshop propose / target: jar\n```obend\n%s```\n' % JAR.replace('{owner: "", n: 0n}', '{owner: "", n: 1n}'))
+        self.assertIn('held as #', ''.join(o.get('text', '') for o in held.get('offers') or []), held)
+        waiting = self.hand.requests()
+        self.assertEqual([(r['kind'], r['object'], r['n']) for r in waiting if r['kind'] == 'line'], [('line', 'commonplace', n2), ('line', 'commonplace', n3)])
+        [proposal] = [r for r in waiting if r['kind'] == 'proposal']
+        self.assertEqual((proposal['object'], proposal['who']), ('jar', 'kim'))
+        # The overview shows them, with the buttons; the requests page too.
+        code, page, _ = self.hand.handle('GET', '/hand/town/overview', f'{hand.HAND_COOKIE}=t')
+        self.assertEqual(code, 200)
+        self.assertIn('<h2>Waiting for the town</h2>', page)
+        self.assertIn('and a second word', page)
+        self.assertIn('action="/hand/town/requests/admit"', page)
+        self.assertIn('action="/hand/town/requests/adopt"', page)
+        code, page, _ = self.hand.handle('GET', '/hand/town/requests', f'{hand.HAND_COOKIE}=t')
+        self.assertEqual((code, page.count('class="slip suspended"')), (200, 3))
+        # Nobody but the keeper declines a line, nor anyone but its target's owner a proposal.
+        refused = self.say(KIM, 'commonplace', f'delvetalk commonplace decline / number: {n2}')
+        self.assertEqual(refused['status'], 'refused', refused)
+        refused = self.say(KIM, 'workshop', f"delvetalk workshop decline / n: {proposal['n']}")
+        self.assertEqual(refused['status'], 'refused', refused)
+        self.assertIn('Only the owner of jar declines', json.dumps(refused))
+        # One click each: the town's own turn, journaled, and a line in the hand's log.
+        for verb, kind, obj, n in (('admit', 'line', 'commonplace', n2), ('decline', 'line', 'commonplace', n3), ('decline', 'proposal', 'jar', proposal['n'])):
+            code, _, headers = self.hand.handle('POST', f'/hand/town/requests/{verb}', f'{hand.HAND_COOKIE}=t', {'kind': kind, 'object': obj, 'n': str(n)})
+            self.assertEqual(code, 303)
+            self.assertIn(f'{verb} {obj} #{n}', urllib.parse.unquote_plus(dict(headers)['Location']))
+            line = json.loads(Path(self.town.state, 'hand-log.jsonl').read_text().splitlines()[-1])
+            self.assertEqual((line['what'], line['object'], line['n'], line['outcome']), (f'request:{verb}', obj, n, 'admitted'))
+            entry = opener_entries(self.town.client, self.town.opener)[0]
+            self.assertEqual((entry['identity']['principal'], entry['height']), (self.town.opener, line['height']))
+        self.assertEqual((self.status(n2), self.status(n3)), ('admitted', 'not admitted'))
+        shown = ''.join(o.get('text', '') for o in self.say(KIM, 'commonplace', 'delvetalk commonplace lines / from: 1').get('offers') or [])
+        self.assertIn(f'#{n3} [not admitted] kim', shown)
+        self.assertEqual(self.hand.requests(), [])
+        self.assertIn('nothing waits for the town', self.hand.handle('GET', '/hand/town/requests', f'{hand.HAND_COOKIE}=t')[1])
+        with self.assertRaises(hand.HandError):
+            self.hand.request('line', 'adopt', 'commonplace', n2)
+
+
+    def test_words_hob_reads_say_where_they_wait_and_end_by_the_deadline(self):
+        """Playtest 5's ghost: a resident's words sat suspended at entry 809 with nothing said. The reply and the receipt say
+        hob is reading them, by when it answers and how many readings wait before it; past the deadline the turn ends."""
+        status = self.town.send(op='world-status')
+        words = self.town.send(op='world-turn', principal=KIM, object='commonplace', method='receive', identity='ghost-words', reach='direct',
+                               argument=record(text=label('the moth knows about unresolved chords'), post=label('')))  # as the play page sends words
+        self.assertEqual(words['status'], 'suspended', words)
+        deadline = words['deadline']
+        self.assertRegex(words['waiting'], r'^hob is reading these words for commonplace: it answers by clock %d, within \d+ minutes, '
+                         r'else the turn ends timed out; \d+ readings? wait before it in the town, 1 on commonplace with it\.' % deadline)
+        mine = self.town.send(op='world-receipt', principal=KIM, identity=words['receipt']['identity']['intent'])
+        self.assertEqual(mine['waiting'], words['waiting'])
+        other = self.town.send(op='world-receipt', principal=self.town.opener, identity=words['receipt']['identity']['intent'], of=KIM)
+        self.assertNotIn('waiting', other)  # where a resident's words wait is theirs
+        self.town.send(op='world-advance', principal=CLOCK, height=max(deadline, status.get('clock') or 0) + 1)
+        after = self.town.send(op='world-receipt', principal=KIM, identity=words['receipt']['identity']['intent'])
+        self.assertNotIn('waiting', after)  # resumed, timed out: never left hanging
+
+    def test_the_worker_asks_every_reading_before_a_bounded_round_of_paints(self):
+        from transport import interpret
+        sent = []
+        class Host:
+            def send(self, req):
+                sent.append(req['op'])
+                if req['op'] == 'world-renders':
+                    return {'status': 'renders', 'pending': [{'key': str(k), 'request': {}} for k in range(5)]}
+                return {'status': 'painted'}
+        done = interpret.paint(Host(), lambda req: {'status': 'replied'}, interpret.PAINTS_PER_ROUND)
+        self.assertEqual((len(done['painted']), sent.count('world-render-submit')), (2, 2))
+
+
+class OneTable(unittest.TestCase):
+    """Playtest 5: `delvetalk register sign` ran by spell and `POST /AGENTS.md/world/register/sign` answered noMethod (and
+    `room/10 want` the same). Every action a card offers is reachable by its action route, one table: a grown verb or a
+    host spell named by a direct turn is that spell. Refuted by any offered action of any thing of the town answering
+    noMethod by its route, or a grown verb missing from `_actions`."""
+
+    @classmethod
+    def setUpClass(cls):
+        from deploy import genesis
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+        made = genesis.playthings(cls.town.client, cls.town.opener)
+        assert all(m['status'] in ('created', 'admitted') for m in made), made
+        cls.town.send(op='world-arrive', principal=CLOCK, did=KIM, handle='kim')
+
+    def test_every_offered_action_of_every_thing_has_its_route_and_a_grown_verb_is_listed(self):
+        from transport.http import actions
+        grown = self.town.send(op='world-turn', principal=KIM, object='porch', method='receive', identity='grow-sign',
+                               argument=record(text=label('delvetalk porch grow / name: sign / reading: an arrival signs / takes: text'), post=label('')))
+        self.assertEqual(grown['status'], 'admitted', grown)
+        routed = self.town.send(op='world-turn', principal=KIM, object='porch', method='sign', identity='route-sign', argument=record(text=label('kim was here')))
+        self.assertEqual(routed['status'], 'admitted', routed)
+        self.assertEqual(routed['receipt']['identity'], {'principal': KIM, 'intent': 'route-sign'})
+        placed = self.town.send(op='world-turn', principal=KIM, object='porch', method='want', identity='route-want',
+                                argument=record(name=label('kimswant'), when=label('count(new.presence) == 0'), asks=label('delvetalk porch enter')))
+        self.assertEqual(placed['status'], 'admitted', placed)
+        seen = self.town.send(op='world-inspect', principal=KIM, object='porch')
+        self.assertIn('sign', [a['name'] for a in actions('/AGENTS.md', 'porch', seen)])
+        ids = self.town.send(op='world-objects', principal=KIM)['ids']
+        missing = []
+        for obj in ids:
+            seen = self.town.send(op='world-inspect', principal=KIM, object=obj)
+            for action in seen.get('offered') or []:
+                r = self.town.send(op='world-try', principal=KIM, object=obj, method=action, identity=f'try-{obj}-{action}', argument=record())
+                cls_ = ((r.get('receipt') or {}).get('outcome') or {}).get('class') or r.get('class')
+                if cls_ == 'noMethod':
+                    missing.append((obj, action, r.get('receipt', {}).get('outcome', {}).get('reason')))
+        self.assertEqual(missing, [])
+
+
 if __name__ == '__main__':
     unittest.main()

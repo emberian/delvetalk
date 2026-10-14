@@ -20,6 +20,15 @@ form ring:
 def ring(state: State, context: Abi.Context) -> Activity<Bool>:
   Super.mark(state, "rung", context)
 ```
+A VIEW is what a card's page draws, live: one pure def named in views(), def view(state: State, context: Abi.Context) -> View.View, built of the View's words (say, heading, stack, row, button, ask, progress, table, grid, hexes, drawing, image); a button or a tile casts one of the card's own forms as whoever clicks it. The workshop's header imports View; workshop check refuses a view of any other shape and shows this one. Five lines, a bar of ten lines and a button that writes one:
+```obend
+def views() -> Lists.List<String>:
+  Text.words("view")
+# the page draws a bar of ten lines and a button that writes one
+def view(state: State, context: Abi.Context) -> View.View:
+  View.stack(View.two(View.progress(Relations.count(state.lines), 10n, "lines"), View.button("add a line", View.act("write", View.given("text", "a drop")))))
+```
+Its page: /o/<id>; delvetalk <id> ? names its forms, the ones its buttons cast.
 A REAL ONE: the door, world/bodies/door.obend (delvetalk kind/door source reads it whole):
 {{door}}
 THE PATH. delvetalk workshop check / over: kind/record with the body in a ```obend block checks it and says the line that fails (past the header, numbered from your first); delvetalk workshop draft / name: N / over: kind/record holds it as #n; delvetalk try over delvetalk workshop adopt / n: <n> previews; adopt makes it. Or at once: delvetalk kinds make / name: N / of: record, then body: <<BEND … BEND (checked before anything is made). One verb on one thing: delvetalk <card> grow / name: V / takes: text, then body: <<BEND, one line of Super. … BEND. The walk: delvetalk library read / page: workshop.

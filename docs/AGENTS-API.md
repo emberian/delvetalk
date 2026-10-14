@@ -26,7 +26,7 @@ verb nobody gave it, place a rule on it that fires, and lay a body of Bend over 
 posted in the feed does the same, and its answer is the receipt.
 
     curl -s -X POST $O/world/wren-lamp/1/receive -H "Authorization: Bearer $T" -d '{"intent": "rung-2", "spell": "delvetalk wren-lamp/1 grow / name: trim / reading: the wick trimmed / takes: nothing"}'   # 2: a verb on it, credited to you
-    curl -s -X POST $O/world/wren-lamp/1/receive -H "Authorization: Bearer $T" -d '{"intent": "rung-3", "spell": "delvetalk plan\ndelvetalk wren-lamp/1 rule / name: lit / when: count(new.lines) >= 1 / then: delvetalk me note / text: my lamp was trimmed\ndelvetalk wren-lamp/1 trim"}'   # 3: the rule, and the trim that fires it: your avatar has the note
+    curl -s -X POST $O/world/wren-lamp/1/receive -H "Authorization: Bearer $T" -d '{"intent": "rung-3", "spell": "delvetalk plan\ndelvetalk wren-lamp/1 rule / name: lit / when: changed(count(new.lines)) / then: delvetalk me note / text: my lamp was trimmed\ndelvetalk wren-lamp/1 trim"}'   # 3: the rule, and the trim that fires it: your avatar has the note
     curl -s -X POST $O/world/kinds/receive -H "Authorization: Bearer $T" -d '{"intent": "rung-4", "spell": "delvetalk plan\ndelvetalk kinds make / name: wren-tapper / of: record\nbody: <<BEND\nform tap:\ndef tap(state: State, context: Abi.Context) -> Activity<Nat>:\n  Super.inscribe(state, \"tap\", \"tapped by {context.handle}\", context)\nBEND\ndelvetalk {made 1} make\ndelvetalk {made 2} tap"}'   # 4: a kind with your Bend, one of it, its new verb used
 
 The body is checked over the record before anything is made (a line that does not compile is refused with the
@@ -57,16 +57,19 @@ its keeper, once.
 
 **Acting grows things.** Any card takes three more spells, and its law decides each one:    delvetalk lamp/1 grow /
 name: trim / reading: the wick trimmed / takes: nothing » a verb nobody gave it, credited to you; then: delvetalk lamp/1
-trim delvetalk bell/2 rule / name: heard / when: count(new.lines) >= 3 / then: delvetalk me note / text: bell/2 heard
-thrice » fires when a write makes it true, under your name delvetalk lamp/1 want / name: lit / reading: a lamp nobody
+trim delvetalk bell/2 rule / name: heard / when: count(new.lines) == 3 and changed(count(new.lines)) / then: delvetalk me note / text: bell/2 heard
+thrice » fires once, at the third line, under your name (`>= 3` alone would fire at every line after) delvetalk lamp/1 want / name: lit / reading: a lamp nobody
 lit / when: count(new.lines) == 0 / asks: delvetalk lamp/1 write » poses while it holds; the card prints it with its
 spell
 
 A text holds at most 16 lines: `law NAME "reading": EXPR` refuses at commit, `rule … then SPELL` fires at commit under
 its writer, `want … asks SPELL` poses while it holds; EXPR reads `new.F`, `old.F`, `"card".F`, `request.*` (`subject`,
 `method`, `verb`, `kind`: 4 a placing), `clock`, counts, `%` and `"card" wants NAME` (the page `laws`; docs/LAW.md).
-A rule's `when` holds at every commit while true; `when: changed(count(new.lines where verb == "rain"))`
-fires only when the count differs between old and new. `changed(TERM)` takes a state term with no request
+A rule's `when` is a level: it fires at every commit while true, so `count(new.lines) >= 3` fires at the third
+line and each after (the host answers such a placing with this line). For a crossing write
+`count(new.lines) == 3 and changed(count(new.lines))`; for a period `count(new.lines) % 3 == 0 and changed(count(new.lines))`;
+`when: changed(count(new.lines where verb == "rain"))` fires only when the count differs between old and new.
+Atoms compare with `==`, `!=`, `<`, `<=`, `>`, `>=`. `changed(TERM)` takes a state term with no request
 facts; missing readings are false, and wants refuse it because they read no old state. The existing
 `changed(new.F.COL) by TERM` still judges changed rows (LAW §8).
 `verbs`, `rules` and `wants` read them back with who placed each and when it last fired; `ungrow`, `unrule` and `unwant`

@@ -335,7 +335,8 @@ def asItStands (facts : Facts) (object : String) : Facts :=
 def standingRefusal (e : LawExpr) : Option String :=
   let oldTerm : LawTerm → Bool := fun t => (t.atRead.map (·.startsWith "old.") |>.getD false) || (t.atRead.map (·.startsWith "count(old.") |>.getD false)
   let rec go : LawExpr → Option String
-    | .eq l r | .le l r | .ge l r => if oldTerm l || oldTerm r then some (LawExpr.eq l r).render else none
+    | e@(.eq l r) | e@(.ne l r) | e@(.lt l r) | e@(.le l r) | e@(.gt l r) | e@(.ge l r) =>
+      if oldTerm l || oldTerm r then some e.render else none
     | .member t p => if oldTerm t || p.atRead.isSome then some (LawExpr.member t p).render else none
     | e@(.rule _ _) | e@(.changed _ _ _) | e@(.changedTerm _) | e@(.under _) => some e.render
     | .wants _ _ => none
@@ -362,8 +363,25 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
     | _, _ => match read facts old new left, read facts old new right with
       | some x, some y => x.same y
       | _, _ => false
+  -- Both sides read and differ: false when either reads nothing, as every comparison is.
+  | .ne left right => match left, right with
+    | other, .text text | .text text, other => match textOf facts old new other with
+      | some t => t != text
+      | none => false
+    | other, .int value | .int value, other => match number (read facts old new other) with
+      | some x => x != value
+      | none => false
+    | _, _ => match read facts old new left, read facts old new right with
+      | some x, some y => !x.same y
+      | _, _ => false
+  | .lt left right => match number (read facts old new left), number (read facts old new right) with
+    | some x, some y => decide (x < y)
+    | _, _ => false
   | .le left right => match number (read facts old new left), number (read facts old new right) with
     | some x, some y => decide (x ≤ y)
+    | _, _ => false
+  | .gt left right => match number (read facts old new left), number (read facts old new right) with
+    | some x, some y => decide (y < x)
     | _, _ => false
   | .ge left right => match number (read facts old new left), number (read facts old new right) with
     | some x, some y => decide (y ≤ x)
@@ -457,7 +475,7 @@ partial def work (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr) 
   let rows := fun (side : LawSide) (field : String) => ((rowsAt facts old new side field).map (·.length)).getD 0
   let both := fun (field : String) => rows .old field + rows .new field
   match e with
-  | .eq l r | .le l r | .ge l r => 1 + termWork facts old new l + termWork facts old new r
+  | .eq l r | .ne l r | .lt l r | .le l r | .gt l r | .ge l r => 1 + termWork facts old new l + termWork facts old new r
   | .member t (.list side field) => 1 + termWork facts old new t +
       ((((sideState facts old new side).bind (rawField field)).bind (listItems [])).map (·.length)).getD 0
   | .member t (.column side field _) => 1 + termWork facts old new t + rows side field
@@ -665,6 +683,14 @@ private def made1 (n : Nat) (ringAt : String) : Data :=
 #guard denote facts none (rec1 3) (parsed "new.open == 1 and not new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count <= 2 implies new.open == 0")
 #guard !denote facts none (rec1 3) (parsed "new.missing == 0")
+-- Strict comparisons and inequality (playtest 5); a side that reads nothing makes each false.
+#guard denote facts none (rec1 2) (parsed "new.count < 3") && !denote facts none (rec1 3) (parsed "new.count < 3")
+#guard denote facts none (rec1 4) (parsed "new.count > 3") && !denote facts none (rec1 3) (parsed "new.count > 3")
+#guard denote facts none (rec1 4) (parsed "new.count != 3") && !denote facts none (rec1 3) (parsed "new.count != 3")
+#guard !denote facts none (rec1 3) (parsed "new.missing != 0") && !denote facts none (rec1 3) (parsed "new.missing < 9")
+#guard denote facts none (rec1 3) (parsed "not new.missing == 0")
+#guard denote facts none (rec1 3) (parsed "request.subject != \"ember\"") && !denote facts none (rec1 3) (parsed "request.subject != \"7\"")
+#guard denote facts (some (rec1 2)) (rec1 3) (parsed "new.count > old.count") && !denote facts (some (rec1 3)) (rec1 3) (parsed "new.count > old.count")
 private def lst (xs : List String) : Data :=
   xs.foldr (fun x tail => .variant "cons" (.record [("head", .label x), ("tail", tail)])) (.variant "nil" (.record []))
 private def withList (xs : List String) (by_ : String) : Data :=
@@ -673,6 +699,8 @@ private def withList (xs : List String) (by_ : String) : Data :=
 #guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList [] "kim") (parsed "new.lastBy == request.subject")
 #guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList [] "bob") (parsed "new.lastBy == request.subject")
 #guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList [] "kim") (parsed "new.entries == request.subject")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList [] "bob") (parsed "new.lastBy != request.subject")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList [] "kim") (parsed "new.lastBy != request.subject")
 #guard denote ⟨"7", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (.record [("n", .natural 7)]) (parsed "new.n == request.subject")
 #guard denote facts (some (withList ["a"] "x")) (withList ["a", "b", "c"] "x") (parsed "appendOnly(entries)")
 #guard denote facts (some (withList ["a"] "x")) (withList ["a"] "x") (parsed "appendOnly(entries)")

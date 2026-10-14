@@ -19,7 +19,7 @@ naming what it found and the rule it breaks.
     READING  ::= a JSON string literal
     SPELL    ::= delvetalk …, one line, its holes {TERM}
     EXPR     ::= EXPR implies EXPR | EXPR or EXPR | EXPR and EXPR | not EXPR | ( EXPR ) | ATOM
-    ATOM     ::= TERM == TERM | TERM <= TERM | TERM >= TERM
+    ATOM     ::= TERM == TERM | TERM != TERM | TERM < TERM | TERM <= TERM | TERM > TERM | TERM >= TERM
                | TERM in [INT, …] | TERM in SIDE.FIELD | TERM in SIDE.FIELD.COLUMN
                | RULE(FIELD) | changed(TERM) | changed(new.FIELD.COLUMN) by TERM
                | under "OBJECT" | "OBJECT" wants NAME
@@ -35,12 +35,14 @@ naming what it found and the rule it breaks.
 applies to the atom or parenthesised expression after it; `+` associates to the left and `%` binds
 tighter. A clause reads top-level fields only: `new.a.b` refuses. `request.kind` compares with a
 number or a kind's name (`write` 0, `reprogram` 1, `amend` 2, `proposed` 3, `rule` 4). A comparison
-reads the write (one side holds a reference). A text constant compares (`==`) with a term that reads
+reads the write (one side holds a reference). A text constant compares (`==`, `!=`) with a term that reads
 as text (a field, a principal, the pin, the method, the verb, the object), never with a number, and
 never sums. `then` and `asks` end a rule's and a want's condition, so neither names a column there.
 
 What each form means (the host's `denote` is the definition):
 
+- `<`, `>` compare numbers strictly; `A != B` holds when both sides read and differ (so, like every
+  comparison, it is false when a side reads nothing, where `not (A == B)` is true).
 - `SIDE.F` reads a top-level field: `new` after the write, `old` before it (at creation the empty
   value of `new.F`'s type, as `writeOnce` reads an empty field), `"O"` of another object at the
   version the write's turn read, recorded as a root (`LawExpr.reads`). `request.clock` is the world
@@ -154,7 +156,11 @@ inductive LawRule where
 /-- A condition: what a law refuses without, what a rule fires on, what a want poses. -/
 inductive LawExpr where
   | eq (left right : LawTerm)
+  /-- `A != B`: both sides read, and differ. -/
+  | ne (left right : LawTerm)
+  | lt (left right : LawTerm)
   | le (left right : LawTerm)
+  | gt (left right : LawTerm)
   | ge (left right : LawTerm)
   | member (term : LawTerm) (place : LawPlace)
   | rule (rule : LawRule) (field : String)
@@ -248,7 +254,8 @@ end
 
 /-- The request facts a condition reads, in source order (with repetition). -/
 def LawExpr.facts : LawExpr → List LawFact
-  | .eq left right | .le left right | .ge left right => left.facts ++ right.facts
+  | .eq left right | .ne left right | .lt left right | .le left right | .gt left right | .ge left right =>
+    left.facts ++ right.facts
   | .member term _ => term.facts
   | .changed _ _ who => who.facts
   | .changedTerm term => term.facts
@@ -266,7 +273,8 @@ def LawPlace.names : LawPlace → List LawName
 
 /-- Every name a condition reads, in source order (with repetition). -/
 def LawExpr.names : LawExpr → List LawName
-  | .eq left right | .le left right | .ge left right => left.names ++ right.names
+  | .eq left right | .ne left right | .lt left right | .le left right | .gt left right | .ge left right =>
+    left.names ++ right.names
   | .member term place => term.names ++ place.names
   | .rule _ field => [.field field]
   | .changed field column who => .field field :: .column column :: who.names
@@ -377,7 +385,10 @@ def LawPlace.render : LawPlace → String
 
 def LawExpr.render : LawExpr → String
   | .eq left right => s!"{left.render} == {right.render}"
+  | .ne left right => s!"{left.render} != {right.render}"
+  | .lt left right => s!"{left.render} < {right.render}"
   | .le left right => s!"{left.render} <= {right.render}"
+  | .gt left right => s!"{left.render} > {right.render}"
   | .ge left right => s!"{left.render} >= {right.render}"
   | .member term place => s!"{term.render} in {place.render}"
   | .rule r field => s!"{r.name}({field})"
@@ -436,7 +447,8 @@ def LawPlace.atRead : LawPlace → Option String
 
 /-- The first construct of a condition a want cannot read, rendered. -/
 def LawExpr.atRead : LawExpr → Option String
-  | .eq left right | .le left right | .ge left right => left.atRead <|> right.atRead
+  | .eq left right | .ne left right | .lt left right | .le left right | .gt left right | .ge left right =>
+    left.atRead <|> right.atRead
   | .member term place => term.atRead <|> place.atRead
   | e@(.rule _ _) | e@(.changed _ _ _) | e@(.changedTerm _) | e@(.under _) => some e.render
   | .wants _ _ => none
@@ -451,6 +463,53 @@ def Clause.atRead (c : Clause) : Option String :=
   match c.modality with
   | .want spell => c.condition.atRead <|> spell.atRead
   | _ => none
+
+/-! ## A rule that holds as a level (playtest 5: a rule `>= 3` fired at the third line, the fourth and the fifth)
+
+A rule fires at every write while its condition holds. A bare threshold over what grows (`count(new.lines) >= 3`)
+holds at every write past it; `changed(TERM)` makes it a crossing, `TERM % N == 0` a period. -/
+
+/-- Whether a term grows with the thing's writes: a count or a field of `new`, or a sum holding one (a remainder
+is already a period). -/
+def LawTerm.grows : LawTerm → Bool
+  | .count .new _ _ | .field .new _ => true
+  | .sum left right => left.grows || right.grows
+  | _ => false
+
+/-- Whether a term tells one write from the next: it reads `old`, a remainder, or what the act was. -/
+def LawTerm.edged : LawTerm → Bool
+  | .field .old _ | .count .old _ _ | .mod .. | .fact .method | .fact .verb | .fact .kind => true
+  | .sum left right => left.edged || right.edged
+  | _ => false
+
+/-- Whether a condition tells one write from the next anywhere: `old`, a remainder, the act's method, verb or
+kind, `changed`, or a rule over old and new. -/
+def LawExpr.edged : LawExpr → Bool
+  | .eq l r | .ne l r | .lt l r | .le l r | .gt l r | .ge l r => l.edged || r.edged
+  | .member term place => term.edged || (place matches .list .old _ | .column .old _ _)
+  | .rule .. | .changed .. | .changedTerm _ => true
+  | .under _ | .wants .. => false
+  | .not body => body.edged
+  | .and l r | .or l r | .implies l r => l.edged || r.edged
+
+/-- The first threshold among a condition's conjuncts: a growing term at least a positive constant, as the atom,
+the term and the least value that holds. -/
+def LawExpr.threshold? : LawExpr → Option (LawExpr × LawTerm × Int)
+  | e@(.ge t (.int n)) | e@(.le (.int n) t) => if t.grows && n > 0 then some (e, t, n) else none
+  | e@(.gt t (.int n)) | e@(.lt (.int n) t) => if t.grows && n ≥ 0 then some (e, t, n + 1) else none
+  | .and l r => l.threshold? <|> r.threshold?
+  | _ => none
+
+/-- A rule whose condition is a bare threshold over a growing term fires at every write past it: the one line
+that says so and what to write in its place. None for a law, a want, or a condition that tells writes apart. -/
+def Clause.levelHint (c : Clause) : Option String := do
+  let .rule _ := c.modality | none
+  guard !c.condition.edged
+  let (atom, t, n) ← c.condition.threshold?
+  let term := t.render
+  let every := if n > 1 then s!"; at each multiple of {n}: {term} % {n} == 0 and changed({term})" else ""
+  return s!"rule {c.name} holds at every write while {atom.render}, so it fires at each one past it. " ++
+    s!"To fire once, as it crosses, write in its place: {term} == {n} and changed({term}){every}"
 
 /-! ## Refusals: one shape, `law outside the enforced fragment: FOUND (RULE)` -/
 
@@ -467,7 +526,7 @@ def factRule : String :=
   "a clause reads " ++ ", ".intercalate (LawFact.all.map fun f => "request." ++ f.name)
 def pathRule : String := "a clause reads top-level fields only: new.FIELD, old.FIELD, \"OBJECT\".FIELD"
 def countRule : String := "a count is count(SIDE.FIELD), optionally with where COLUMN == TERM joined by and; SIDE is new, old or \"OBJECT\""
-def atomRule : String := "an atom is TERM == TERM, TERM <= TERM, TERM >= TERM, TERM in …, RULE(FIELD), \
+def atomRule : String := "an atom is TERM == TERM, TERM != TERM, TERM < TERM, TERM <= TERM, TERM > TERM, TERM >= TERM, TERM in …, RULE(FIELD), \
   changed(TERM), changed(new.FIELD.COLUMN) by TERM, under \"OBJECT\" or \"OBJECT\" wants NAME"
 def compareRule : String := "a comparison reads the write: one side is new.FIELD, old.FIELD, \"OBJECT\".FIELD, \
   request.FACT or count(…)"
@@ -480,13 +539,13 @@ def changedRule : String := "changed reads one column of a relation: changed(new
   request.subject, request.caller, request.pin, request.method, request.verb, request.object or a text constant"
 def changedTermRule : String := "changed(TERM) compares a state term before and after the write; its term reads no request facts"
 def kindRule : String := "a kind is write, reprogram, amend, proposed, rule, or its number"
-def textRule : String := "a text constant compares with ==, against a field, request.subject, request.caller, \
+def textRule : String := "a text constant compares with == or !=, against a field, request.subject, request.caller, \
   request.pin, request.method, request.verb or request.object"
 def memberRule : String := "membership in a field reads a field, request.subject, request.caller, request.pin, \
   request.method, request.verb, request.object or a text constant; a number is a member of [INT, …]"
 def sumRule : String := "+ adds numbers"
 def modRule : String := "a remainder is TERM % INT, a number by an integer at least 1"
-def tokenRule : String := "a clause compares with ==, <= and >=, adds with + and %, and combines with and, or, not, implies"
+def tokenRule : String := "a clause compares with ==, !=, <, <=, > and >=, adds with + and %, and combines with and, or, not, implies"
 def joinRule : String := "then ends a rule's condition (rule NAME \"reading\": EXPR then SPELL); asks ends a want's \
   (want NAME \"reading\": EXPR asks SPELL); a law refuses and never causes"
 def clauseRule : String := "a clause is law NAME \"reading\": EXPR, rule NAME \"reading\": EXPR then SPELL, \
@@ -563,9 +622,10 @@ def tokenize (stop : String) : Nat → Bool → List Char → Except String (Lis
     else
       let sym : Option (String × List Char) := match c, rest with
         | '=', '=' :: more => some ("==", more)
+        | '!', '=' :: more => some ("!=", more)
         | '<', '=' :: more => some ("<=", more)
         | '>', '=' :: more => some (">=", more)
-        | _, _ => if "()[],.+-%".toList.contains c then some (String.singleton c, rest) else none
+        | _, _ => if "()[],.+-%<>".toList.contains c then some (String.singleton c, rest) else none
       match sym with
       | some (text, more) =>
         let (toks, tail) ← tokenize stop fuel (text == ".") more
@@ -735,12 +795,25 @@ def parsePlace (fuel : Nat) (toks : List Tok) : Except String (LawPlace × List 
     | _ => refuse (found toks) placeRule
   | _ => refuse (found toks) placeRule
 
+/-- The comparison operators, as written. -/
+def comparisons : List String := ["==", "!=", "<", "<=", ">", ">="]
+
+/-- The atom an operator of `comparisons` writes. -/
+def comparison (op : String) (left right : LawTerm) : LawExpr :=
+  match op with
+  | "!=" => .ne left right
+  | "<" => .lt left right
+  | "<=" => .le left right
+  | ">" => .gt left right
+  | ">=" => .ge left right
+  | _ => .eq left right
+
 /-- An atom that starts with a term: a comparison or a membership. -/
 def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × List Tok) := do
   let (left, rest) ← parseTerm fuel toks
   match rest with
   | .sym op :: more =>
-    if op != "==" && op != "<=" && op != ">=" then refuse (found rest) atomRule
+    if !comparisons.contains op then refuse (found rest) atomRule
     else
       let (right, after) ← match left, more with
         | .fact .kind, .ident name :: after =>
@@ -752,12 +825,12 @@ def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × L
       let shown := "`" ++ left.render ++ " " ++ op ++ " " ++ right.render ++ "`"
       match left, right with
       | .text _, other | other, .text _ =>
-        if op != "==" || !other.textual then refuse shown textRule
+        if (op != "==" && op != "!=") || !other.textual then refuse shown textRule
         else if !other.refers then refuse shown compareRule
-        else return (.eq left right, after)
+        else return (comparison op left right, after)
       | _, _ =>
         if !left.refers && !right.refers then refuse shown compareRule
-        else return (if op == "==" then .eq left right else if op == "<=" then .le left right else .ge left right, after)
+        else return (comparison op left right, after)
   | .ident "in" :: more => do
     let (place, after) ← parsePlace fuel more
     match place with
@@ -1121,11 +1194,19 @@ def accepted : List (String × LawExpr) := [
   ("\"tide\" == request.object and 1 == new.a",
     .and (.eq (.text "tide") (.fact .object)) (.eq (.int 1) (.field .new "a"))),
   ("request.laws >= 2 and request.refusedBy >= 1",
-    .and (.ge (.fact .laws) (.int 2)) (.ge (.fact .refusedBy) (.int 1)))]
+    .and (.ge (.fact .laws) (.int 2)) (.ge (.fact .refusedBy) (.int 1))),
+  -- The strict comparisons and inequality (playtest 5: "no != in the grammar", "no <, only ==, <=, >=").
+  ("new.a < 3 and count(new.lines) > count(old.lines)",
+    .and (.lt (.field .new "a") (.int 3)) (.gt (.count .new "lines" .all) (.count .old "lines" .all))),
+  ("request.subject != new.owner or new.verb != \"rain\"",
+    .or (.ne (.fact .subject) (.field .new "owner")) (.ne (.field .new "verb") (.text "rain"))),
+  ("request.kind != rule and new.a<new.b", .and (.ne (.fact .kind) (.int 4)) (.lt (.field .new "a") (.field .new "b"))),
+  ("not new.a != 1", .not (.ne (.field .new "a") (.int 1)))]
 
 /-- Conditions that refuse. -/
 def refused : List String := [
-  "new.a.b == 1", "old.a.b == 1", "old == 1", "new.a > 1", "witnessed(x)", "new.a == 1 claim",
+  "new.a.b == 1", "old.a.b == 1", "old == 1", "new.a ! 1", "new.a <> 1", "new.a =< 1", "new.a => 1", "witnessed(x)",
+  "new.a < \"x\"", "\"x\" > request.subject", "1 != 2", "\"a\" != \"b\"", "new.a != 1 != 2", "count(new.l where a != 1) <= 1", "new.a == 1 claim",
   "request.target == 1", "new.a == proposed", "request.kind == proposal", "request.clock == \"noon\"",
   "request.clock <= old.a.b + 1", "new.a <= \"x\"", "new.a <= new.b + \"x\"", "1 == 2", "\"a\" == \"b\"",
   "insertOnly(a.b)", "monotone(a", "count(new.a) == ", "count(new.a.b) <= 1", "count(a) <= 1",
@@ -1155,7 +1236,9 @@ def canonical : List String := [
   "(under \"kind/bell\") and (request.subject == new.maker)",
   "count(new.presence) >= 3", "request.clock <= \"garden\".tended + 1440",
   "\"done\" in old.marks.name", "new.ticks % 24 == 0", "\"garden\" wants rain", "request.verb == \"water\"",
-  "count(\"circle/porch\".members where role == \"keeper\") >= 2"]
+  "count(\"circle/porch\".members where role == \"keeper\") >= 2",
+  "new.a < 3", "count(new.lines) > 2", "request.subject != new.owner", "new.verb != \"rain\"",
+  "(count(new.lines) % 3 == 0) and (changed(count(new.lines)))"]
 
 theorem parse_accepts : accepted.all (fun (law, e) => (parse law).toOption == some e) = true := by native_decide
 
@@ -1315,7 +1398,9 @@ theorem refusals_name_what_and_why :
     refusalOf "1 + 2 <= 3" = some (refusal "`1 + 2 <= 3`" compareRule) ∧
     refusalOf "new.a % 0 == 0" = some (refusal "`% 0`" modRule) ∧
     refusalOf "new.a % new.b == 0" = some (refusal "`% new`" modRule) ∧
-    refusalOf "new.a > 1" = some (refusal "`>`" tokenRule) ∧
+    refusalOf "new.a ! 1" = some (refusal "`!`" tokenRule) ∧
+    refusalOf "new.a < \"x\"" = some (refusal "`new.a < \"x\"`" textRule) ∧
+    refusalOf "1 != 2" = some (refusal "`1 != 2`" compareRule) ∧
     refusalOf "new.a == 1 then delvetalk x ring" = some (refusal "`then`" joinRule) ∧
     clauseRefusalOf "rule r: new.a == 1" = some (refusal "the end of the rule" ruleLineRule) ∧
     clauseRefusalOf "want w: new.a == 1" = some (refusal "the end of the want" wantLineRule) ∧
@@ -1391,6 +1476,21 @@ theorem names_walk :
   ["a", "lines"]
 #guard (LawExpr.changedTerm (.count .new "lines" (.eq "verb" (.field (.cited "garden") "verb")))).reads == ["garden"]
 #guard (LawExpr.changedTerm (.field .new "a/b")).fieldsPlain == false
+-- A level threshold over what grows answers with the crossing and the period; a crossing, a period, a gate on
+-- the act, a law and a want answer nothing.
+private def hintOf (line : String) : Option String := (parseClause line).toOption.bind Clause.levelHint
+#guard hintOf "rule three: count(new.lines) >= 3 then delvetalk x ring" ==
+  some ("rule three holds at every write while count(new.lines) >= 3, so it fires at each one past it. " ++
+    "To fire once, as it crosses, write in its place: count(new.lines) == 3 and changed(count(new.lines)); " ++
+    "at each multiple of 3: count(new.lines) % 3 == 0 and changed(count(new.lines))")
+#guard (hintOf "rule big: new.n > 9 and new.open == 1 then delvetalk x ring").map (·.startsWith "rule big holds at every write while new.n > 9") == some true
+#guard (hintOf "rule one: 1 <= count(new.lines) then delvetalk x ring").map (·.endsWith "count(new.lines) == 1 and changed(count(new.lines))") == some true
+#guard ["rule r: count(new.lines) >= 3 and count(old.lines) < 3 then delvetalk x ring",
+    "rule r: count(new.lines) >= 3 and changed(count(new.lines)) then delvetalk x ring",
+    "rule r: count(new.lines) % 3 == 0 then delvetalk x ring", "rule r: request.verb == \"ring\" and count(new.lines) >= 3 then delvetalk x ring",
+    "rule r: count(new.lines) <= 3 then delvetalk x ring", "rule r: count(new.lines) >= 0 then delvetalk x ring",
+    "rule r: count(\"g\".lines) >= 3 then delvetalk x ring", "law l: count(new.lines) >= 3",
+    "want w: count(new.lines) >= 3 asks delvetalk x ring"].all (hintOf · == none)
 
 end Delvetalk.Compiler.ObjectiveBendLaw
 

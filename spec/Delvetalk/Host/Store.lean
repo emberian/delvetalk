@@ -71,8 +71,9 @@ def maxViewNodes : Nat := 4096
     reprogram replay replaces those layers through `componentInputs`, retaining unrelated layers); 15:
     bounded clock and dependent-want transition prefixes, a journal-derived pending flip queue, and
     checked drain entries retaining each transition's triggering height and clock; 16: lane/automod (the
-    moderated `screen` act and the `screened` index it derives, `Screen.lean`). -/
-def replayEdition : Nat := 16
+    moderated `screen` act and the `screened` index it derives, `Screen.lean`); 17: lane/playtest5 (laws judge
+    `!=`, `<` and `>`; a direct turn naming a grown verb or a host spell is that spell, `spellOfAction`). -/
+def replayEdition : Nat := 17
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000

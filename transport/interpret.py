@@ -10,7 +10,8 @@ Paints (a card painted from its strokes, cached by the host and never journaled;
 whose `next` is not null waits; a render the host does not list yet is not asked). Python decides nothing. An
 interpretation's reply is cached by id before it is submitted, so a crash resubmits it and never calls the model twice;
 a request the host lists as pending is submitted again from that cache whatever happened before (a restored journal). A
-`retrying` answer drops the cache, so the next ask is a new call. A paint is not journaled, so it is not cached here:
+`retrying` answer drops the cache, so the next ask is a new call. A round asks every interpretation first and then at
+most PAINTS_PER_ROUND paints, so words wait on at most that many paints. A paint is not journaled, so it is not cached here:
 a crash between the call and the submit costs one call. Every call is a line of the spend ledger, `use` naming which.
 Run as `python3 -m transport interpret --state DIR [--world W] [--once]`: a round every `model_poll` seconds, so a
 reader's paint can arrive inside the host's `patience`.
@@ -59,13 +60,17 @@ def run(st, host, ask=model.ask):
     return {'settled': settled, 'failed': failed, **({'retrying': retrying} if retrying else {})}
 
 
-def paint(host, ask=model.ask):
-    """Submit each listed render verbatim; retain the host's retry/refusal verdict for diagnosis."""
+PAINTS_PER_ROUND = 2  # a round paints at most this many, so a resident's words never wait behind a town's worth of paints
+
+
+def paint(host, ask=model.ask, limit=None):
+    """Submit the listed renders verbatim, up to `limit` (the worker's round: the rest next round, after the
+    interpretations; playtest 5's ghost words waited); retain the host's retry/refusal verdict for diagnosis."""
     listed = host.send({'op': 'world-renders'})
     if listed.get('status') != 'renders':
         return {'painted': [], 'failed': [{'message': listed.get('message')}]}
     done = {'painted': [], 'exact': [], 'retrying': [], 'failed': [], 'verdicts': []}
-    for item in listed.get('pending') or []:
+    for item in (listed.get('pending') or [])[:limit]:
         answer = host.send({'op': 'world-render-submit', 'key': item['key'], 'reply': ask(dict(item['request'], use='paint'))})
         which = {'painted': 'painted', 'exact': 'exact', 'retrying': 'retrying'}.get(answer.get('status'), 'failed')
         done[which].append(item['key'] if which != 'failed' else {'key': item['key'], 'message': answer.get('message')})
@@ -82,7 +87,7 @@ def command(st, a, out):
     ask = lambda req: model.ask(req, st)
 
     def step(always=False):
-        rounds = {**run(st, host, ask), 'paints': paint(host, ask)}
+        rounds = {**run(st, host, ask), 'paints': paint(host, ask, PAINTS_PER_ROUND)}
         if always or rounds['settled'] or rounds['failed'] or rounds.get('retrying') or rounds['paints'] != {'painted': []}:
             out.write(canonical(rounds) + '\n')  # a quiet round says nothing: the worker steps every second
             out.flush()

@@ -8,7 +8,7 @@ Every place and thing here is a card: what it is now, its verbs, its rules, what
   delvetalk wren-lamp/1 grow / name: trim / reading: the wick trimmed / takes: nothing
 3. A rule on it, and the act that fires it:
   delvetalk plan
-  delvetalk wren-lamp/1 rule / name: lit / when: count(new.lines) >= 1 / then: delvetalk me note / text: trimmed
+  delvetalk wren-lamp/1 rule / name: lit / when: changed(count(new.lines)) / then: delvetalk me note / text: trimmed
   delvetalk wren-lamp/1 trim
 4. A body of Bend over a record: the walk workshop.
 Try first: delvetalk try, spells indented under it, writes nothing. delvetalk <card> ? lists its spells; delvetalk <card> source reads its Bend. Post in the feed (/feed) and the answer comes under it. Past the porch the all-night station never closes: delvetalk station enter.

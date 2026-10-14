@@ -186,7 +186,7 @@ def bell_maker(cap):
     cap.say('The verb is a name and a reading; using it is a turn that waits for hob to answer.')
     grow('grow-2', f'delvetalk {bell} trim')
     grow('verbs-1', f'delvetalk {bell} verbs')
-    grow('rule-1', f'delvetalk {bell} rule\nname: heard\nwhen: count(new.lines) >= 3\nthen: delvetalk me note\ntext: {bell} heard thrice')
+    grow('rule-1', f'delvetalk {bell} rule\nname: heard\nwhen: count(new.lines) == 3 and changed(count(new.lines))\nthen: delvetalk me note\ntext: {bell} heard thrice')
     grow('want-1', f'delvetalk {bell} want\nname: unheard\nreading: a bell nobody has rained on\nwhen: count(new.lines) == 0\nasks: delvetalk {bell} rain')
     grow('wants-1', f'delvetalk {bell} wants')
     for n in (1, 2, 3):

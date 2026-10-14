@@ -777,6 +777,21 @@ performs and continues with one response. -/
 def letCaseRe : Re := seqs [str "let", many1 space, group 1 ident, many space, chr '(', many space,
   opt (group 2 ident), many space, chr ')', many space, chr '=', many space, group 3 (many1 dot), .done]
 
+/-- What a view is, as a refusal shows it (docs/VIEWS.md §2; playtest 5: "view x: = unsupported declaration", "def view
+x(...) = not a method signature"). -/
+def viewShape : String :=
+  "a view is a def named in views(): def view(state: State, context: Abi.Context) -> View.View: " ++
+  "with import ./View.obend as View, and def views() -> Lists.List<String>: Text.words(\"view\"); " ++
+  "the card's page draws it (delvetalk library read / page: bend)"
+
+/-- `def A B(`: two words where a def takes one name. -/
+def twoNames (rest : List Char) : Option (List Char) :=
+  let first := rest.takeWhile fun c => c.isAlphanum || c == '_'
+  let after := (rest.drop first.length).dropWhile (· == ' ')
+  let second := after.takeWhile fun c => c.isAlphanum || c == '_'
+  let opens := ((after.drop second.length).dropWhile (· == ' ')).head? == some '('
+  if !first.isEmpty && rest[first.length]? == some ' ' && !second.isEmpty && opens then some first else none
+
 def startsWith (s : List Char) (p : String) : Bool := p.toList.isPrefixOf s
 def endsWith (s : List Char) (p : String) : Bool := p.toList.reverse.isPrefixOf s.reverse
 
@@ -1251,10 +1266,15 @@ def declarations (lines : Array Line) :
       decls := decls.push (.function sig (some typeParameters) functionBody line.span)
       continue
     if startsWith line.text "def " && endsWith line.text ":" then
+      if let some first := twoNames (line.text.drop 4) then
+        if first == "view".toList then fail line ("refused (view): " ++ viewShape)
+        fail line ("refused (def): a def takes one name, then its parameters: def " ++ String.ofList first ++ "(…) -> T:")
       let sig ← signature ((line.text.drop 4).take (line.text.length - 5)) line
       let functionBody ← body lines fuel line.indent
       decls := decls.push (.function sig none functionBody line.span)
       continue
+    if startsWith line.text "view " || startsWith line.text "view:" || startsWith line.text "views " then
+      fail line ("refused (view): " ++ viewShape)
     fail line "unsupported Objective Bend declaration"
   return (imports, decls, layer, implements, forms)
 
@@ -1303,5 +1323,18 @@ def decodeSource (bytes : ByteArray) : Option String :=
     match s.toList with
     | '﻿' :: rest => String.ofList rest
     | _ => s
+
+/-- What parsing a source says, if it refuses. -/
+private def parseRefusal (source : String) : Option String :=
+  match parseObjective source with
+  | .error d => some d.message
+  | .ok _ => none
+
+-- Playtest 5's three tries at a view, each answered with the view's shape.
+#guard parseRefusal "edition ObjectiveBend 1\nview x:\n  1n\n" == some ("refused (view): " ++ viewShape)
+#guard parseRefusal "edition ObjectiveBend 1\ndef view x(state: State) -> String:\n  \"x\"\n" == some ("refused (view): " ++ viewShape)
+#guard parseRefusal "edition ObjectiveBend 1\ndef plain thing(state: State) -> String:\n  \"x\"\n" ==
+  some "refused (def): a def takes one name, then its parameters: def plain(…) -> T:"
+#guard parseRefusal "edition ObjectiveBend 1\ndef view(state: Nat) -> Nat:\n  state\n" == none
 
 end Delvetalk.Compiler.ObjectiveBendParse

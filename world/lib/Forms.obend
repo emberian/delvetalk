@@ -104,7 +104,7 @@ def naturalFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
   if textLength(value) == 0n || textSpan(value, "0123456789") != textLength(value) || Text.digits(value, 0n) < low(spec.kind) || Text.digits(value, 0n) > high(spec.kind) then bad("{spec.name} is a number from {natText(low(spec.kind))} to {natText(high(spec.kind))}.") else Lists.Maybe.none({})
 # A layer as the workshop writes it around a body of forms and defs (docs/AUTHORING.md §3 (c)): the
 # edition, the imports a body over RECORD or THING reads (every module their State's fields name, so
-# `write {…}` derives its edits), `type State = Super.State`, the body, then
+# `write {…}` derives its edits, and View, so a body draws its page: docs/VIEWS.md), `type State = Super.State`, the body, then
 # an `actions()` offering its forms after what the thing below offers (a body over RECORD offers only
 # what `actions()` lists), unless the body names its own. A body that begins `layer over` or
 # `edition` is a whole layer already and is kept as written; the host lays any layer over what the
@@ -117,10 +117,10 @@ def whole(body: String) -> Bool:
   let start = textTake(Text.trimStart(body), 10n)
   start == "" || Text.starts(start, "layer over") || Text.starts(start, "edition")
 def header() -> String:
-  "layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Text.obend as Text\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Card.obend as Card\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Rows.obend as Rows\nimport ./Scenes.obend as Scenes\nimport ./Spween.obend as Spween\ntype State = Super.State\n"
+  "layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Text.obend as Text\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Card.obend as Card\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Rows.obend as Rows\nimport ./Scenes.obend as Scenes\nimport ./Spween.obend as Spween\nimport ./View.obend as View\ntype State = Super.State\n"
 # How many lines the header is: a checker's line past it is the body's line that much less.
 def headerLines() -> Nat:
-  15n
+  16n
 # Where a checker's line numbers start in a body the workshop wrapped, said once under them.
 def headerNote(body: String) -> String:
   if whole(body) then "" else "Lines 1 to {natText(headerLines())} are the header the workshop wrote; your first line is line {natText(headerLines() + 1n)}.\n"

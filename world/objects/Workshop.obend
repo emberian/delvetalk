@@ -38,6 +38,7 @@ sum Verdict:
   reprogrammed: {pin: String}
   held: {n: Nat, clause: String}
   withdrawn: {n: Nat}
+  declined: {n: Nat}
   made: {object: String}
   usage: {}
   refused: Card.Refusal
@@ -55,11 +56,10 @@ def heldKey(held: Held) -> {n: Nat}:
 # A hint is shown indented under its problem and is not counted as one.
 def hintMark() -> String:
   ": hint: "
-# Where ": hint: " starts in a diagnostic, or its length when it has none.
+# Where ": hint: " starts in a diagnostic, or its length when it has none: one pass (a scan from each colon
+# ran a long diagnostic out of the turn's ticks, playtest 5).
 def hintAt(text: String, from: Nat) -> Nat:
-  let rest = textDrop(text, from)
-  let at = from + textBreak(rest, ":")
-  if at >= textLength(text) then textLength(text) else if textTake(textDrop(text, at), 8n) == hintMark() then at else hintAt(text, at + 1n)
+  from + Text.indexOf(textDrop(text, from), hintMark())
 def isHint(diagnostic: String) -> Bool:
   hintAt(diagnostic, 0n) < textLength(diagnostic)
 def problem(diagnostic: String) -> Document.Document:
@@ -270,6 +270,21 @@ def withdraw(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Ve
 def withdrawn(held: Held) -> Activity<Verdict>:
   let written(_) = write {held: retract heldKey(held)}
   Card.tell(Verdict.withdrawn({n: held.n}), Document.text("✾ WORKSHOP\n\nWithdrew #{natText(held.n)}.\n"))
+# Decline: the owner of its target turns it down, as adopting would take it (the hand's requests page offers both
+# for the town's things); a draft held for its describer is theirs alone.
+def decline(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Verdict>:
+  match heldNumbered(input.n, state):
+    case none(_): refusing("noHeld", "No held proposal #{natText(input.n)}", context)
+    case some(h): if h.value.target == "" then refusing("notOwner", "#{natText(input.n)} is a draft its describer adopts or withdraws", context) else declining(h.value, context)
+def declining(held: Held, context: Abi.Context) -> Activity<Verdict>:
+  match world.viewField::<String>({object: {world: context.world, object: held.target}, field: "owner"}):
+    case viewed(v): if v.state == context.principal then declined(held) else notDecliner(held, context)
+    case _: notDecliner(held, context)
+def notDecliner(held: Held, context: Abi.Context) -> Activity<Verdict>:
+  refusing("notOwner", "Only the owner of {held.target} declines #{natText(held.n)}", context)
+def declined(held: Held) -> Activity<Verdict>:
+  let written(_) = write {held: retract heldKey(held)}
+  Card.tell(Verdict.declined({n: held.n}), Document.text("✾ WORKSHOP\n\nDeclined #{natText(held.n)}, for {held.target}.\n"))
 # The code is the `source` field: a `source: <<BEND` block, or the reply's ```obend block,
 # which the host reads as that field.
 def check(state: State, input: {target: String, over: String, source: String}, context: Abi.Context) -> Activity<Verdict>:
@@ -360,7 +375,7 @@ def bodyHeld(held: Held, object: String, state: State) -> Activity<Verdict>:
   let written(_) = write {held: insert held, next: add 1n}
   Card.tell(Verdict.held({n: held.n, clause: "owner"}), Document.text("✾ WORKSHOP\n\n{held.name} with its body is held as #{natText(held.n)} for the owner of {object} to lay:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n{dropping(state)}"))
 def methods() -> Lists.List<String>:
-  Text.words("adopt withdraw create ~growBody")
+  Text.words("adopt withdraw decline create ~growBody")
 # The Workshop's page is its card alone: the host's default page would append every form's usage
 # and pass the 1,400-character clip (genesis's `wiki: Workshop` was 1,444).
 def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
@@ -369,7 +384,7 @@ def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Ac
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: usage(), tail: heldLines(context, state, Document.size(usage()))})})
 def heldLines(context: Abi.Context, state: State, used: Nat) -> Document.Documents:
-  let head = "\nHeld (owner or describer: adopt / n; proposer: withdraw / n):\n"
+  let head = "\nHeld (owner or describer: adopt / n; owner: decline / n; proposer: withdraw / n):\n"
   if Relations.count(state.held) == 0n then Document.Documents.nil() else Document.Documents.cons({head: Document.text(head), tail: Card.clippedWithin(Lists.map(Relations.rows(state.held), fn(h: Held) -> Document.Document: Document.text(heldLine(h, context))), 8n, Card.left(context, used + textLength(head)))})
 def heldLine(h: Held, context: Abi.Context) -> String:
   if h.target == "" then "#{natText(h.n)} makes {h.name}, described by {Card.shown(h.proposer, h.proposerHandle, context)}\n" else "#{natText(h.n)} for {h.target} from {Card.shown(h.proposer, h.proposerHandle, context)}\n"

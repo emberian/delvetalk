@@ -203,6 +203,21 @@ def resolve (origin : Nat) (name : String) : M (Option Declaration) := do
     | _ => throw ("invalid generic declaration reference: " ++ name)
   return (← get).byName[(target, localName)]?
 
+/-- Why `text` names no source type, and what does: a qualified name's module and the types it declares (playtest 5:
+"unknown source type in specialization: Super.Done", over a record, whose layer beneath declares no Done). -/
+def unknownType (origin : Nat) (text : String) : M String := do
+  let said := "unknown source type in specialization: " ++ text
+  let m ← originModule origin
+  let [alias, n] := text.splitOn "." | return said
+  let some imported := m.imports.find? (·.importAlias == alias)
+    | return said ++ "; " ++ alias ++ " is no import of module " ++ m.name
+  let types := ((← get).byName.toList.filterMap fun ((module, name), d) =>
+    if module != imported.moduleName then none else match d.ast with
+      | .record .. | .sum .. | .typeAlias .. => some name
+      | _ => none).mergeSort (fun a b => decide (a ≤ b))
+  return said ++ "; " ++ alias ++ " (" ++ imported.moduleName ++ ") declares no type " ++ n ++
+    (if types.isEmpty then "" else "; its types: " ++ ", ".intercalate (types.take 24))
+
 partial def render (target : String) : GType → M String
   | .atom n => pure n
   | .named m n _ => do
@@ -734,7 +749,7 @@ def typeOf : Nat → Nat → List (String × GType) → String → M GType
       return ← instantiate fuel declaration args
     if ["Nat", "Bool", "String", "Data", "_", "", "Self", "Super", "SpecMeta", "SpecClaims"].contains text then
       return .atom text
-    let some declaration ← resolve origin text | throw ("unknown source type in specialization: " ++ text)
+    let some declaration ← resolve origin text | throw (← unknownType origin text)
     if !declaration.ast.typeParameters.isEmpty then throw ("generic type needs explicit arguments: " ++ text)
     match declaration.ast with
     | .typeAlias _ type _ => return ← typeOf fuel declaration.origin [] type
@@ -885,12 +900,29 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
               | .var n _ => n
               | .member (.var a _) n _ => a ++ "." ++ n
               | _ => c.declaration.name
-            let shown := c.typeParameters.map fun p => ((σ.lookup p).map IType.show).getD p
+            -- A State's edits are typed as its derived Edits name them (`deriveEdits`): a number's field
+            -- Edit<Nat, Nat>, any other field's Edit<T, {}>, a list's or a relation's Entries<X, X>; the refusal
+            -- fills in what that fixes (playtest 5: "the mystery second type argument").
+            let known := fun (p : String) => (σ.lookup p).map IType.show
+            let edits := c.declaration.name == "Edit" || c.declaration.name == "Entries"
+            let fixed : String → Option String := fun p =>
+              if !edits then known p else match c.declaration.name, c.typeParameters, p with
+                | "Edit", [t, d], _ =>
+                  let number := known t == some "Nat" || known d == some "Nat"
+                  if number then some "Nat" else if p == d then (known t).map fun _ => "{}" else known p
+                | "Entries", [x, u], _ => known x <|> known u
+                | _, _, _ => known p
+            let shown := c.typeParameters.map fun p => (fixed p).getD p
             let spelled := written ++ "::<" ++ ", ".intercalate shown ++ ">" ++ ((c.label.map ("." ++ ·)).getD "")
+            let named := missing.filter fun p => (fixed p).isNone
+            let called := written ++ (match c.label with | some l => "." ++ l | none => "")
+            let writeNote := if !edits then "" else
+              "; in a write the field names them: let written(_) = write {field: set value} (add, append, insert, …); " ++
+              "a number's field is Edit<Nat, Nat>, any other field's Edit<T, {}>, a list's or a relation's Entries<X, X>"
             throw ("cannot infer the type argument" ++ (if missing.length > 1 then "s " else " ") ++
-              ", ".intercalate missing ++ " of " ++ written ++ (match c.label with | some l => "." ++ l | none => "") ++
+              ", ".intercalate missing ++ " of " ++ called ++
               " (line " ++ toString span.line ++ ") from its arguments or the type its position expects; write " ++
-              spelled ++ "(...) naming " ++ ", ".intercalate missing)
+              spelled ++ "(...)" ++ (if named.isEmpty then "" else " naming " ++ ", ".intercalate named) ++ writeNote)
           let args ← (args.zipIdx).mapM fun (a, i) =>
             rewriteExpr fuel site locals (pure ((c.params[i]?.getD .unknown).subst σ)) a
           let types ← c.typeParameters.mapM fun p => toG fuel ((σ.lookup p).getD .unknown)
@@ -1220,6 +1252,20 @@ partial def spell (origin : Nat) (g : GType) : M (Option String) := do
     let (some a, some b) := (← spell origin a, ← spell origin b) | return none
     return some (a ++ " with " ++ b)
 
+/-- The source modules a type names (an instance: its declaration's and its arguments'), each once, in order. -/
+partial def modulesOf (g : GType) : M (List String) := do
+  match g with
+  | .atom _ => return []
+  | .named m n _ =>
+    let s ← get
+    if m != s.generatedModule then return [m]
+    let some i := (s.instanceByName[n]?).bind (s.instances[·]?) | return []
+    let home ← originModule i.origin
+    return (home.name :: (← i.arguments.mapM modulesOf).flatten).eraseDups
+  | .applied _ args => return (← args.mapM modulesOf).flatten.eraseDups
+  | .arrow a b | .overlay a b => return ((← modulesOf a) ++ (← modulesOf b)).eraseDups
+  | .row fields => return (← fields.mapM fun (_, t) => modulesOf t).flatten.eraseDups
+
 /-- The item type of a `List<X>` or `Relation<X>`: an instance of a one-parameter sum named `List`
 with the cases `nil` and `cons`, or named `Relation` with the one case `rows` (the library's, or a
 package's own of that shape). -/
@@ -1342,10 +1388,21 @@ def relationFields (index : Nat) : M (List String) := do
     let some g ← tryCatch (some <$> typeOf maxNesting home [] f.type) (fun _ => pure none) | return none
     return if (← relationItem g).isSome then some f.name else none
 
-/-- Refuse a write that names a fixed field of the State module `index` edits. -/
+/-- Refuse a write that names a fixed field of the State module `index` edits, or a field it does not have: every
+unknown name at once, with the State's own fields and where a layer keeps a value of its own (playtest 5: a layer's
+`write {warmth: add 1n}` over a record was refused as an uninferred type argument, one error at a time). -/
 def checkFixed (index : Nat) : M Unit := do
   let some source := (← get).sources[index]? | return
-  let some (fields, _, _) ← effectiveStateFields (← get).sources.size index | return
+  let some (fields, home, _) ← effectiveStateFields (← get).sources.size index | return
+  let names := fields.map (·.name)
+  let unknown := source.ast.decls.flatMap fun d => (declWritten d).filter (!names.contains ·) |>.map (·, d.span)
+  if let some (_, at_) := unknown.head? then
+    let owner := (((← get).sources[home]?).map (·.module.name)).getD source.module.name
+    let layered := if home == index then "" else
+      "; a layer keeps the State of the one beneath it, so a value of its own lives in a field it has: a number or a word in " ++
+      "vars (Scenes.Var, as kind/counter keeps its count), a line by Super.inscribe"
+    derivedAt source.module.name at_ ("write names no field of the State (" ++ owner ++ "'s): " ++
+      ", ".intercalate (unknown.map (·.1)).eraseDups ++ "; its fields: " ++ ", ".intercalate names ++ layered) "unknown-field"
   let fixed := (fields.filter (·.fixed)).map (·.name)
   if fixed.isEmpty then return
   for d in source.ast.decls do
@@ -1363,22 +1420,29 @@ def deriveEdits (index : Nat) : M (Option (List Decl)) := do
   let module := source.module.name
   let mut lines : Array String := #[]
   let mut keeps : Array String := #[]
+  -- Every field whose type names a module this one does not import, with those modules: refused once, all named.
+  let mut lacking : Array (String × Span × List String) := #[]
   for f in fields do
     if f.fixed then continue
     let some g ← tryCatch (some <$> typeOf maxNesting home [] f.type) (fun _ => pure none) | return none
-    let (sum, args) ← if g == .atom "Nat" then pure ("Edit", "Nat, Nat") else
+    let spelled ← if g == .atom "Nat" then pure (some ("Edit", "Nat, Nat")) else
       match ← entriesItem g with
-      | some x =>
-        let some x ← spell index x
-          | derivedAt module f.span ("State." ++ f.name ++ " holds items of a type from a module " ++ module ++ " does not import; import it")
-        pure ("Entries", x ++ ", " ++ x)
-      | none =>
-        let some t ← (if home == index then pure (some f.type) else spell index g)
-          | derivedAt module f.span ("State." ++ f.name ++ " has a type from a module " ++ module ++ " does not import; import it")
-        pure ("Edit", t ++ ", {}")
+      | some x => pure ((← spell index x).map fun x => ("Entries", x ++ ", " ++ x))
+      | none => pure ((← if home == index then pure (some f.type) else spell index g).map fun t => ("Edit", t ++ ", {}"))
+    let some (sum, args) := spelled | do
+      let named ← modulesOf g
+      lacking := lacking.push (f.name, f.span, named.filter fun m => m != module && !source.module.imports.any (·.moduleName == m))
+      continue
     let name := if ObjectiveBendParse.isIdent f.name.toList then f.name else (toJson f.name).compress
     lines := lines.push ("  " ++ name ++ ": " ++ plans ++ "." ++ sum ++ "<" ++ args ++ ">\n")
     keeps := keeps.push (name ++ ": " ++ plans ++ "." ++ sum ++ "::<" ++ args ++ ">.keep({})")
+  if let some (_, at_, _) := lacking[0]? then
+    let modules := (lacking.toList.flatMap (·.2.2)).eraseDups
+    let sources := (← get).sources.toList
+    let alias := fun (m : String) => (sources.findSome? fun x => (x.module.imports.find? (·.moduleName == m)).map (·.importAlias)).getD m
+    let fieldsShown := ", ".intercalate (lacking.toList.map fun (n, _, ms) => "State." ++ n ++ (if ms.isEmpty then "" else " (" ++ ", ".intercalate ms ++ ")"))
+    derivedAt module at_ ("the State's fields hold types from modules " ++ module ++ " does not import: " ++ fieldsShown ++
+      "; add " ++ "; ".intercalate (modules.map fun m => "import ./" ++ m ++ ".obend as " ++ alias m))
   let text := "record Edits:\n" ++ String.join lines.toList ++ "def keep() -> Edits:\n  {" ++
     ", ".intercalate keeps.toList ++ "}\n"
   match ObjectiveBendParse.parseObjective text with
