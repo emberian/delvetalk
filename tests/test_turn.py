@@ -11,6 +11,7 @@ is about process boundaries.
 """
 import copy
 import json
+import os
 import unittest
 
 from tests import host
@@ -210,6 +211,25 @@ class OldDialectTests(TurnCase):
         message = self.check("edition ObjectiveBend 1\nsum Plan:\n  w: Nat\nsum Reply:\n  ok: {}\n"
                              "def a(n: Nat) -> Nat:\n  match perform(Plan.w(n)):\n    case ok(_): n\n")
         self.assertIn("refused (perform): surface perform is withdrawn", message)
+
+    def test_the_three_argument_activity_cites_the_section_that_says_what_to_write(self):
+        """Both refusals of the old dialect (a def's result, and the type anywhere else) cite the place the one dialect is
+        stated; they cited docs/WHOLENESS.md, deleted since. FOUNDATION §1 states `Activity<A>`, the world call as the
+        only yield, and the three-argument form refused by name."""
+        prelude = "edition ObjectiveBend 1\nsum Plan:\n  w: Nat\nsum Reply:\n  ok: {}\n"
+        for source in (prelude + "def a(n: Nat) -> Activity<Plan, Reply, Nat>:\n  n\n",
+                       prelude + "def a(f: Activity<Plan, Reply, Nat>, n: Nat) -> Nat:\n  n\n"):
+            with self.subTest(source=source.splitlines()[-2]):
+                message = self.check(source)
+                self.assertIn("refused (old-dialect)", message)
+                self.assertIn("(docs/FOUNDATION.md section 1)", message)
+                self.assertNotIn("WHOLENESS", message)
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "docs", "FOUNDATION.md")) as f:
+            section = f.read().split("\n## 1. ", 1)[1].split("\n## 2. ", 1)[0]
+        self.assertTrue(section.startswith("Substrate"), section[:40])
+        self.assertIn("`Activity<A>`", section)
+        self.assertIn("`Activity<P, R, A>` are refused by name", section.replace("\n  ", " "))
 
 
 class TurnTests(TurnCase):
