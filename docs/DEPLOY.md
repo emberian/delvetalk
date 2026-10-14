@@ -1700,6 +1700,16 @@ password. `POST /AGENTS.md/world/register/sign` is `noMethod` on both towns: nei
 residents' line before the switch was not posted (asked for after both carries were done); the line after was, in obend's
 feed as the town.
 
+Refused at the carry-check 2026-10-14 (08:37 UTC), both towns, edition 17 to 19 (`20b09bec8fdd` to foundation ff5b20d2's
+`4894c8ff4519179fd95a010f86100cce6b5a29ad91458c14182d1e6c5f3ae600`, transport image `75b8e2b7…1d7a`, both boxes; lane/deploy19
+renders v19 and v4). carry-check on the workhorse as edition 17's (`/var/tmp/delvetalk-deploy19/carrycheck19.sh`, the switch
+`switch19.sh` beside it): gsb at 5243 with 304 objects, obend at 1773 with 147, each `check {problems: []}` (obend
+`cardless: [beacon-jar]`), but each exited 1 on five refresh rows: `kind/weather`, `kind/lantern`, `kind/bond`,
+`kind/errand` and `kind/front` `.form` `refused shaped: Its code over Kind is not the make its form laid`. 8ddb1ba6 made
+`Kind.layerSource`'s place `id` an `object 1..64` (was `text 1..64`), and `reshape` compares a kind's installed layer with
+`layerSource` of its old form under the new code, so every carried kind whose form changed is refused. Nothing was stopped
+or announced; both towns serve v18 and v3 as before.
+
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
     cd /var/lib/delvetalk/v7/state && mkdir -p worlds/town && mv observe.sqlite* since outbox awaiting principals.txt \
