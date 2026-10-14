@@ -47,10 +47,11 @@ class Genesis(unittest.TestCase):
                           + [('porch', 'admitted')] * (len(genesis.PORCH_DOORS) + 1) + [(w[0], 'admitted') for w in genesis.WANTS]
                           + [(t, 'created') for t, _ in genesis.THINGS] + [(dict(f)['id'], 'admitted') for _, f in genesis.MOTION]
                           + [('kind/register', 'created'), (genesis.REGISTER_DESK, 'created'), (genesis.REGISTER, 'admitted'),
-                             (genesis.REGISTER, 'admitted'), (genesis.REGISTER_DESK, 'admitted')]), made)
+                             (genesis.REGISTER, 'admitted'), (genesis.REGISTER_DESK, 'admitted'),
+                             (genesis.MENDING_DRAWER, 'created'), (genesis.MENDING, 'created')]), made)
         o = genesis.OPENER
         self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [t for t, _ in genesis.THINGS] + [dict(f)['id'] for _, f in genesis.MOTION] + [o]
-                                                                 + ['kind/register', genesis.REGISTER, genesis.REGISTER_DESK]))
+                                                                 + ['kind/register', genesis.REGISTER, genesis.REGISTER_DESK, genesis.MENDING, genesis.MENDING_DRAWER]))
         self.assertEqual([m.get('laid') for m in made if m['module'] == 'Thing'], ['admitted'] * len(genesis.THINGS))
         # each coinage is a record of its kind whose maker is the opener, made from its coiner's post, which its card credits
         for id, (kind, _, post) in zip(hands, genesis.HANDS):
@@ -144,7 +145,7 @@ class Genesis(unittest.TestCase):
         """LIBRARY (a), (e): genesis shelved capsules/pages/ as the opener; anyone reads a page by a word of what they said."""
         self.assertEqual(self.library('delvetalk library read / page: how do i read laws?', 1), genesis.page_body('laws'))
         miss = self.library('delvetalk library read / page: dragons', 2)
-        self.assertEqual(miss, 'refused noPage: No page called dragons. Pages: spells laws object relations protocol world kinds register spween station guide welcome; walks: bell check enter scene tide kind.\n')
+        self.assertEqual(miss, 'refused noPage: No page called dragons. Pages: spells laws object relations protocol world kinds register mending spween station guide welcome; walks: bell check enter scene tide kind.\n')
         refused = self.library('delvetalk library shelve / name: mine / kind: page / title: t / body: hob: mine', 3)
         self.assertEqual(refused, 'refused notOwner: Only the town shelves a page\n')
         self.assertNotIn('mine', self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'library'})['text'])

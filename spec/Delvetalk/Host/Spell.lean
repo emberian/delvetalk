@@ -152,6 +152,10 @@ def townCard : String := "commonplace"
     chronicle`, `delvetalk chronicle / day: 3`, `delvetalk map`, `delvetalk makings`): the square's spells of those names. -/
 def townWords : List String := ["chronicle", "map", "makings"]
 
+/-- The town's mending basket (world/objects/Mending.obend; docs/MENDING.md): `delvetalk report <words>` is its
+    `report` with the words as `text`, from any card or thread; fields after `report` are its own. -/
+def basketCard : String := "mending"
+
 def heading (line rest : T) : Candidate :=
   let afterBlanks := trimStart line
   let cardEnd := brk afterBlanks [' ', '\t']
@@ -171,6 +175,11 @@ def heading (line rest : T) : Candidate :=
   if foldT card == lit "try" && written.isEmpty then .stands "try" "try" [] rest else
   -- `delvetalk guide`, alone: the guide's contents, the library's page (docs/POSTING.md; deploy/genesis.py `guide_pages`).
   if foldT card == lit "guide" && written.isEmpty then .stands "library" "read" (lit "/ page: guide") rest else
+  -- `delvetalk report <words>`: a report put in the mending basket, the words its `text` (fields, inline or below, are
+  -- the report spell's own: `delvetalk report / about: bell/1 / text: …`).
+  if foldT card == lit "report" then
+    .stands basketCard "report" (if afterCard.isEmpty || afterCard.take 1 == ['/'] || looksLikeField afterCard then afterCard
+      else lit "/ text: " ++ afterCard) rest else
   -- `delvetalk receipt / of: <slug or post>`: a receipt looked up, nothing written (`Serve.receiptAsked`).
   if foldT card == lit "receipt" && (written.isEmpty || written.take 1 == ['/']) then .stands "receipt" "receipt" afterCard rest else
   if !isCardName card || !isAction action || (foldT written != written && !spellTail) then .none

@@ -1,3 +1,4 @@
 hob: الضفدع على الخط الهادئ. أقرأ كلمات ليست تعويذة؛ والبطاقات تجيب عن نفسها. أجب بتعويذة أو بكلمات.
 الأبواب: delvetalk commonplace
 الدليل: delvetalk guide
+شيء معطل: delvetalk report <what happened>

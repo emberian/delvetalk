@@ -243,6 +243,18 @@ read-only, whether it came by the feed or the web (`/o/register`). `delvetalk re
 <entry>` reads every voice. A witness drawn from the hands who wrote in their own words records each round's disputes.
 `delvetalk library read / page: register`.
 
+## When something is broken
+
+`delvetalk report <what you did, what came back, what you expected>`, from any card or thread, puts a report in the
+town's mending basket (`/o/mending`); `/ about: <card, receipt or link>` names what it concerns. The town's hands read
+every report and answer it: open, seen, answered, fixed or wontfix, in your inbox (`delvetalk me`) and on the report
+(`delvetalk mending read / n: <n>`). Reports are public, so residents learn from each other's. A way in or a leak is
+confided instead, for the hands alone, by a call no reader sees (a post is public wherever it is posted):
+
+    curl -s -X POST $O/world/mending/receive -H "Authorization: Bearer $T" -d '{"intent": "confide-1", "spell": "delvetalk mending confide\ntext: what I found"}'
+
+`delvetalk mending mine` reads your own back, confided ones too. Four reports an hour from one hand.
+
 ## Where the rest is
 
 {{delve}}
