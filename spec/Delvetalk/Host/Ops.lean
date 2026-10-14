@@ -47,7 +47,7 @@ def boundedText (what : String) (cap : Nat) (s : String) : Except String String 
   if s.isEmpty || s.utf8ByteSize > cap then throw s!"{what} must be 1..{cap} bytes"
   return s
 
-/-- The world object's id (WHOLENESS §1): the reference `{world: "", object: "world"}` a message
+/-- The world object's id (FOUNDATION §3): the reference `{world: "", object: "world"}` a message
     activity calls. No object may take it. -/
 def worldId : String := "world"
 
@@ -100,7 +100,7 @@ inductive EditKind where
       removed (`removeItem`). -/
   | amendItem (item change : Data)
   | removeItem (item : Data)
-  /-- Relation edits (RELATIONAL.md §3), on a field the package declares a relation: a row added
+  /-- Relation edits (FOUNDATION §9 "Edits"), on a field the package declares a relation: a row added
       under its key (`insert` refuses a taken key with another row, `upsert` replaces it), or the row
       of a key removed (`retract`; an absent key is no change). -/
   | insert (row : Data)
@@ -178,7 +178,7 @@ structure CreateRec where
   sources : String
   /-- The final state, on the wire. -/
   seed : Json
-  /-- Its lineage, when a `make` made it: `{object, pin, receipt}` (docs/GROUND.md §6 change 6). -/
+  /-- Its lineage, when a `make` made it: `{object, pin, receipt}` (HOST-HANDOFF §5.3). -/
   madeFrom : Option Json := none
   /-- What the turn asked (never journaled): the creating object, the package, the seed and law given,
       and the layers `extend`s of the same turn laid into the making, bottom first (a kind's instance
@@ -208,7 +208,7 @@ structure Written where
       grown one (docs/FOUNDATION.md §10); "" reads as the method. Journaled (`verbs`) when any is given. -/
   verb : String := ""
 
-/-- How a turn read a root it did not read whole (KERNEL-HANDOFF §15, WHOLENESS §3a). A frame that
+/-- How a turn read a root it did not read whole (KERNEL-HANDOFF §15, FOUNDATION §9 "Reads and roots"). A frame that
     ran on the object's state through the stored path read its scalar part (every field but its
     relations, which the kernel holds natively) and only the rows and spines it forced; `viewField`
     reads one field. A root with no `Cells` was read whole. -/
@@ -682,7 +682,7 @@ partial def plainJson : Data → Json
       | .record fs => Json.mkObj (("tag", toJson l) :: fs.map fun (k, v) => (k, plainJson v))
       | other => Json.mkObj [("tag", toJson l), ("value", plainJson other)]
 
-/-- The refusal of a state with a cell past `Bounds.maxCellBytes` (KERNEL-HANDOFF §15 step 4):
+/-- The refusal of a state with a cell past `Bounds.maxCellBytes` (KERNEL-HANDOFF §15):
     `capacity`, clause `maxCellBytes`, the reason naming the cell. -/
 def cellRefusal (id : String) (cell : String × Data) (cls : String := "capacity") : Refusal :=
   let what := if cell.1 == "scalar" then "its scalar fields"
@@ -819,7 +819,7 @@ partial def editByItem (item : Data) (change : Option Data) : Data → EditResul
     else pure (.variant "cons" (.record [("head", head), ("tail", ← editByItem item change tail)]))
   | _ => throw "typeMismatch"
 
-/-! ## Relations (RELATIONAL.md §2, §3)
+/-! ## Relations (FOUNDATION §9)
 
 A relation is a state field the package declares in `relations()`: `rows {items: List<T>}` of records
 `T`, kept sorted by the canonical bytes of each row's key projection, no two rows sharing a key, and
@@ -923,7 +923,7 @@ def withinLimit (d : RelDecl) (r : Delvetalk.Turn.RelationCells) (put : Delvetal
   let over := r.rows.size - d.cap
   ((List.range over).foldl (fun r _ => r.eraseAt 0) r, (r.rows.extract 0 over).toList.map (·.row), some put)
 
-/-- One relation edit on a relation's cells (the table of RELATIONAL.md §3), by binary search on the
+/-- One relation edit on a relation's cells (the table of FOUNDATION §9 "Edits"), by binary search on the
     key's canonical bytes; with the rows the declared retention dropped to keep it within its limit
     (the oldest by key order) and the row it put, if any:
 
@@ -993,7 +993,7 @@ def applyStep (decls : List RelDecl) (state : Editing) (step : Step) : EditResul
       | .insert _ | .upsert _ | .retract _ => throw "typeMismatch"
 
 /-- What a write made: the state's cells after it, the rows the declared retention evicted to make
-    room for an insert or an upsert, by field (codex host 8, 10: `insertOnly` and the conflict index
+    room for an insert or an upsert, by field (`insertOnly` and the conflict index
     read them), and the cells it changed (`Turn.Changes`: what is checked, bounded and charged). -/
 structure Applied where
   cells : Delvetalk.Turn.StateCells
@@ -1170,7 +1170,7 @@ def entrySource (o : Object) : String :=
   | .ok (.arr modules) => ((modules.back?.bind fun m => (m.getObjValAs? String "source").toOption)).getD ""
   | _ => (o.inputs.getObjValAs? String "source").toOption.getD ""
 
-/-- Does a compiled artifact answer spells: is `receive` among its methods (docs/AUTHORING.md D-receive)? -/
+/-- Does a compiled artifact answer spells: is `receive` among its methods? -/
 def answersSpells (artifact : Json) : Bool :=
   (((artifact.getObjVal? "methods").toOption.bind (·.getArr?.toOption)).getD #[]).any fun m =>
     (m.getObjValAs? String "name").toOption == some "receive"
@@ -1548,7 +1548,7 @@ def runPure (entry : Delvetalk.CheckedEntry) (arguments : List Data) (ticks : Na
   | .error e => (.error e, 0)
 
 /-- The names a package exposes without declaring them: the protocol every card and law speaks
-    (HOST-HANDOFF 5.62). Every other definition whose first parameter is the State is a helper unless
+    (HOST-HANDOFF §5.3). Every other definition whose first parameter is the State is a helper unless
     `forms()`, `methods()` or `views()` names it. -/
 def conventionalMethods : List String :=
   ["receive", "render", "forms", "lenses", "set", "publishPage", "page", "relations", "methods",
@@ -1578,7 +1578,7 @@ def formActions (value : Data) : List String :=
       | _ => none
     | _ => none
 
-/-- The methods a package declares public (HOST-HANDOFF 5.62), beside the conventional names: the
+/-- The methods a package declares public (HOST-HANDOFF §5.3), beside the conventional names: the
     actions of its `forms()`, the names its `methods()` returns and those its `views()` returns, each
     read only when its entry module declares it. A `forms()` or `views()` that does not evaluate names nothing; a
     `methods()` that is not a `List<String>` refuses the package (clause `methods`). `compile` gives
@@ -1657,7 +1657,7 @@ partial def variantCases (bounds : DataBounds) (fuel : Nat) : Delvetalk.Theory.O
   | .variant r => recordFieldTypes bounds (bounds.length + 1) r
   | _ => none
 
-/-- A value from outside with its text words read as cases (HOST-HANDOFF 5.52): where `ty` has a closed
+/-- A value from outside with its text words read as cases (HOST-HANDOFF §5.1): where `ty` has a closed
     sum whose every case has an empty payload and the value is a text, the text is the case of that
     name; through records, list items and the payloads of the sums the value names. A text naming no
     case is `(path, word, cases)`, `path` the field path (`bed.colours[1]`, "" for the whole value). Any other value
@@ -2496,7 +2496,7 @@ def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
   | .ok value => match labels [] value with
     | some ids => return ids.eraseDups.take Limits.maxRoots
     | none => throw "lawReads must return a List<String>"
-  -- Out of ticks is the turn's budget, transient, not the package's fault (codex host 14).
+  -- Out of ticks is the turn's budget, transient, not the package's fault.
   | .error "budget" => throw "budget"
   | .error _ => throw "lawReads did not finish"
 
@@ -2560,7 +2560,7 @@ def unviewable (w : World) (who : String) (ids : List String) : Option String :=
 def statesOf (w : World) (ids : List String) : List (String × Data) :=
   ids.filterMap fun id => (w.objects[id]?).map (id, ·.state)
 
-/-! ## Rules and wants on things (docs/OVERHAUL.md §2, §3; KERNEL-HANDOFF §27)
+/-! ## Rules and wants on things (docs/OVERHAUL.md §2, §3; KERNEL-HANDOFF §11)
 
 A thing carries the rules and wants hands placed on it (`Object.rules`, `Object.wants`), those of its own
 text, and those its kind's text carries through `under` (`Law.followed`). Each is judged by the law's own
@@ -2687,7 +2687,7 @@ def citing (w : World) (law : Law) (names : List Delvetalk.Compiler.ObjectiveBen
 
 /-- What an object's law cites, closed: the roots a write of it records. The rules and wants it carries are
     no roots: they are judged after the commit, on the world it leaves (`reactions`, `posing`), so what they
-    cite never makes its writer's turn stale nor fills its roots (docs/review/astra-2026-10-12 world 6). -/
+    cite never makes its writer's turn stale nor fills its roots. -/
 def objectCitations (w : World) (_id : String) (o : Object) : List String :=
   (citesOf w (lawNames o.law)).objects
 
@@ -2871,7 +2871,7 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
     match w.objects[r]? with
     | some ro =>
       unless p.roots.any (·.1 == r) do return refuse "lawReads" s!"the law of {id} reads {r}, which this turn did not read."
-      -- A law reads only what its subject may view: its verdict could disclose the rest (codex host 3).
+      -- A law reads only what its subject may view: its verdict could disclose the rest.
       unless ro.read.permits subject do
         return some { cls := "lawRefused", clause := some "lawReads", object := some id,
                       reading := some s!"the law of {id} reads {r}, which you may not see." }
@@ -2907,7 +2907,7 @@ def writeEdits (entry : Json) : List (String × Nat × Option (List (String × D
     let version ← (x.getObjValAs? Nat "version").toOption
     let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
     let steps := (((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
-    -- A key the declared retention evicted is touched as a retraction of it (codex host 10).
+    -- A key the declared retention evicted is touched as a retraction of it.
     let evicted := (((x.getObjVal? "evicted").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList.filterMap fun e => do
       let f ← (e.getObjValAs? String "field").toOption
       let k ← (e.getObjVal? "key").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
@@ -3089,7 +3089,7 @@ def cellsCurrent (w : World) (id : String) (seen : Nat) (r : Cells) : Bool := Id
     (`movedRootAdmits`: they commute, edit untouched keys, or, on a resumed turn's own object, fields
     the writes since left alone), or, for a root read by its cells, because no write since touched
     what it read (`cellsCurrent`) and each of its edits leaves alone what those writes changed: a
-    keyed edit an untouched key, any other a field they left alone (RELATIONAL §3: a waiting edit
+    keyed edit an untouched key, any other a field they left alone (FOUNDATION §9 "Inserts commute; rows rebase": a waiting edit
     never silently replaces or removes a row it did not see). The cells only admit more: a root read
     by them is never stale where the whole-object rule admits it. One rule for `judge` and a
     resumption. -/
@@ -3134,14 +3134,14 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
   if admit then
     if let some r := quietOf w p.principal ((p.roots.head?.map (·.1)).getD "") then throw r
   let writes := p.allWrites
-  -- What the turn makes is an object of the turn (docs/HOST-HANDOFF.md 5.203): a later frame of it, a plan's later
+  -- What the turn makes is an object of the turn (HOST-HANDOFF §5 "Plans and try"): a later frame of it, a plan's later
   -- act, reads it, writes it and places on it, judged here by its own law over the state it is made with.
   let made := p.creates.foldl (fun (c : World) (id, x) =>
     { c with objects := c.objects.insert id { x.object with madeFrom := x.madeFrom } }) w
   for id in p.roots.map (·.1) ++ writes.map (·.1) do
     unless made.objects.contains id do throw { cls := "unknownObject", object := id }
   if let some r := staleBehaviour w p.behaviours p.principal then throw r
-  -- A root the turn only changes by `add`/`append` (FOUNDATION section 13, row 1) need only be a
+  -- A root the turn only changes by `add`/`append` (FOUNDATION §9 "Inserts commute; rows rebase") need only be a
   -- version the object had: its changes re-apply on the state as it is now and are judged there.
   for (id, seen) in p.roots do
     if let some o := made.objects[id]? then
@@ -3230,7 +3230,7 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType do
         throw (refuse "migration" "the converted state does not conform to the new state type")
-      -- A fixed field stays fixed: new code must fix it too (codex host 5, docs 1).
+      -- A fixed field stays fixed: new code must fix it too.
       if let some f := o.fixed.find? (!prog.fixed.contains ·) then
         throw (refuse "fixed" s!"{f} is fixed; it is set when {id} is made and never after, so the new code must keep it fixed")
       -- A migration's result is put in canonical form under the new code's relations.
@@ -3281,7 +3281,7 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
     let judgments := if judgments.isEmpty then [("", 0, "", "", "")] else
       judgments.filter fun (_, kind, _, _, verb) => kind != 4 || !verb.isEmpty
     let mut judgedBy : List Law.Facts := []
-    -- What judging reads is metered (codex host 13): the law's clauses, each judgment within `Bounds.lawTicks`.
+    -- What judging reads is metered: the law's clauses, each judgment within `Bounds.lawTicks`.
     -- The rules and wants the thing carries are no part of it: each is judged after the commit within its own
     -- `Limits.clauseTicks` (`reactions`, `posing`), so a stranger's heavy rule never refuses the owner's write.
     let metered := lawNames o.law
@@ -3315,7 +3315,7 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
     -- law's alone: the old code's law does not read the new type.
     if admit && o.predicate then
       -- A placing (a rule, want or verb placed, kind 4 with its verb) is judged too: its state is unchanged,
-      -- and a predicate refusing `request.kind == 4` keeps its card from strangers' rules (codex objects 4).
+      -- and a predicate refusing `request.kind == 4` keeps its card from strangers' rules.
       let judged := changes.filter fun c => Law.editKind c.kind || (c.kind == 4 && !c.verb.isEmpty)
       let seen := judged.foldl (fun (acc : List (String × Written)) c =>
         let key := (Json.arr #[toJson c.caller, toJson c.kind, toJson c.method, toJson c.via, dataJson c.argument]).compress
@@ -3339,7 +3339,7 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
       let kept := o.readings.filter fun (n, _) => law.lookup n == o.law.lookup n && (given.lookup n).isNone
       next := { next with law, lawText := text, readings := given ++ kept }
       amendments := amendments ++ [Json.mkObj [("object", toJson id), ("old", toJson o.lawText), ("new", toJson text)]]
-    -- Rules, wants and verbs placed and taken off (KERNEL-HANDOFF §27 item 1; FOUNDATION §10): a rule's
+    -- Rules, wants and verbs placed and taken off (KERNEL-HANDOFF §11; FOUNDATION §10): a rule's
     -- or a want's line parsed by the one parser, of the modality it is placed as, its name new across
     -- the thing's text and placed lines; a verb's name a spell's action word new to the thing's forms,
     -- the host's spells and its verbs, on a thing with an `act`; each within its bound; a removal by
@@ -3444,7 +3444,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged :=
 
 /-! ## Entries -/
 
-/-- The card name for the speaker's own avatar (docs/GROUND.md §6 change 2): the object an arrival
+/-- The card name for the speaker's own avatar (HOST-HANDOFF §5.8): the object an arrival
     makes under the principal's own id (`arriveOp`), so a card may print `delvetalk me note` and
     never a DID. No object may take the id, so no one can stand in for another's own. -/
 def meCard : String := "me"
@@ -3984,7 +3984,7 @@ def wantFacts (w : World) (height : Nat) (id : String) (o : Object) (reader : Op
     clause: the want's condition judged with what the thing's lines cite as `w` holds them. -/
 def posing (w : World) (height : Nat) (id : String) (o : Object) (reader : Option String := none) : List CarriedClause :=
   let facts := wantFacts w height id o reader
-  -- A want whose judging reads past `clauseTicks` does not pose (docs/review/astra-2026-10-12 world 6).
+  -- A want whose judging reads past `clauseTicks` does not pose.
   (readableWants w id o reader).filter fun c => Law.work (Law.asItStands facts id) none o.state c.clause.condition ≤ Limits.clauseTicks &&
     !(Law.poses facts id o.state [c.clause]).isEmpty
 
@@ -4394,7 +4394,7 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
         unfired := unfired.push (refuse "reads")
         continue
       -- What judging the rule reads is its own, within `clauseTicks`: past it the rule does not fire, and the
-      -- write it watched stands (docs/review/astra-2026-10-12 world 6).
+      -- write it watched stands.
       let judgedBy := (judged.facts.lookup id).getD []
       if judgedBy.any fun f => Law.work (cite f) (some oldState) newState r.clause.condition > Limits.clauseTicks then
         unfired := unfired.push (refuse "budget")
@@ -4451,8 +4451,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
   let p := { p with writes := p.writes.map fun (id, ws) =>
     if ((w.objects[id]? <|> (p.creates.lookup id).map (·.object)).map (·.predicate)).getD false then (id, ws) else (id, ws.map fun x => { x with argument := .record [] }) }
   let w := warmLaws w (p.writes.map (·.1))
-  -- The law reads join the roots only within the root bound replay holds every entry to (codex
-  -- host 4): past it the turn is refused `capacity` on the roots it read itself.
+  -- The law reads join the roots only within the root bound replay holds every entry to:
+  -- past it the turn is refused `capacity` on the roots it read itself.
   let expanded := withLawReads w p
   let (p, forced) := if forced.isNone && expanded.roots.length + (expanded.cells.map (·.2.extra)).sum > Limits.maxRoots
     then (p, some ({ cls := "capacity", reason := some "maxRoots" } : Refusal)) else (expanded, forced)
@@ -4509,7 +4509,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let child := childLedger before ledger used (updates ++ judged.creations) p.allWrites
       let reacted := reactions before w (before.height + 1) judged child (ruleDepthOf before delivery)
       let holders := (p.grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
-      -- A creation's state is storage the turn spent, as a write's growth is (codex host 9): the
+      -- A creation's state is storage the turn spent, as a write's growth is: the
       -- ledger its sends inherit counts both (`childLedger`; a created id is new, so all of it).
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit (updates ++ judged.creations) ++ reacted ++
           newSources w (p.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ onEnd (w.height + 1) outcome)
@@ -4927,7 +4927,7 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
     | .ok (.null) | .error _ => pure none
     | .ok s => pure (some (← parseSlot s))
   let (page, part) ← postedPage j
-  -- The reservation the post settles (HOST-HANDOFF 5.107): every post names its intent.
+  -- The reservation the post settles (HOST-HANDOFF §5.5): every post names its intent.
   let some reserved := (j.getObjValAs? String "intent").toOption
     | throw "a post settles a reservation; name its intent"
   -- An AT post, or a message of the Zulip playtest transport (`zulip://<stream>/<topic>/<id>`).
@@ -4987,7 +4987,7 @@ def postRefusal (w : World) (source : String) (resident : String := "") : Option
   else if !resident.isEmpty && residentUsed w resident ≥ postShare w then some ((postHour w + 1) * 60, true)
   else none
 
-/-- `world-post-reserve {principal: clock, intent, source, for?}` (HOST-HANDOFF 5.107, 5.206): admit one post of
+/-- `world-post-reserve {principal: clock, intent, source, for?}` (HOST-HANDOFF §5.5): admit one post of
     `intent` before the network is touched. `delve` posts count against the journaled `postQuota` per
     clock hour and are refused `quota {next}` past it; another source reserves without a count. The
     reservation is journaled `reserved {intent, source, hour}` under `(clock, "post:" intent)`, so a
@@ -5978,7 +5978,7 @@ def stateCidOp (w : World) (j : Json) : Except String Json := do
     | some cid => return answer "stateCid" [("cid", toJson cid)]
     | none => return answer "unknown" []
 
-/-- The act of a refused plan's entry its refusal names (docs/HOST-HANDOFF.md 5.203), with how many the plan had: the
+/-- The act of a refused plan's entry its refusal names (HOST-HANDOFF §5 "Plans and try"), with how many the plan had: the
     act refused as it ran, else the last act that staged what the commit refused (its `object`, in the act's `touched`). -/
 def planRefusedAct (entry : Json) : Option (Nat × Nat) := do
   guard (tagOf entry == "refused")
@@ -6384,7 +6384,7 @@ def dumpOp (w : World) (j : Json) : Except String Json := do
     `reverse: true` descending below `before` (exclusive; from the newest when absent); at most `limit`
     (1..100, default 100). A `cursor` (`"<height>.<n>"`, the `n`th item of that height, as a page's
     reply names its last item) continues exactly where a page stopped, in either order, so items
-    sharing a height are never skipped (codex transport 12); `after`/`before` page by whole heights.
+    sharing a height are never skipped; `after`/`before` page by whole heights.
     The items, whether more follow, and the cursor of the last item shown when they do. -/
 def pageByHeight {α : Type} (j : Json) (items : Array (Nat × α)) : Except String (Array α × Bool × Option String) := do
   let limit := (← optNat j "limit").getD Limits.maxHistoryLimit

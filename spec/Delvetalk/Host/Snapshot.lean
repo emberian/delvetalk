@@ -547,7 +547,7 @@ def installGenesis (entries : Entries) (entry : Json) : Except String World := d
   let cachedPackets := w.objects.fold (fun m _ o => if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {}
   -- Each object's version is a barrier at the genesis (a touch whose entry writes no edits of it, as a root `set`
   -- is): the writes that made it are the old chain's, which no index here reads, and a carry's move changed cells
-  -- no write names. A carried suspension's root read below it is stale, never current by an empty history (codex host 9).
+  -- no write names. A carried suspension's root read below it is stale, never current by an empty history.
   let touches := w.objects.fold (fun t id o => t.insert id #[({ version := o.version, height := first + 1 } : Touch)]) {}
   let w := { w with pending := arr "pending", suspended := arr "suspended", handles, forkedFrom, cachedPackets,
                     entries := entries.upTo (first + 1), height := first, carriedIds := carriedIdentities entry, touches }

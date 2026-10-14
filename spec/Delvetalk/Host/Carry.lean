@@ -397,7 +397,7 @@ def carryWorld (w : World) (leave : List String) (reason : String) (shipped : Op
         c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id (retire o' (reading why)) } o'.inputs b,
                       left := c.left ++ [(id, why)] }
   -- A suspension the carry cannot keep is dropped only by a decision: the owner's `--leave`, or a moved package's
-  -- `carried`, which takes up again what it waited for. Any other refuses the carry by name (codex docs 7).
+  -- `carried`, which takes up again what it waited for. Any other refuses the carry by name.
   let mut kept : Array Json := #[]
   for e in w.suspended do
     let id := Snapshot.suspendedObject e

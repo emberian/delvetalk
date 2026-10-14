@@ -1,4 +1,4 @@
-/* The host's own sockets (`delvetalk-obend serve`, HOST-HANDOFF 5.125). Two unix listeners (the
+/* The host's own sockets (`delvetalk-obend serve`, HOST-HANDOFF §5 "Serve"). Two unix listeners (the
    front's `host.sock` and the operator's `owner.sock`), every connection accepted, newline-framed
    requests read from each, and the next complete line handed to Lean in the order it completed,
    tagged with its connection and whether it came on the owner socket. Lean answers it and writes the

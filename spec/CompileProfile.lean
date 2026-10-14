@@ -22,7 +22,7 @@ with `lake build compile-profile`.
                                                  with FILTER runs R times from the same
                                                  session. Prints per class: requests, the
                                                  fastest run's wall summed, `ticksUsed`
-                                                 summed, ticks per second (docs/PERF.md) -/
+                                                 summed, ticks per second (KERNEL-HANDOFF §14) -/
 import Delvetalk.PackageSession
 import Std.Data.HashMap
 open Lean (Json toJson)

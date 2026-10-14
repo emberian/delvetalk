@@ -45,7 +45,7 @@ def Diagnostic.render (d : Diagnostic) : String :=
 
 private def lift {α : Type} (x : Except String α) : Except Diagnostic α := x.mapError requestRefusal
 
-/-- The library imports a module's source needs and does not name (docs/AUTHORING.md §2, D-imports):
+/-- The library imports a module's source needs and does not name:
 `Form` and `List` for its form blocks (`forms()` is derived as a List), `Plan` for `write {…}` or
 `keep()` beside a State, and `World` for an `Activity<…>` when no module of the package is named World.
 Read from the source's lines, before it is parsed, so that two or more are named in one refusal; one
@@ -309,7 +309,7 @@ structure EntryCompiled where
   /-- Each law's reading (`law NAME "reading": EXPR`; "" when none), by law name. -/
   readings : List (String × String)
   /-- The entry module's text, every modality (`Lowering.clauses`): a host places its rules and wants
-      on an object made of it (KERNEL-HANDOFF §27 item 8). -/
+      on an object made of it (KERNEL-HANDOFF §11). -/
   clauses : List Delvetalk.Compiler.ObjectiveBendLaw.Clause := []
 
 /-- The readings the sources give their clauses (`law NAME "reading": EXPR`, a rule's, a want's),
@@ -425,7 +425,7 @@ def worldMethodOf : Delvetalk.Theory.ObjectiveBendOpenRecursion.Term → Option 
     | _ => none
   | _ => none
 
-/-- A message activity's artifact (WHOLENESS §1): `dialect: "message"`, `world`, the world
+/-- A message activity's artifact (FOUNDATION §3): `dialect: "message"`, `world`, the world
 methods the entry performs (first occurrence order), and `worldProtocol`, the World module's
 source SHA-256. Any other artifact is unchanged. -/
 def messageFields (modules : List SourceModule) (held : Delvetalk.CheckedEntry) (artifact : Json) : Json :=
@@ -793,7 +793,7 @@ def executeEntryStoredJson (entry : Delvetalk.CheckedEntry) (arguments limits st
   let (execution, reads) ← executeDataEntryStored entry values store limits
   return execution.wire.setObjVal! "reads" reads.toJson
 
-/-- A package's declared relations (RELATIONAL §2, §11): the value of its nullary `relations()`
+/-- A package's declared relations (FOUNDATION §9): the value of its nullary `relations()`
 (a list of `{field, key: List<String>, limit?: Nat, retain?}`, listed as `{field, key, limit, retain?}`), evaluated once at compile so the host reads it from
 the artifact without compiling a def per object. `none` when the entry module declares none. -/
 def relationsOf (request : PreparedRequest) : Except Diagnostic (Option Json) := do
