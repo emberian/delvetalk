@@ -2047,9 +2047,20 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     else pure argument
   -- `receive` is heard with what the host fills where the sender left it out (`heardArgument`: `fields` empty, the
   -- `spell` read from the text, none for a mention, which is heard and never cast; `misfit` none), whoever sends it:
-  -- a mention, a rule's firing or a send of `{text, post}`.
-  let argument ← if method != "receive" || argumentFits compiled argument then pure argument else
-    match heardArgument world obj argument [] (if s.reach == "mentioned" then some (castData "" "") else none) with
+  -- a mention, a rule's firing or a send of `{text, post}`. A direct `publishPage` defaults a missing `page`
+  -- to empty text when the method's input admits that record.
+  let argument ← if argumentFits compiled argument then pure argument else
+    let filled := if method == "receive" then
+        heardArgument world obj argument [] (if s.reach == "mentioned" then some (castData "" "") else none)
+      else if method == "publishPage" && depth == 0 && s.direct then
+        match argument with
+        | .record fs => if (fs.lookup "page").isNone then
+            let filled := Data.record (fs ++ [("page", .label "")])
+            if argumentFits compiled filled then some filled else none
+          else none
+        | _ => none
+      else none
+    match filled with
     | some filled => do modify (fun st => { st with argument := filled }); pure filled
     | none => pure argument
   -- What the method takes, with the card's declared bounds: built only for a refusal.

@@ -75,7 +75,8 @@ def maxViewNodes : Nat := 4096
     `!=`, `<` and `>`; a direct turn naming a grown verb or a host spell is that spell, `spellOfAction`); 18: lane/livefix
     (a store names a made thing's lineage bodies by CID, `Snapshot.knownLineage`, and keeps only the libraries in use,
     which a binary before it would misread; hob's prose is asked again, `attempted` reason `prose`); 19: lane/cx-night
-    (declared text fields of direct requests unwrap one whole block or fence before bounds and execution). -/
+    (declared text fields of direct requests unwrap one whole block or fence before bounds and execution; a direct
+    `publishPage` fills an omitted `page` with empty text when its input admits it). -/
 def replayEdition : Nat := 19
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/

@@ -165,6 +165,8 @@ Each change: bytes before and after, what it preserves, who owns it.
    goes to the workshop's page, `HOW THIS IS DELVETALK` to the wiki page. One
    text, under the clip. Preserves the summons by tag. Object (`genesis.py`,
    `previews/`), voice lane for the strings.
+   Every card takes the same `publishPage` argument: optional `page`, with the default
+   names defined in FOUNDATION §5.
 
 7. **Cards quoting other cards by slug, not text.** The planted offer (296 B)
    restates the bell's colour and seed, then the plant template with example

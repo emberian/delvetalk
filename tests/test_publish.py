@@ -10,12 +10,14 @@ page and section; a reply to the recorded page post routes to the object by repl
 Refuted by: a garden's page draft (the host's default page: its card and how to reply) without those two sections in order; the bridge drafting a
 publication twice; a reply to the page post going anywhere but the garden.
 """
+import tempfile
 import unittest
 
 from tests.test_bridge import BridgeCase
 from tests.test_chain import town_garden
 from tests.test_transport import DID, mk
 from tests.test_turn_world import closure, label, record
+from tests.town import Town
 from transport import bridge, observe, post
 
 
@@ -115,6 +117,43 @@ class DefaultPage(BridgeCase):
                                 'argument': record(page=label('')), 'identity': 'page-' + who})
             self.assertEqual((r['status'], r['receipt']['outcome']['class']), ('refused', 'noMethod'), r)
         self.assertEqual(self.host.send({'op': 'world-publications', 'principal': 'ember'})['publications'], [])
+
+
+class PublishPageShape(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.town = Town(tmp.name, cleanup=self.addCleanup, furnished=False)
+
+    def test_publish_page_accepts_missing_empty_named_and_maximum_titles_on_every_card(self):
+        made = self.town.send(op='world-turn', principal=self.town.opener, object='kind/room',
+                              method='receive', identity='publish-shape-make-room',
+                              argument=record(text=label('delvetalk kind/room make / name: the page room'),
+                                              post=label('')))
+        self.assertEqual(made['status'], 'admitted', made)
+        [created] = made['receipt']['outcome']['creates']
+        room = created['object']
+        for thing, default in ((room, room), ('kind/room', 'kinds'),
+                               ('workshop', 'workshop'), ('register', 'register')):
+            for shape, argument, title in (('missing', record(), default),
+                                            ('empty', record(page=label('')), default),
+                                            ('named', record(page=label('A resident page')), 'A resident page'),
+                                            ('maximum', record(page=label('é' * 128)), 'é' * 128)):
+                with self.subTest(object=thing, shape=shape):
+                    reply = self.town.send(op='world-turn', principal=self.town.opener, object=thing,
+                                           method='publishPage', argument=argument,
+                                           identity=f'publish-shape-{thing}-{shape}')
+                    self.assertEqual(reply['status'], 'admitted', reply)
+                    publications = self.town.send(op='world-publications', principal=self.town.opener)['publications']
+                    matching = [p for p in publications if p['id'] == reply['result']['value']]
+                    self.assertEqual(len(matching), 1, publications)
+                    published = matching[0]
+                    self.assertEqual((published['object'], published['page'], published['section']),
+                                     (thing, title, ''), published)
+                    self.assertTrue(published['body'].startswith('## Card\n\n'), published)
+        before = self.town.send(op='world-publications', principal=self.town.opener)['publications']
+        self.town.reopen()
+        self.assertEqual(self.town.send(op='world-publications', principal=self.town.opener)['publications'], before)
 
 
 if __name__ == '__main__':

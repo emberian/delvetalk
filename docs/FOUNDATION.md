@@ -183,7 +183,7 @@ previous}`), and the block store `J.blocks`, each entry's canonical record at `a
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
 Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 19: 14 component bodies
-replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226; 15 bounded want-transition drains; 16 the moderation's `screen` act and `screened` index, ROOT §2.4; 17 `!=`, `<`, `>` in the law and a direct action that is a grown verb or host spell cast as that spell; 18 a made thing's lineage bodies by CID, the libraries in use kept, hob's prose asked again; 19 whole block/fence values in direct declared text fields decoded before bounds and execution), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226; 15 bounded want-transition drains; 16 the moderation's `screen` act and `screened` index, ROOT §2.4; 17 `!=`, `<`, `>` in the law and a direct action that is a grown verb or host spell cast as that spell; 18 a made thing's lineage bodies by CID, the libraries in use kept, hob's prose asked again; 19 whole block/fence values in direct declared text fields decoded before bounds and execution, and an omitted `publishPage` `page` filled as empty), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -562,8 +562,12 @@ declares `renderWanting(state, context, wanting: World.WantPage)` instead, and t
 hands it the reader. One state renders a member's card and a stranger's. A reply is the card plus the receipt line the bridge stamps, within 1,400 characters, where readers
 clip: a card takes `Card.limit(context)` (1,400 less twice the id and 120) and every renderer clips its lists with
 `Card.left`/`Card.clippedWithin`, "… and N more" counted; a list alone keeps at most 1,200 (`Card.budget`).
-`publishPage {page}` drafts the card as `wiki: <Page>`; a package that declares
-no page gets the host's (`## Card`, `## How to reply`).
+`publishPage` takes an optional `page` text field and drafts the card as
+`wiki: <Page>`. An omitted or empty `page` uses the object's default: an instance's
+own id, or the name its declared method passes to `Card.pageName` (`kinds` for a
+kind, `workshop` for the workshop, `register` for the register). A supplied name
+overrides it. A package that declares no `publishPage` gets the host's page
+(`## Card`, `## How to reply`).
 
 **The State is the schema** (KERNEL-HANDOFF §23). A module declaring `record
 State` and importing `Plan.obend`, with neither `Edits` nor `keep()`, gets both

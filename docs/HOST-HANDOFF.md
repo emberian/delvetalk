@@ -461,13 +461,16 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `Abi.Verdict.refused {clause, reading}` is in the prelude. Test: `tests/test_law.py`
    `test_a_bend_laws_reading_is_the_refusals_reason`.
 
-68. **The host's default page (host10; WORLD-REVIEW finding 16).** A direct `publishPage {page}` to a card
+68. **The host's default page (host10; WORLD-REVIEW finding 16).** A direct `publishPage` with optional `page` to a card
    whose package declares no `publishPage` is the host's (`defaultPublishPage`, chosen in `runTurnWith`):
    it publishes `Card.defaultPage`'s shape, `## Card` (the card rendered for nobody, as `world-card`
    renders it for "") and `## How to reply` (the host's usage of the card's forms and lenses,
    `spellUsage`), joined by a line as `Card.pageText` joins sections, under `page`, else the object's id; the result is the post id. The turn writes nothing and
-   stages one publication. The five pasted `publishPage` methods (Anthology, Scene, Table, Tide,
-   Workshop) may go (objects lane); Garden keeps its own. Test: `tests/test_publish.py` `DefaultPage`.
+   stages one publication. The shared argument shape and page names are defined in FOUNDATION §5.
+   For a declared method, `runFrame` fills an omitted `page` with empty text only on a direct turn
+   and only when the resulting record fits its input; supplied fields still face its type and bounds.
+   Kind, Workshop and register keep their card-only pages. This filling changes replay derivation:
+   edition 19, carried from the previous edition. Tests: `tests/test_publish.py` `DefaultPage`, `PublishPageShape`.
 
 69. **A card's own form bounds (host10; WORLD-REVIEW finding 3).** When the entry module declares `forms()`,
    the host runs it (`declaredForms`) and its kinds override, field by field, the defaults the method's
