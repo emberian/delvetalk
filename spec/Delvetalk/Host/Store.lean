@@ -141,6 +141,12 @@ def placedPerHand : Nat := 4
     alone): a stranger's lines never take the owner's room
     (docs/review/astra-2026-10-12 world 6). -/
 def placedByOthers : Nat := 24
+/-- Rules (and wants) on a thing the town's opener owns, its tide above all, where every hand's hourly rule lives: there
+    the others' pool is not `placedByOthers` but each hand's own `placedPerHand`, so the room grows with the hands that
+    use it and the town's own inhabitants (placed as the opener's things) are never crowded out; this bounds the whole.
+    At obend's first night (six residents' rules in four hours, four a hand at most) it fills past 128 hands, never
+    within a week (the live review of 2026-10-14, H1). -/
+def placedOnTownThing : Nat := 512
 /-- What judging one rule's or want's condition may read (`Law.work`), after the commit: past it the rule is
     `unfired budget`, the want does not pose; nothing of it is charged to the write (world 6). -/
 def clauseTicks : Nat := Delvetalk.Bounds.lawTicks / 8

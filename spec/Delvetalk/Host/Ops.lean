@@ -3301,12 +3301,15 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
     let hand := fun (who : String) => match principalThing who with
       | some t => ((cand.objects[t]?).map fun x => ownerOf x.state).getD who
       | none => who
+    -- A thing the opener owns (the tide, the station) is the town's: there each hand brings its own share
+    -- (`placedPerHand`) and no pool of the others' caps them (`placedOnTownThing` bounds the whole).
+    let townThing := !w.opener.isEmpty && ownerOf o.state == w.opener
     let checkShare (placers : List String) (byOthers : Nat) (limit : String) : Except Refusal Unit := do
       let placer := hand p.principal
       unless placer == ownerOf o.state || openerActs w placer do
         if (placers.filter (hand · == placer)).length ≥ Limits.placedPerHand then
           throw { cls := "capacity", object := some id, reason := some "placedPerHand" }
-        if (placers.filter (hand · != ownerOf o.state)).length ≥ byOthers then
+        if !townThing && (placers.filter (hand · != ownerOf o.state)).length ≥ byOthers then
           throw { cls := "capacity", object := some id, reason := some limit }
     for x in p.placements.filter (·.object == id) do
       let refuse := fun (clause reading : String) => ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
@@ -3371,8 +3374,9 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
             if let some r := unviewable cand p.principal (citesOf cand clause.names).objects then
               throw (refuse "lawReads" s!"{x.keyword} {x.name} cites {r}, which you may not view.")
           checkShare (rows.map (·.owner)) Limits.placedByOthers "placedByOthers"
-          if rows.length ≥ (if want then Limits.wantsPerObject else Limits.rulesPerObject) then
-            throw { cls := "capacity", object := some id, reason := some (if want then "wantsPerObject" else "rulesPerObject") }
+          if rows.length ≥ (if townThing then Limits.placedOnTownThing else if want then Limits.wantsPerObject else Limits.rulesPerObject) then
+            throw { cls := "capacity", object := some id,
+                    reason := some (if townThing then "placedOnTownThing" else if want then "wantsPerObject" else "rulesPerObject") }
           let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }
           next := if want then { next with wants := next.wants ++ [row] } else { next with rules := next.rules ++ [row] }
     let moves := changes.any (·.kind != 4)

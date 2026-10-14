@@ -909,7 +909,9 @@ deleting a closed sum or a convention:
   `Limits.clauseTicks` or is `unfired budget` (a want past it does not pose), so a stranger's rule never refuses,
   stales or starves the owner's ordinary writes; a suspended reading of that card's offers depends on its
   behaviour revision (§6). A hand other than the owner (or the opener) holds at most `placedPerHand` (4) rules and 4
-  wants on a thing, all such hands together `placedByOthers` (24) of the 32. The rule's owner is the follow-on
+  wants on a thing, all such hands together `placedByOthers` (24) of the 32; on a thing the opener owns (the tide,
+  the station) there is no pool of the others', each hand bringing its own four, and `placedOnTownThing` (512)
+  bounds the whole, so the town's hourly rules never fill its one clock. The rule's owner is the follow-on
   turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on your thing runs their
   spells under their name and spends nothing of yours. The follow-on turn is a delivery under
   the triggering turn's ledger. `delvetalk CARD rules` reads each rule back: name, owner, reading, condition, spell,
