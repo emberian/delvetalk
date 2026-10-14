@@ -82,6 +82,21 @@ class Serve(unittest.TestCase):
         self.assertGreater(pid.stat().st_mtime, 1000)
         self.assertEqual(int(pid.read_text()), self.server.proc.pid)
 
+    def test_the_container_log_has_the_start_and_each_refused_op_and_never_a_word_of_a_request(self):
+        """The live review's R5: the host logged nothing, so two 500s on gsb could not be explained. serve writes one line
+        at its start and one per refused request, naming its op alone. Refuted by an empty log, a refused op with no line,
+        or the request's words (a principal, a text, a word put where the op goes) in it."""
+        self.client.send({'op': 'world-turn', 'principal': 'secret-principal', 'object': 'nowhere', 'method': 'bump',
+                          'argument': record(), 'identity': 'secret-intent'})
+        self.client.send({'op': 'world-nosuch', 'text': 'secret-words'})
+        self.client.send({'op': 'secret words in the op', 'text': 'x'})
+        log = (self.state / 'serve.log').read_text().splitlines()
+        lines = [l for l in log if l.startswith('host: ')]
+        self.assertRegex(lines[0], r'^host: started pid=\d+ worlds=\d+ replay=\d+ binary=[0-9a-f]{12}$')
+        self.assertIn('host: error op=world-nosuch', [l.rsplit(' ms=', 1)[0] for l in lines])
+        self.assertIn('host: error op=?', [l.rsplit(' ms=', 1)[0] for l in lines])
+        self.assertNotIn('secret', '\n'.join(log))
+
     def test_two_clients_issuing_turns_concurrently_leave_a_valid_chain(self):
         results = {}
 

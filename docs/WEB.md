@@ -279,6 +279,53 @@ screen reader on a phone, and the text view (`?text=1`) read the place without i
 `/feed` say the same things there. It costs a page one `world-wanting` read and one indexed read of the feed's store.
 No script, no framework; JS-off is as before; both palettes take it from the same tokens.
 
+## The town unfolded (the `townweb-*` screenshots)
+
+The owner, 2026-10-14: "overhaul the website … unfold more of the town at once … somehow be useful for humans to
+encounter & use & edit the system. especially inspecting the bend code." That night obend's residents built a strip
+(station, crossroads, motel, chapel, laundromat, diner, road, field) whose doors point back at the station; the station
+has none to them, so `/map`, a tree grown out of the commonplace, never showed it. Written on `lane/townweb`; the
+screenshots are a local open town on hbox (`genesis --profile open`, five arrivals who built the same strip by spells,
+entered, said lines, grew `hum` on the chapel, placed a rule and a want), at 1440 and 390 px. `transport/atlas.py`
+fills `static/atlas.html`; the script is the end of `say.js`; every page works without it.
+
+- **`/town`** (the header's "the map"): every door the reader may see (`world-surface` map's `ways`, the whole readable
+  list it already handed the drawing) laid out in columns by steps from the commonplace through doors *either way*,
+  so a room joined only by its own door is drawn; an arrow a door, one curve arrowed both ways for a pair; a room lit
+  when someone is in it, with counts of who is here and what lies here. Every room is a panel (`<details>`) under the
+  drawing: what it is called, who is here, what lies here, its newest lines, its doors and the ways in, each a link to
+  that room's panel. Unfolded, it fetches its own pages and puts its view, scene, wants and spells in it; a spell is
+  answered in place. Rooms no door reaches (objects offering `enter`, from `world-objects {methods}`) are listed after;
+  the commonplace's own map text is folded at the foot. `?open=<id>` unfolds one without a script.
+- **`/inspect/<id>`**, linked from every place's eyebrow and every panel: its Bend set in type (keywords, strings,
+  comments, every line numbered and anchored, every `def`/`form`/`law`/`rule`/`want` anchored and outlined), the entry
+  module open, the layers its kind laid (`madeFrom`) and a kind's body folded, each `import` or `layer over` a link to
+  `/lib/<module>` or to the layer on the page; its facts (kind chain through each kind's `of`, owner, maker, lineage,
+  version, pin, bytes, views); its spells, each a small form posting `do` and `f.<field>` to `/play/<id>` (the view's
+  act path: one of the reader's offered forms, judged again by the host, cast as the reader; a grown verb marked, its
+  Bend line linked when it has one); **who may do what**: each method's `admits` from `world-inspect` for the reader and
+  for a newcomer, yes or the refusing clause and its reading; its law with readings; its rules (`world-rules`, last
+  fired with its receipt) and wants (`world-wants`); its fields; its newest receipts.
+- **Amending** is the workshop's own spell, not a second write path: the inspector holds `delvetalk workshop check /
+  over: kind/<of> / source: <<BEND … BEND` with the Bend a reader would amend (a kind's body over what it is of; a thing's
+  kind's body; a whole package checked alone), posted to `/play/workshop`. With the script the answer comes back beside
+  the box, each `Module:line:` problem a link that selects that line in the box, and two more headers: a kind of my own
+  (`draft / name / from: <kind>`) and a layer over this (`draft / name / over: <id>`, a starter form), both held for
+  the drafter to adopt as before.
+- **`/library`, `/library/<page>`**: the library's shelved pages from its state (the language is `bend`, the API `api`),
+  each `library read / page:` spell in a page a link. **`/lib`, `/lib/<name>`**: every module the public may read
+  (`world-sources`, kept by the front until the journal moves), set in type and outlined. **`/kinds`**: every kind,
+  what it is of, who made it, how many, what it is for, a link to make one.
+- **Live**: `GET /live` sends `moved` with the journal's height whenever the tail moves (the same follower as a view's
+  `/live/<id>`, the same 16 slots); `/town` draws its graph and changed rooms' panels again (by their `version`), an
+  inspector its facts, rules, fields and receipts. An open panel keeps what was answered in it.
+
+Python reads `world-surface` (map), `world-objects`, `world-view`, `world-inspect`, `world-rules`, `world-wants`,
+`world-history`, `world-sources`: no new host op. What a room says (its card, paint, view, wants) is its own Bend's; the
+front lays out the door graph and sets source in type, as `door_map` and the views encoder already did. A town's
+carried modules may lack names in `world-sources` (the name comes from a compile entry); such a module has no `/lib`
+page but is still shown on the inspector of the thing that runs it. Tests: `tests/test_atlas.py`.
+
 ## Not decided here
 
 The home sentence replaces "every thing a card, every reply a receipt" (VOICE's "Claim your handle" quotes it; VOICE

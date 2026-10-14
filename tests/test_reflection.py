@@ -401,7 +401,11 @@ class Interpret(Reflection):
                 {"status": "failed", "reason": "refused", "detail": "400"})):
             self.ask(identity=f"ask-{index}")
             [item] = self.pending()
-            verdict = self.settle(item, reply)["receipt"]["outcome"]["verdict"]
+            settled = self.settle(item, reply)
+            if settled.get("status") == "retrying":  # prose in none of hob's forms is asked again once, then settles
+                self.assertEqual((reply.get("raw"), settled["receipt"]["outcome"]["reason"]), ("nonsense", "prose"), settled)
+                settled = self.settle(item, reply)
+            verdict = settled["receipt"]["outcome"]["verdict"]
             self.assertEqual(verdict["tag"], "unclear", reply)
             if reply["status"] == "failed":
                 self.assertIn("refused", verdict["needs"][0])

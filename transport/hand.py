@@ -1597,6 +1597,7 @@ def serve(st, host):
     if not token:
         raise SystemExit('hand serve: hand_token_file must name the file holding the secret')
     console = Front(st, host, None, hand=Hand(st, host, token))
+    print(f'hand: started world={st.world} port={console.server_address[1]}', file=sys.stderr, flush=True)
     try:
         console.serve_forever()
     finally:

@@ -55,6 +55,16 @@ enforce it across containers (measured), so test the stack there on a named volu
 The listener is public through the edge; it requires no subscriber credential. Its durable log is
 `/data/state/worlds/<world>/events`, kept in state backups and copied by carry alongside `repo.json` (REPO).
 
+The host, front, hand and automod write one line to their container logs (`docker compose logs`) per start and per
+error, never a text, a key or a body: the host `host: started pid= worlds= replay= binary=`, `host: error op=<op> ms=`
+for each refused request, `host: slow op=<op> ms=` past 2 s, `host: stopped`; the front `front: started` and, for a
+500, `front: 500 <method> <path> <exception class> <file>:<line>`; the hand `hand: started`; automod one line per
+batch (`texts= status= seconds=`) and `automod: error <kind>` once until it changes.
+
+Memory limits (`mem_limit`) per stack: host 2g, front 256m, bridge 256m, interpret 256m, hand 256m, automod 128m:
+3,200 MiB, so two stacks on the 7.6 GB box (no swap) sum 6,400 MiB (6.7 GB), the host (the one that grows: 380 to 453
+MiB measured on 10-14) allowed 2 GiB; the others measured 28 to 96 MiB. Before, each stack's limits summed 5 GB.
+
 `deploy/compose.yml` publishes `delvetalk-http`'s HTTP port 8765 on the private address 10.10.1.10, and uses
 Docker's default service network. The hand uses 8766. To enable the firehose, add this overlay for
 `delvetalk-http` (its inherited HTTP settings, state/key mounts and HTTP port remain); it is

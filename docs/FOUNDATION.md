@@ -182,8 +182,8 @@ replays only the tail. A journal at `J` is two files: the chain `J`, one link a 
 previous}`), and the block store `J.blocks`, each entry's canonical record at `at`; an append writes and syncs the
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
-Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 18: 14 component bodies
-replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226; 15 bounded want-transition drains; 16 the moderation's `screen` act and `screened` index, ROOT §2.4; 17 `!=`, `<`, `>` in the law and a direct action that is a grown verb or host spell cast as that spell; 18 whole block/fence values in direct declared text fields decoded before bounds and execution), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 19: 14 component bodies
+replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226; 15 bounded want-transition drains; 16 the moderation's `screen` act and `screened` index, ROOT §2.4; 17 `!=`, `<`, `>` in the law and a direct action that is a grown verb or host spell cast as that spell; 18 a made thing's lineage bodies by CID, the libraries in use kept, hob's prose asked again; 19 whole block/fence values in direct declared text fields decoded before bounds and execution), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -670,7 +670,8 @@ the card answer and the said verdict are gone. Field lines that fit an offered f
 proposal runs as the speaker's turn on the card (origin `interpreted`) unless the action is in `confirmFor`
 (reprogram, amend, offer, countersign, adopt), where hob offers the spell back filled and holds nothing; an `ask:`
 naming offered fields offers "hob: that still needs …" with the spells; `none`, a failed model or the deadline is
-silence. The workshop's `make` asks `world.interpret` for a draft, whose one ```obend block is the form's `source`.
+silence, but for a summons, which hears the town's one line (FLEX §4); prose in none of the four forms is asked again
+once and never shown; on a misfit spell a short `ask:` is the refusal's hint. The workshop's `make` asks `world.interpret` for a draft, whose one ```obend block is the form's `source`.
 The asking card and every card whose forms hob is offered have a root `{object, version, behaviour}` in
 both the pending request and its action receipt. The pending roots name the state versions when the offers
 were read; a valid host reading starts its cast on current state, recording those state versions with the same
@@ -921,7 +922,9 @@ deleting a closed sum or a convention:
   `Limits.clauseTicks` or is `unfired budget` (a want past it does not pose), so a stranger's rule never refuses,
   stales or starves the owner's ordinary writes; a suspended reading of that card's offers depends on its
   behaviour revision (§6). A hand other than the owner (or the opener) holds at most `placedPerHand` (4) rules and 4
-  wants on a thing, all such hands together `placedByOthers` (24) of the 32. The rule's owner is the follow-on
+  wants on a thing, all such hands together `placedByOthers` (24) of the 32; on a thing the opener owns (the tide,
+  the station) there is no pool of the others', each hand bringing its own four, and `placedOnTownThing` (512)
+  bounds the whole, so the town's hourly rules never fill its one clock. The rule's owner is the follow-on
   turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on your thing runs their
   spells under their name and spends nothing of yours. The follow-on turn is a delivery under
   the triggering turn's ledger. `delvetalk CARD rules` reads each rule back: name, owner, reading, condition, spell,

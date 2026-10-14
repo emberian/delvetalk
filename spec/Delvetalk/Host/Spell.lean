@@ -675,7 +675,7 @@ def judge (field : Field) (value : String) : Option (Clause × String) :=
   let wrong := fun r => some (Clause.badValue, r)
   match field.kind with
   | .text min max =>
-      if value.length < min || value.length > max then wrong s!"{field.name} takes {min} to {max} characters."
+      if value.length < min || value.length > max then wrong s!"{field.name} takes {min} to {max} characters; this one is {value.length}."
       else none
   | .object min max =>
       if value.length < min || value.length > max || !(value.isEmpty && min == 0 || isCardName value.toList) then
@@ -684,7 +684,7 @@ def judge (field : Field) (value : String) : Option (Clause × String) :=
   | .natural min max =>
       match number value.toList with
       | none => wrong s!"{field.name} takes a natural number in plain digits."
-      | some v => if v < min || v > max then wrong s!"{field.name} takes {min} to {max}" else none
+      | some v => if v < min || v > max then wrong s!"{field.name} takes {min} to {max}; this one is {v}." else none
   | .choice options =>
       if options.contains value then none
       else wrong s!"{field.name} is one of: {", ".intercalate options}"
@@ -717,10 +717,11 @@ def isText : Kind → Bool
   | .text .. | .object .. => true
   | _ => false
 
-/-- A text or object field whose bound starts at 0 may be left out: it reads as empty text. -/
+/-- A text or object field whose bound starts at 0 may be left out of a spell: it reads as the empty text; a natural one
+    from 0, as 0 (`lines` with no `from` is the newest page). -/
 def Field.optional (f : Field) : Bool :=
   match f.kind with
-  | .text 0 _ | .object 0 _ => true
+  | .text 0 _ | .object 0 _ | .natural 0 _ => true
   | _ => false
 
 def rebound (bindings : List Binding) (form : Form) : List Binding :=

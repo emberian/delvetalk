@@ -120,7 +120,7 @@ directory per world for everything that is the world's, the town's included
     <state>/<world>.journal(.blocks)  serve's, with journal.lock, serve.pid, binary-pin, library/, scratch/
     <state>/host.sock, root/root.sock serve's sockets (host_socket, root_socket move them)
     <state>/identity.sqlite           claims: a principal is global
-    <state>/access.log(.1)            the front's, `... <did or -> <world>`
+    <state>/access.log(.1)            the front's, `... <did or -> <world>`, then for a 4xx or 5xx `class=<envelope class>[:<host stage, clause or class>]` (a fixed identifier, never a body, credential or reason), then `auth=<code>`
     <state>/hand-log.jsonl            the hand's actions, each with its world
     <state>/model-spend.jsonl         one line per replied model call, with its world
     <state>/lexicons/<URL-encoded authority DID>.json  account-wide published schema digests, never deletes
@@ -153,9 +153,22 @@ no longer verified, leaving active guests and other operator data alone. Enable 
 Enabling hosting also requires wildcard DNS, HTTPS routes/certificates and `<repo_keys>/town.key` (DEPLOY).
 
 `worlds/<world>/requests.json` is `{revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}`. A matching PDS and revision
-skips listing; a changed PDS scans the whole collection. Consumed URIs and their first proven CIDs remain in
-`observe.sqlite`; neither consumed nor refused state is cleared at migration. Unread participants keep their last
+skips listing; a changed PDS scans the whole collection. Consumed URIs remain in
+`observe.sqlite` (as a URI hash once the observation is dropped) and their first proven CIDs in `requests.json`; neither consumed nor refused state is cleared at migration. Unread participants keep their last
 pair for retry. Keep both files and `answers/` in backups. ATPROTO §2 gives the proof and revision rules.
+
+`observe.sqlite` is a working set, not an archive (observe.py's docstring). A skipped post (the host's `world-reach`
+answered `unreached`) is dropped 15 minutes after it was written, to an 8-byte URI hash so the feed never offers it
+again, and a skipped reply also leaves a (uri, author, replyTo) stub for 3 days, the ancestor `reach` is shown; a post
+that reached a card or was drafted, turned or answered is kept whole 7 days after it was written, then dropped to its
+hash; a post awaiting an interpretation, a draft or a mention turn is kept until answered. Every author seen stays
+(`authors`: an @handle resolves long after their posts are gone). Ages are measured on the newest post observed, never
+later than the clock. A day of 6,000 observed posts adds about 0.5 MB (the week's reached posts accumulate to about 4 MB
+and then stop), where the whole feed was 12 to 15 MB a day; carry copies the file through SQLite's backup, so a carry is
+that size. Dropped posts are gone from the hand's inbox, `retry` and `reply`, and from `measure` and `watch` counts.
+An old store is migrated on its first open: authors rebuilt, `posts.body` emptied, the file compacted. A mention of a
+resident is turned on the resident's avatar only for a post the host reached, carrying the post's URI and its first 280
+characters (the avatar's own bound).
 
 `State` also hands out the host clients (`host()`, `root()`),
 `write` (atomic, the one `write_atomic`), the outbox reads, the daemon loop
@@ -205,7 +218,7 @@ every 5 minutes: it probes (`status`), appends the probe to the world's
 | --- | --- | --- |
 | 5xx answered by the front | `access.log`, `awk '$4 >= 500'` (ring gate: 0) | any in 5 minutes |
 | refusals by class | `world-status.hour.refused` (ROOT §4; until then, the hour's `world-entries`) | `capacity` ≥ 1; `quota` > 5/h; `staleRoot` > 10% of turns |
-| model calls and spend per hour | `hour.interpretations + attempts`; `model-spend.jsonl` summed by hour | > 120 calls/h, or the day past the cap (below) |
+| model readings and spend per hour | `model-spend.jsonl` summed by hour, `use=paint` lines counted apart (`paints`) | > 120 readings/h (not paints), paints over twice `paint_budget` in 24 h, or the day past the cap (below) |
 | reservations held | `world-status.posts.sources[delve]`: `used` of `quota`, `next` | 16 of 16 for two hours (the hand is not clicking, or a loop is drafting) |
 | scratch worlds | `world-status.scratches {open, expiring}` (FEDERATION 2) | open > 40, or any over 16 MiB |
 | journal height and size | `world-status.height`; `stat state/town.journal` | height unchanged for an hour while posts were observed; bytes > 200 MiB (see §c) |

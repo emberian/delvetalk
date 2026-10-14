@@ -357,7 +357,7 @@ class Live(FrontCase):
         self.assertEqual(self.count(), 1)
         newest = self.host.send({'op': 'world-history', 'principal': self.OPENER, 'object': 'counter', 'reverse': True, 'limit': 1})['entries'][0]
         self.assertEqual(newest['identity']['principal'], PEOPLE[HANDLE])  # cast as the reader, nobody else
-        for do in ('door?label=x&to=garden', 'plus?n=1', 'minus?x', 'place?cell=1', 'lines?from=0'):
+        for do in ('door?label=x&to=garden', 'plus?n=1', 'minus?x', 'place?cell=1', 'lines?from=1000000001'):  # from 0 is the newest page now
             s, _, page = self.play('/play/counter', {'do': do})
             self.assertEqual(s, 400, (do, page[:300]))
         self.assertEqual(self.count(), 1)

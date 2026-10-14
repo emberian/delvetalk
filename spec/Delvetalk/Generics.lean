@@ -939,7 +939,8 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
           rewriteExpr fuel site locals (pure ((c.params[i]?.getD .unknown).subst σ)) a
         return .call (← recur callee) args span
     if let .specialize target types span := e then
-      let some name := path names target | throw "generic specialization requires an unshadowed declaration"
+      let some name := path names target |
+        throw "type arguments `::<…>` follow the name of a declaration this module can see, before its call: Plans.Edit::<Nat, {}>.set(...), never after a call or on a local name"
       let some declaration ← resolve site.origin name | throw ("unknown generic declaration: " ++ name)
       let args ← types.mapM (typeOf fuel site.origin site.bindings)
       let .named module name _ ← instantiate fuel declaration args | throw "generic instance has no declaration"

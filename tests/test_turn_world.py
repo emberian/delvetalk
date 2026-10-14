@@ -108,7 +108,7 @@ class CounterTurns(TurnWorld):
         r = self.turn("c1", "nosuchmethod")
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], self.height()), ("refused", "noMethod", h + 1))
         out = self.turn("c1", "bump", ticks="10")["receipt"]["outcome"]
-        self.assertEqual((out["class"], out["reason"]), ("budget", "the turn ran out of ticks; make it smaller, or send it again later."))
+        self.assertEqual((out["class"], out["reason"]), ("budget", "the turn ran out of ticks while c1 bump ran; the same spell runs out the same way: make that part do less, or split it."))  # never "again later": a turn is deterministic
         self.assertEqual(self.count("c1"), (1, "5"))
         # The default budget is the kernel cap, and a request cannot exceed it.
         self.assertEqual(self.turn("c1", "bump", ticks="1000001")["status"], "error")

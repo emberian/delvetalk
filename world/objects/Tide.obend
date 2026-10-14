@@ -61,9 +61,16 @@ def tick(state: State, context: Abi.Context) -> Activity<Done>:
 def refusing(refusal: Card.Refusal, context: Abi.Context) -> Activity<Done>:
   Card.refusing(Done.refused(refusal), refusal, context)
 def ticked(state: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {ticks: add 1n, last: set context.clock}
-  match world.send({object: Plans.self(context), method: "due", argument: {at: context.clock + state.gap}}):
-    case _: Card.tell(Done.ticked({tick: state.ticks + 1n}), Document.concat(Document.text("Tick {natText(state.ticks + 1n)}.\n\n"), render(extend(state, {ticks: state.ticks + 1n, last: context.clock}), context)))
+  tickedAt(state, scheduled(state, context.clock), context)
+# The clock a tick stands for: the one its wait was set for (the last and a gap), though the wait ends the minute after
+# it; a tick a gap or more late (the clock jumped, the town was down) begins again from now. The live review's H6:
+# ticks 61 minutes apart, the inhabitants' hours missing their day once in 61.
+def scheduled(state: State, clock: Nat) -> Nat:
+  if state.ticks > 0n && clock < state.last + state.gap + state.gap then state.last + state.gap else clock
+def tickedAt(state: State, at: Nat, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {ticks: add 1n, last: set at}
+  match world.send({object: Plans.self(context), method: "due", argument: {at: at + state.gap}}):
+    case _: Card.tell(Done.ticked({tick: state.ticks + 1n}), Document.concat(Document.text("Tick {natText(state.ticks + 1n)}.\n\n"), render(extend(state, {ticks: state.ticks + 1n, last: at}), context)))
 # Carried to a newer host (the carry's `carried`, as a kind's `made`): the wait the move dropped is waited
 # again, for the tick the last one scheduled; a tide not yet begun waits for its owner's first.
 def carried(state: State, input: {}, context: Abi.Context) -> Activity<Done>:

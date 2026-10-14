@@ -604,8 +604,10 @@ def main(argv=None):
                           'outcomes': dict(tags), 'refusedByClass': dict(classes), 'refusals': reasons,
                           'bytesByOutcome': journal_stats.sizes, 'suspendedByObject': journal_stats.suspended}
     results['snapshots'] = sorted(str(p.relative_to(r.state)) for p in r.state.rglob('*snapshot*'))
-    obs = [json.loads(js) for (js,) in __import__('sqlite3').connect(r.place.observed).execute('SELECT json FROM observations ORDER BY seq')]
-    results['observed'] = {'count': len(obs), 'kinds': dict(collections.Counter(o['kind'] for o in obs))}
+    db = __import__('sqlite3').connect(r.place.observed)
+    obs = [json.loads(js) for (js,) in db.execute('SELECT json FROM observations ORDER BY seq')]
+    gone = db.execute('SELECT count(*) FROM gone').fetchone()[0]  # observed, answered and dropped to a hash (observe.py)
+    results['observed'] = {'count': len(obs) + gone, 'kept': len(obs), 'kinds': dict(collections.Counter(o['kind'] for o in obs))}
     results['observations'] = {o['uri']: {'kind': o['kind'], 'replyTo': o['replyTo'], 'root': o.get('root'), 'handle': o['author']['handle']} for o in obs}
     skipped = sorted(r.place.words(r.place.skipped))
     results['skipped'] = len(skipped)

@@ -9,6 +9,7 @@ things do not run every body below it or are not judged by every text below it.
     python3 -W error -m unittest tests.test_authoring -v
 """
 import contextlib
+import json
 import re
 import tempfile
 import unittest
@@ -183,6 +184,132 @@ class Authoring(unittest.TestCase):
         self.assertRegex(once, r"the State's fields hold types from modules Layer1 does not import: .*State\.cites.*State\.passages.*; add .*import \./Card\.obend as Card.*import \./Scenes\.obend as Scenes")
         bare = told(self.admitted(YUE, "workshop", "delvetalk workshop check\n```obend\n%s```\n" % lacking))
         self.assertIn("a layer is checked over what it lays on: delvetalk workshop check / over: <a kind, or a thing>", bare)
+
+    # The live review of 2026-10-14, finding 1: yue's 43 flawed checks, each re-checked here as written then, and each
+    # refusal naming what to write: the modules an import may name, the token a parse met and where, the op a write takes,
+    # the bounds a form field names. Refuted by any of them answering as it did then ("expected expression atom" alone).
+    def test_the_live_reviews_refusals_name_the_module_the_token_and_the_column(self):
+        head = ("layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\n"
+                "import ./Form.obend as Form\nimport ./Plan.obend as Plans\n%stype State = Super.State\nform hum:\n"
+                "def hum(state: State, context: Abi.Context) -> Activity<Nat>:\n%s")
+        hum = "form hum:\ndef hum(state: State, context: Abi.Context) -> Activity<Nat>:\n%s"
+        cases = [
+            (head % ("import ./Cite.obend as Cite\n", "  1n\n"),
+             "Layer1:7: package-request: import must name an earlier supplied module: ./Cite.obend; the modules before Layer1: "),
+            (head % ("", "  let n = (1n + )\n  n\n"), "expected an expression (a name, a number, a \"string\", ( … ), { … } or write { … }), found `)` at column 17"),
+            (head % ("", "  let n = 1n + \n  n\n"), "found the end of the line"),
+            (head % ("", "  let written(_) = write {next: set 1n 2n}\n  1n\n"), "expected , or } in write {...}, found `2n` at column 40; each field takes one op and one value"),
+            (head % ("", "  let written(_) = write {next: Plans.Edit.keep(())}\n  1n\n"), "takes add, set, append, remove, amend, removeItem, insert, upsert, retract, not Plans"),
+            (head % ("", "  let written(_) = write {next: keep {}}\n  1n\n"), "not keep; a field the write does not name is kept as it is"),
+            (head % ("", "  let n = 1n\n    n\n"), "a let must be followed by its body at the same indent (column 3); line 11 is at column 5"),
+            (head % ("", "  let n = 1n\n"), "a let must be followed by its body at the same indent (column 3); nothing follows it"),
+            (head % ("", "  1n 2n\n"), "the expression is complete before its end, found `2n` at column 6"),
+            (hum % "  let e = Plans.Edit<Nat, {}>.set({value: 1n})\n  1n\n", "found `,` at column 25; one expression a line, or join them with an operator; type arguments in an expression are written NAME::<T, U>"),
+            (hum % "  let e = Plans.Edit.set({value: 1n})::<Nat, {}>\n  1n\n", "type arguments `::<…>` follow the name of a declaration this module can see, before its call"),
+            ("form hum:\n  tune: text\ndef hum(state: State, input: HumInput, context: Abi.Context) -> Activity<Nat>:\n  Super.inscribe(state, \"hum\", input.tune, context)\n",
+             "a form field's text names its bounds: `name: text 1..80` (0.. makes it optional)"),
+        ]
+        for source, said in cases:
+            told_ = self.check_over("kind/record", source)
+            self.assertIn("Checked: 1 problem.", told_, source)
+            self.assertIn(said, told_, source)
+        for module in ("List", "Abi", "Form", "Plan", "Card", "Scenes", "Record"):
+            self.assertRegex(self.check_over("kind/record", cases[0][0]), r"the modules before Layer1: [^\n]*\b%s\b" % module)
+        self.assertIn("Checked: it compiles.", self.check_over("kind/record", hum % "  let e: Plans.Edit<Nat, {}> = Plans.Edit.set({value: 1n})\n  1n\n"))
+
+    # Finding 1's hob: four drafts, none of which compiled, offered as they were. Now the workshop checks each draft and
+    # hands a refused one back with the checker's words, up to three drafts, before anything is offered; a body is laid over
+    # kind/record. Refuted by a flawed first draft reaching the resident, or by a fourth reading.
+    def test_hob_redrafts_against_the_checker_before_anything_is_offered(self):
+        from tests.wire import label, record
+        def pending():
+            return [i for i in self.town.send(op="world-interpretations")["pending"] if i["object"] == "workshop"]
+        def answer(item, raw):
+            return self.town.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "model": "m", "json": None, "raw": raw})
+        flawed = "form hum:\n  tune: text\ndef hum(state: State, input: HumInput, context: Abi.Context) -> Activity<Nat>:\n  Super.inscribe(state, \"hum\", input.tune, context)\n"
+        clean = flawed.replace("tune: text\n", "tune: text 1..80\n")
+        asked = self.say(YUE, "workshop", "delvetalk workshop make\nname: hummer\ndescription: a thing anyone hums a tune to")
+        self.assertEqual(asked["status"], "suspended", asked)
+        [first] = pending()
+        system = first["policy"]["system"]
+        self.assertIn("Abi, List, Document, Form, Plan, World, Card, Relation, Text, Rows, Forms, Scenes, Spween, View", system)
+        self.assertIn("Super.mark(state, \"rung\", context)", system)
+        answer(first, "```obend\n%s```\n" % flawed)
+        [second] = pending()
+        self.assertIn("The workshop's check refused it:", second["utterance"])
+        self.assertIn("a form field's text names its bounds", second["utterance"])
+        self.assertIn("tune: text\n", second["utterance"])
+        settled = answer(second, "```obend\n%s```\n" % clean)
+        self.assertEqual(pending(), [])
+        [resumed] = settled["resumed"]
+        out = resumed["receipt"]["outcome"]
+        self.assertEqual(out["tag"], "admitted", resumed)
+        [held] = [w for w in out["writes"] if w["object"] == "workshop"]
+        self.assertIn("form hum:\\n  tune: text 1..80\\n", json.dumps(held["edits"]))  # the second draft, held over kind/record
+        self.assertIn("# over: kind/record", json.dumps(held["edits"]))
+        # Three flawed drafts: the third's problems are the resident's, and hob is not asked a fourth time.
+        self.say(YUE, "workshop", "delvetalk workshop make\nname: hummer2\ndescription: a thing anyone hums a tune to")
+        for _ in range(3):
+            [item] = pending()
+            settled = answer(item, "```obend\n%s```\n" % flawed)
+        self.assertEqual(pending(), [])
+        [resumed] = settled["resumed"]
+        self.assertEqual((resumed["receipt"]["outcome"]["tag"], resumed["receipt"]["outcome"].get("writes", [])), ("admitted", []), resumed)  # nothing held
+
+    # The live review's finding 6, re-run: `lines` with no `from` (kestrel's four `from takes 1 to 1000000000`), a
+    # range refusal naming the value given, and "a pure method must return the state record" naming the method.
+    def test_lines_needs_no_from_and_the_refusals_name_what_was_given_and_which_method(self):
+        body = ("form hum:\ndef hum(state: State, context: Abi.Context) -> Nat:\n  1n\n"
+                "def actions(state: State, context: Abi.Context) -> Lists.List<String>:\n  Text.words(\"write lines hum\")\n")
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: pad / of: record / head: a pad\nbody: <<BEND\n%sBEND\n" % body)
+        self.admitted(YUE, "kind/pad", "delvetalk kind/pad make")
+        for n in range(1, 11):
+            self.admitted(KES, "pad/1", "delvetalk pad/1 write / text: line %d" % n)
+        newest = told(self.admitted(KES, "pad/1", "delvetalk pad/1 lines"))
+        self.assertIn("line 10", newest)
+        self.assertIn("line 3", newest)
+        self.assertNotIn("line 2\n", newest)
+        self.assertIn("line 1\n", told(self.admitted(KES, "pad/1", "delvetalk pad/1 lines / from: 1")))
+        def misfit(text):  # a misfit spell is hob's to read first: it reads nothing, and the refusal stands
+            r = self.say(KES, "pad/1", text)
+            if r["status"] == "suspended":
+                [item] = [i for i in self.town.send(op="world-interpretations")["pending"] if i["object"] == "pad/1"]
+                r = self.town.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "model": "m", "json": None, "raw": "none"})["resumed"][0]
+            return r["receipt"].get("reason") or outcome(r).get("reason")
+        self.assertEqual(misfit("delvetalk pad/1 lines / from: 1000000001"), "from takes 0 to 1000000000; this one is 1000000001.")
+        self.assertEqual(misfit("delvetalk pad/1 write / text: " + "x" * 1401), "text takes 1 to 1400 characters; this one is 1401.")
+        pure = self.say(KES, "pad/1", "delvetalk pad/1 hum")
+        self.assertEqual(outcome(pure).get("class"), "evaluation", pure)
+        self.assertIn("hum of pad/1 returned a number, and a method with no Activity returns its State record", outcome(pure).get("reason"))
+
+    # The live review's H2 and H5: every made thing's lineage carried its kind's whole body (44 KB a room, 45% of obend's
+    # object bytes) into every snapshot and carry, and the snapshot kept every library the world ever had. Now a body the
+    # journal carries is named by its CID, and only the libraries in use are kept; a reopened town reads it back whole.
+    # Refuted by a made thing's lineage holding its body in the snapshot, an unused library kept, or a reopened town
+    # whose lineage differs.
+    def test_a_snapshot_names_a_made_things_body_by_cid_and_keeps_only_the_libraries_in_use(self):
+        from tests.test_snapshot import read_snapshot
+        import glob
+        body = "form hum:\ndef hum(state: State, context: Abi.Context) -> Activity<Nat>:\n  Super.inscribe(state, \"hum\", \"hm\", context)\n" + "# a long note\n" * 60
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: hummock / of: record / head: a hummock\nbody: <<BEND\n%sBEND\n" % body)
+        for _ in range(3):
+            self.admitted(YUE, "kind/hummock", "delvetalk kind/hummock make")
+        before = {o: self.town.send(op="world-inspect", principal=YUE, object=o) for o in ("hummock/1", "hummock/3")}
+        self.assertEqual(self.town.send(op="world-snapshot")["status"], "snapshot")
+        [newest] = sorted(glob.glob(self.town.journal + ".snapshot.*.cbor"), key=lambda f: int(f.rsplit(".", 2)[1]))[-1:]
+        snap = read_snapshot(newest)
+        made = [o for o in snap["objects"] if o["id"].startswith("hummock/")]
+        self.assertEqual(len(made), 3)
+        for o in made:
+            lineage = json.dumps(o["madeFrom"])
+            self.assertNotIn("a long note", lineage)
+            self.assertIn("bodyCid", lineage)
+            self.assertLess(len(lineage), 2048, lineage)
+        used = {o["compile"].get("library") for o in snap["objects"]} | {snap["library"]}
+        self.assertEqual({l["pin"] for l in snap["libraries"]}, used - {None, ""})
+        self.town.reopen()
+        self.assertEqual({o: self.town.send(op="world-inspect", principal=YUE, object=o) for o in ("hummock/1", "hummock/3")}, before)
+        self.admitted(KES, "hummock/3", "delvetalk hummock/3 hum")
 
     # §5 step 2: a layer checked over what it would be laid on.
     def test_a_layer_is_checked_over_a_kinds_things_or_over_a_thing(self):

@@ -6,6 +6,7 @@ import html
 import hmac
 import json
 import os
+import re
 import secrets
 import socket
 import sys
@@ -16,7 +17,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import anchors, bridge, oauth, pages, sessions, views
+from transport import anchors, atlas, bridge, oauth, pages, sessions, views
 from transport.pages import guide_text
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
@@ -55,6 +56,8 @@ ROUTE_HINT = 'GET /AGENTS.md/api lists every route; OPTIONS on a path answers it
 FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)): 'examples',
          ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify', ('POST', ('accept',)): 'accept',
          ('GET', ('arrive',)): 'arriveProof', ('POST', ('arrive',)): 'arrive'}
+MAX_LISTING, MAX_ROOMS = 64, 256  # pages of world-objects a page reads at most; rooms (or kinds) it draws at most
+ATLAS = ('town', 'inspect', 'kinds', 'library', 'libraryPage', 'modules', 'module')  # the town unfolded, inspected and read (transport/atlas.py)
 ARRIVAL = ('arriveProof', 'arrive')  # an open town's door (config `arrival`); an invited town has no such route
 CLAIM = ('challenge', 'verify', 'oauthStart', 'oauthCallback', 'oauthClient')  # a delve.town handle's way in; a feed-only town has none
 
@@ -101,6 +104,12 @@ def resolve(method, path):
         return {('GET', 'enter'): 'door', ('POST', 'enter'): 'comeIn', ('GET', 'leave'): 'leave', ('POST', 'leave'): 'signOut'}[method, parts[0]], {}
     if parts == ['feed'] and method in ('GET', 'POST'):  # the town's own feed, for people (transport/feed.py)
         return ('feed' if method == 'GET' else 'feedSay'), {}
+    if parts == ['live'] and method == 'GET':  # the town's own channel: the journal moved (docs/WEB.md "The town unfolded")
+        return 'liveTown', {}
+    if method == 'GET' and parts in (['town'], ['kinds'], ['library'], ['lib']):  # the town unfolded, its kinds, its library and modules
+        return {'town': 'town', 'kinds': 'kinds', 'library': 'library', 'lib': 'modules'}[parts[0]], {}
+    if method == 'GET' and parts[:1] in (['inspect'], ['library'], ['lib']) and len(parts) >= 2 and all(parts[1:]):  # an id may hold slashes
+        return {'inspect': 'inspect', 'library': 'libraryPage', 'lib': 'module'}[parts[0]], {'object': '/'.join(parts[1:])}
     if parts[:1] == ['live'] and len(parts) >= 2 and all(parts[1:]) and method == 'GET':  # a view's live channel (docs/VIEWS.md)
         return 'live', {'object': '/'.join(parts[1:])}
     if parts == ['history'] and method == 'GET':
@@ -138,6 +147,24 @@ def argument(data):
     if 'spell' in data:
         return typed({'text': data['spell'], 'post': ''})
     return typed(data['fields']) if isinstance(data.get('fields'), dict) else data.get('argument', {'tag': 'record', 'fields': []})
+
+
+def arguments_of(items):
+    """A REPL's `arguments` as typed data: an element already `{tag, ...}` stays, plain JSON (21, "text", true, {..}) is `typed`."""
+    return [i if isinstance(i, dict) and 'tag' in i else typed(i) for i in items] if isinstance(items, list) else items
+
+
+def repl_misfit(kind, data):
+    """What a scratch `repl` or `check` body lacks or has the wrong shape, named, or None: the host's own words for these are `String expected`."""
+    for k in ('source', 'entry', 'object'):
+        if k in data and not isinstance(data[k], str):
+            return f'{k} must be a string'
+    if kind == 'check' and not isinstance(data.get('source'), str) and not isinstance(data.get('modules'), list):
+        return 'a check needs source (the Bend text) or modules'
+    if kind == 'repl' and 'entry' not in data:
+        return 'a repl needs entry, the name of the def to run (and source, unless the object already holds it)'
+    if 'arguments' in data and not isinstance(data['arguments'], list):
+        return 'arguments must be a list, one element per parameter of entry'
 
 
 # Keys whose values are content ids, digests or chain links: the default rendering omits them; ?full=1 shows them.
@@ -329,17 +356,27 @@ BUSY = (b'HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json; ch
         b'Connection: close\r\nContent-Length: %d\r\n\r\n' % len(_busy)) + _busy
 
 
+LABEL = re.compile(r'[A-Za-z][A-Za-z0-9_.-]{0,47}')
+
+
+def named(*parts):
+    """The access log's class label: each part that is a fixed identifier, joined by `:`; a word with anything else in it is dropped."""
+    return ':'.join(p for p in parts if isinstance(p, str) and LABEL.fullmatch(p)) or None
+
+
 class AccessLog:
     """One line per request: time, method, path (no query), status, bytes sent, the principal's DID or `-`, the world.
-    A service-auth refusal appends its fixed reason code. Never a credential or a body.
+    A refusal (4xx, 5xx) appends `class=<label>`: the envelope's class, with the host's own stage, clause or class after a `:` when
+    the host refused; a service-auth refusal appends `auth=<fixed reason code>`. Never a credential, a body or a reason's words.
     Rotated by size: past `limit` bytes the file becomes `<name>.1` (the previous one is dropped)."""
     LIMIT = 16 * 1024 * 1024
 
     def __init__(self, path, world, limit=LIMIT):
         self.path, self.world, self.limit, self.lock = Path(path), world, limit, threading.Lock()
 
-    def write(self, when, method, path, status, sent, did, reason=None):
-        line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'} {self.world}" + (f" auth={reason}" if reason else '') + '\n'
+    def write(self, when, method, path, status, sent, did, reason=None, refusal=None):
+        line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'} {self.world}" + \
+            (f" class={refusal}" if refusal else '') + (f" auth={reason}" if reason else '') + '\n'
         with self.lock:
             try:
                 if self.path.exists() and self.path.stat().st_size + len(line) > self.limit:
@@ -395,6 +432,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         # Live views (docs/VIEWS.md): one thread follows the journal's tail while any page listens, and wakes them.
         self.live_slots, self.live_seconds, self.live_beat = threading.BoundedSemaphore(LIVE_MAX), LIVE_SECONDS, LIVE_BEAT
         self.tail, self.tail_height, self.watching, self.follower = threading.Condition(), None, 0, None
+        self._sources, self.sources_lock = (None, []), threading.Lock()  # the modules the public may read, as of a height (`sources`)
         if not hand and c.firehose_port:
             try:
                 self.firehose = Firehose(self.repo, host, st.firehose,
@@ -532,6 +570,24 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                     self.tail.notify_all()
             time.sleep(TAIL_STEP)
 
+    def sources(self):
+        """Every source the public may read (`world-sources`: {cid, name, text, height}), oldest first, asked again only when
+        the journal has moved since: the library's modules and the packages its things run, for /lib and the inspector's links."""
+        height = self.host.send({'op': 'world-status'}).get('height')
+        with self.sources_lock:
+            if self._sources[0] == height:
+                return self._sources[1]
+        out, cursor = [], None
+        for _ in range(64):  # 6,400 sources at most; past it the newest pages are what a town shows
+            r = self.host.send({'op': 'world-sources', 'principal': PUBLIC, 'limit': 100, **({'cursor': cursor} if cursor else {})})
+            out += [x for x in r.get('sources') or [] if isinstance(x, dict) and isinstance(x.get('text'), str)]
+            cursor = r.get('cursor')
+            if not r.get('more') or not cursor:
+                break
+        with self.sources_lock:
+            self._sources = (height, out)
+        return out
+
     def newest(self, ids, n=6):
         """The newest makings among `ids` (not residents' avatars): (object, principal, height) of the first journal entry
         that touched each, as the public reads it, newest first. Each id's first entry is asked once and kept."""
@@ -635,12 +691,13 @@ class Handler(BaseHTTPRequestHandler):
         super().send_response(code, message)
 
     def handle_one_request(self):
-        self.status, self.did, self.head, self.auth_reason = 0, None, False, None
+        self.status, self.did, self.head, self.auth_reason, self.refusal = 0, None, False, None, None
         self.wfile.sent = 0
         super().handle_one_request()
         if self.server.access and self.status:  # a request that never parsed has no status
             self.server.access.write(self.server.clock(), getattr(self, 'command', '-'), urllib.parse.urlsplit(self.path).path,
-                                     self.status, self.wfile.sent, self.did, self.auth_reason)
+                                     self.status, self.wfile.sent, self.did, self.auth_reason,
+                                     (self.refusal or 'unclassed') if self.status >= 400 else None)
 
     def reply(self, code, body, ctype='application/json', headers=(), maximum=None):
         raw = body.encode('utf-8', 'backslashreplace') if isinstance(body, str) else body  # a lone surrogate the host echoed stays a JSON escape
@@ -665,6 +722,7 @@ class Handler(BaseHTTPRequestHandler):
     def fail(self, cls, message=None, hint=None, links=None, more=None, acts=None, headers=()):
         """The one error envelope: {status, class, message, hint?, _links} over the host's own fields, if any (`more`)."""
         code, status, when = ERRORS[cls]['code'], ERRORS[cls]['status'], ERRORS[cls]['when']
+        self.refusal = named(cls, next((v for v in (more.get(k) for k in ('stage', 'clause', 'class')) if named(v)), None) if cls == 'hostRequest' and more else None)
         body = {**(more or {}), 'status': status, 'class': cls, 'message': message or when, **({'hint': hint} if hint else {}),
                 '_links': {'self': link(self.path), 'api': link(PREFIX + '/api'), **(links or {})}, **({'_actions': acts} if acts else {})}
         if self.browser():  # the same envelope, as a page: a person reads a refusal as easily as a card
@@ -851,8 +909,10 @@ class Handler(BaseHTTPRequestHandler):
             self.route(method) if method != 'OPTIONS' else self.options()
         except (ConnectionError, TimeoutError):
             self.close_connection = True
-        except Exception:
-            traceback.print_exc()
+        except Exception as err:
+            where = traceback.extract_tb(err.__traceback__)[-1]
+            print(f"front: 500 {method} {urllib.parse.urlsplit(self.path).path} {type(err).__name__} {Path(where.filename).name}:{where.lineno}",
+                  file=sys.stderr, flush=True)
             if not self.replied:
                 self.fail('internal')
 
@@ -901,7 +961,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.xrpc(method, p.get('nsid', 'did.json'))
         if name in ('feed', 'feedSay'):
             return self.feed_page(name == 'feedSay')
-        if name in ('home', 'page', 'book', 'history', 'map', 'live'):  # pages ask the host: limited per account, or per address, before they do
+        if name in ('home', 'page', 'book', 'history', 'map', 'live', 'liveTown', *ATLAS):  # pages ask the host: limited per account, or per address, before they do
             key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
             wait = self.server.limited(key)
             if wait:
@@ -918,6 +978,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.object_page(p['object'])
         if name == 'live':
             return self.live(p['object'])
+        if name == 'liveTown':
+            return self.live_town()
+        if name in ATLAS:
+            return getattr(self, 'atlas_' + name)(p.get('object'))
         if name == 'book':
             return self.surface('book', p['object'])
         if name == 'history':
@@ -1219,6 +1283,7 @@ class Handler(BaseHTTPRequestHandler):
     def xrpc_reply(self, code, body, headers=()):
         """XRPC's {error, message}, with the envelope's status, class and links beside it. A record or a page is the
         AT Protocol's shape, verbatim: its `cursor` is its control."""
+        self.refusal = named(body['error'])
         error = {'status': 'refused' if code == 403 else 'error', 'class': body['error'],
                  '_links': {'self': link(self.path), 'api': link(PREFIX + '/api')}}
         if self.browser():
@@ -1519,11 +1584,16 @@ class Handler(BaseHTTPRequestHandler):
                                            **({'identity': data['intent']} if 'intent' in data else {})})
             return self.answer(reply, links={'receipt': link(f"{PREFIX}/receipt/{(reply.get('receipt') or {}).get('slug', '')}")}
                                if reply.get('status') == 'cited' else {'scratch': link(base + '/world')})
+        misfit = repl_misfit(kind, data)
+        if misfit:
+            return self.fail('badRequest', misfit)
         if kind == 'check':  # the verdict, against the scratch's sealed library; ?full=1 adds the compiled artifact
             checked = host.send({'op': 'world-check', 'principal': principal, **{k: data[k] for k in ('modules', 'source', 'entry') if k in data}})
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'},
                                links={'repl': link(base + '/repl')})
-        given = {k: data[k] for k in ('source', 'entry', 'object', 'arguments') if k in data}
+        given = {k: data[k] for k in ('source', 'entry', 'object') if k in data}
+        if 'arguments' in data:
+            given['arguments'] = arguments_of(data['arguments'])
         if any(k in data for k in ('spell', 'fields', 'argument')):
             given['argument'] = argument(data)
         reply = host.send({'op': 'world-repl', 'principal': principal, 'identity': data.get('intent') or f'repl-{secrets.token_hex(6)}', **given})
@@ -1731,9 +1801,183 @@ class Handler(BaseHTTPRequestHandler):
         return host.send({'op': 'world-history', 'principal': principal or '', 'object': name, 'reverse': True, 'limit': limit}).get('entries') or []
 
 
+    # ---- the town unfolded, inspected and read (transport/atlas.py, docs/WEB.md "The town unfolded")
+
+    def reader(self):
+        """-> (who, the principal reads go under)."""
+        who = self.principal(self.cookie())
+        return who, who['did'] if who else PUBLIC
+
+    def atlas_town(self, _=None):
+        """`/town`: every door the reader may see (`world-surface` map's `ways`, the whole readable list), each card a
+        door touches and each room no door reaches (`world-objects` with their methods: those offering `enter`), each as
+        `world-view` gives it; `?open=<id>` unfolds that room's panel with no script."""
+        who, reader = self.reader()
+        host = self.server.host
+        m = host.send({'op': 'world-surface', 'principal': reader, 'read': 'map', 'fields': {}})
+        ways = [w for w in m.get('ways') or [] if isinstance(w, dict) and isinstance(w.get('from'), str) and isinstance(w.get('to'), str)] \
+            if m.get('status') == 'surface' else []
+        nodes = sorted({w['from'] for w in ways} | {w['to'] for w in ways})
+        rooms, after = [], {}
+        for _ in range(MAX_LISTING):
+            got = host.send({'op': 'world-objects', 'principal': reader, 'methods': True, **after})
+            rooms += [i for i, ms in (got.get('methods') or {}).items() if isinstance(ms, list) and 'enter' in ms and not pages.resident(i)]
+            if not got.get('more') or not got.get('ids'):
+                break
+            after = {'after': got['ids'][-1]}
+        alone = sorted(set(rooms) - set(nodes))
+        seen = {n: host.send({'op': 'world-view', 'principal': reader, 'object': n}) for n in [*nodes, *alone][:MAX_ROOMS]}
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        self.html(200, atlas.town(who and who['handle'], nodes, ways, seen, alone=alone, height=self.server.host.send({'op': 'world-status'}).get('height'),
+                                  town_principal=self.server.town(), unfold=(q.get('open') or [None])[0],
+                                  map_text=m.get('text') if m.get('status') == 'surface' else None))
+
+    def atlas_inspect(self, name):
+        """`/inspect/<id>`: the thing as the host can tell it to this reader: `world-inspect` with its source (and again as a
+        newcomer, for who may do what), its state, rules, wants, newest receipts, its kind chain (each kind's `of`), the
+        layers its kind laid (`madeFrom`), a kind's body, and the modules the town holds."""
+        who, reader = self.reader()
+        host = self.server.host
+        seen = host.send({'op': 'world-inspect', 'principal': reader, 'object': name, 'source': True})
+        view = host.send({'op': 'world-view', 'principal': reader, 'object': name})
+        if seen.get('status') != 'inspected' or view.get('status') != 'viewed':
+            return self.html(404, pages.refusal(name, who and who['handle'], view if view.get('status') != 'viewed' else seen, seen.get('status')))
+        stranger = host.send({'op': 'world-inspect', 'principal': PUBLIC, 'object': name}) if who else seen
+        state = plain(view.get('state') or {})
+        state = state if isinstance(state, dict) else {}
+        kinds, at, states = [name], state, {}
+        for _ in range(8):  # a thing's kind, that kind's `of`, …: as their states name them
+            nxt = at.get('kind') if isinstance(at.get('kind'), str) and at.get('kind') else at.get('of') if isinstance(at.get('of'), str) and at.get('of') else None
+            if not nxt or nxt in kinds:
+                break
+            kinds.append(nxt)
+            if not nxt.startswith('kind/'):
+                break
+            v = host.send({'op': 'world-view', 'principal': reader, 'object': nxt})
+            at = plain(v.get('state') or {}) if v.get('status') == 'viewed' else {}
+            at = at if isinstance(at, dict) else {}
+            states[nxt] = at
+        made = seen.get('madeFrom') or {}
+        components = [(c.get('at', 0), c.get('body', '')) for c in made.get('components') or [] if isinstance(c, dict) and isinstance(c.get('body'), str)]
+        body = state.get('body') if isinstance(state.get('body'), str) and state.get('body').strip() and isinstance(state.get('of'), str) else None
+        # What a reader would amend: a kind's body over what it is of; a thing's kind's body over what that kind is of.
+        kind_state = state if body else states.get(kinds[1]) if len(kinds) > 1 else None
+        edit = None
+        if kind_state and isinstance(kind_state.get('body'), str) and kind_state.get('body').strip():
+            of = str(kind_state.get('of') or 'record')
+            edit = {'text': kind_state['body'], 'over': of if of.startswith('kind/') else f'kind/{of}', 'kind': name if body else kinds[1]}
+        elif str(seen.get('source') or '').lstrip().startswith('edition'):
+            edit = {'text': seen['source'], 'over': '', 'kind': ''}
+        rules = host.send({'op': 'world-rules', 'principal': reader, 'object': name})
+        wants = host.send({'op': 'world-wants', 'principal': reader, 'object': name})
+        names = {x['name'] for x in self.server.sources() if x.get('name')}
+        self.html(200, atlas.inspector(name, who and who['handle'], view, seen, stranger=stranger, rules_=[r for r in rules.get('rows') or [] if isinstance(r, dict)],
+                                       wants_=[r for r in wants.get('rows') or [] if isinstance(r, dict)], entries=self.history(host, name, reader if who else ''),
+                                       kinds=kinds, did=who and who['did'], town=self.server.town(), components=components, body=body,
+                                       module_names=names, edit=edit))
+
+    def library_pages(self, reader):
+        v = self.server.host.send({'op': 'world-view', 'principal': reader, 'object': 'library'})
+        s = plain(v.get('state') or {}) if v.get('status') == 'viewed' else {}
+        found = [p for p in pages.rows((s or {}).get('pages')) if isinstance(p.get('name'), str)]
+        return sorted(found, key=lambda p: p.get('place') or 0)
+
+    def atlas_library(self, _=None):
+        """`/library`: the library's pages as its state shelves them."""
+        who, reader = self.reader()
+        self.html(200, atlas.library(who and who['handle'], self.library_pages(reader)))
+
+    def atlas_libraryPage(self, name):
+        """`/library/<page>`: one page, verbatim, as `library read` answers it."""
+        who, reader = self.reader()
+        shelf = self.library_pages(reader)
+        found = next((p for p in shelf if p['name'] == name), None)
+        if found is None:
+            return self.html(404, pages.refusal(name, who and who['handle'], {'message': f'the library shelves no page {name}', '_links': {'library': {'href': '/library'}}}, 'unknown'))
+        self.html(200, atlas.library_page(who and who['handle'], found, {p['name'] for p in shelf}))
+
+    def atlas_modules(self, _=None):
+        """`/lib`: each module the town holds, by name, its newest text."""
+        who, _reader = self.reader()
+        newest = {}
+        for x in self.server.sources():
+            if x.get('name'):
+                newest[x['name']] = x
+        self.html(200, atlas.modules(who and who['handle'], list(newest.values())))
+
+    def atlas_module(self, name):
+        """`/lib/<name>`: a module's newest text (or `?cid=` one of its others), set in type."""
+        who, _reader = self.reader()
+        all_ = self.server.sources()
+        versions = [x for x in all_ if x.get('name') == name]
+        cid = (urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('cid') or [None])[0]
+        shown = next((x for x in versions if x['cid'] == cid), None) if cid else (versions[-1] if versions else None)
+        if shown is None:
+            return self.html(404, pages.refusal(name, who and who['handle'], {'message': f'no module {name} that you may read', '_links': {'modules': {'href': '/lib'}}}, 'unknown'))
+        self.html(200, atlas.module_page(who and who['handle'], shown, {x['name'] for x in all_ if x.get('name')}, versions))
+
+    def atlas_kinds(self, _=None):
+        """`/kinds`: every `kind/` card the reader may see, as its state says it."""
+        who, reader = self.reader()
+        host, out, after = self.server.host, [], {}
+        ids = []
+        for _ in range(MAX_LISTING):
+            got = host.send({'op': 'world-objects', 'principal': reader, 'prefix': 'kind/', **after})
+            ids += got.get('ids') or []
+            if not got.get('more') or not got.get('ids'):
+                break
+            after = {'after': got['ids'][-1]}
+        town = self.server.town()
+        for k in ids[:MAX_ROOMS]:
+            s = plain(host.send({'op': 'world-view', 'principal': reader, 'object': k}).get('state') or {})
+            if isinstance(s, dict):
+                out.append({'id': k, 'name': s.get('name'), 'of': s.get('of'), 'who': pages.by(s.get('owner'), s.get('ownerHandle'), town),
+                            'count': s.get('count', 0), 'about': s.get('about') or '', 'body': bool(str(s.get('body') or '').strip())})
+        self.html(200, atlas.kinds_page(who and who['handle'], out))
+
+    def live_town(self):
+        """`GET /live`: the town's own channel as Server-Sent Events: an event `moved` (its `id` and data the journal's
+        height) whenever the journal's tail moves past the height the page was drawn at (`?h=`, or Last-Event-ID), a
+        comment every `live_beat` seconds between; past LIVE_MAX streams at once 503. /town and an inspector read it to
+        draw themselves again."""
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        seen = self.headers.get('Last-Event-ID') or (q.get('h') or [''])[0]
+        if not self.server.live_slots.acquire(blocking=False):
+            return self.fail('busy', 'every live view is taken; the page is fresh at its next load', headers=[('Retry-After', '30')])
+        self.server.watch()
+        try:
+            self.replied, self.private = True, True
+            self.send_response(200)
+            for k, v in (('Content-Type', 'text/event-stream; charset=utf-8'), ('Cache-Control', 'no-cache, no-transform'),
+                         ('X-Accel-Buffering', 'no'), ('Connection', 'close')):
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(b'retry: 2000\n\n')
+            self.wfile.flush()
+            began, beat = time.monotonic(), time.monotonic()
+            while time.monotonic() - began < self.server.live_seconds:
+                with self.server.tail:
+                    self.server.tail.wait_for(lambda: self.server.tail_height is not None and str(self.server.tail_height) != seen,
+                                              timeout=min(self.server.live_beat, self.server.live_seconds))
+                    height = self.server.tail_height
+                if height is not None and str(height) != seen:
+                    if seen:  # the first height a stream learns is the one it was drawn at, unless it says otherwise
+                        self.wfile.write(f'event: moved\nid: {height}\ndata: {height}\n\n'.encode())
+                        self.wfile.flush()
+                    seen, beat = str(height), time.monotonic()
+                elif time.monotonic() - beat >= self.server.live_beat:
+                    self.wfile.write(b': still here\n\n')
+                    self.wfile.flush()
+                    beat = time.monotonic()
+        finally:
+            self.server.unwatch()
+            self.server.live_slots.release()
+
+
 def command(st, a, out):
     """`http`: the public front on the config's address."""
     front = Front(st, st.host(), Identity(st, Client(http_transport)))
+    print(f'front: started world={st.world} port={front.server_address[1]}', file=sys.stderr, flush=True)
     try:
         front.serve_forever()
     finally:

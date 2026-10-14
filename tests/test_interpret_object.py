@@ -88,6 +88,9 @@ class ProposalForAnotherCard(Chain):
         self.assertEqual(asked["status"], "suspended", asked)
         [pending] = self.host.send(op="world-interpretations")["pending"]
         settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "raw": text, "model": "m"})
+        if settled["status"] == "retrying":  # prose in none of hob's forms is asked again once (the live review's finding 5)
+            self.assertEqual(settled["receipt"]["outcome"]["reason"], "prose", settled)
+            settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "raw": text, "model": "m"})
         self.assertEqual(settled["status"], "interpreted", settled)
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return settled, resumed

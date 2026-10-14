@@ -696,6 +696,20 @@ def kernelPrefix : String := "turn refused: "
 /-- A ledger field a chain of sends spent (`budgetExhausted`), as its reason says it. -/
 def exhaustedReason (field : String) : String := s!"the chain of sends spent its {field}."
 
+/-- The bounds that drain of themselves (pending readings and waits settle): only their refusal says "try later". -/
+def drainingBounds : List String := ["pendingInterpretationsPerObject", "pendingActivitiesPerObject", "maxSuspended"]
+
+/-- A bound that frees nothing by waiting, named with what frees it (the live review's finding 6: "the host's
+    objectsPerPrincipal is full; try later" where waiting freed nothing). The bound's name leads, for whoever counts. -/
+def standingBound (m obj : String) : String :=
+  match m with
+  | "placedPerHand" => s!"placedPerHand: you hold {Limits.placedPerHand} rules, wants or verbs on {obj}, a hand's most; take one of yours off it (unrule, unwant or ungrow) to place another. Waiting frees nothing."
+  | "placedByOthers" | "verbsByOthers" => s!"{m}: the other hands' lines on {obj} fill their share; its owner holds the rest. Waiting frees nothing."
+  | "rulesPerObject" | "wantsPerObject" | "verbsPerObject" | "placedOnTownThing" =>
+    s!"{m}: {obj} carries as many as it holds; one comes off before another goes on. Waiting frees nothing."
+  | "maxObjects" => "maxObjects: the town holds as many things as it keeps; nothing new is made until one is retired. Waiting frees nothing."
+  | _ => s!"the host's {m} is at its bound; waiting frees nothing."
+
 /-- A refusal's `reason` as the town reads it (docs/VOICE.md, "The host's refusals"), from what the
     refusal names: the class, the object, the limit or resource, the clause. Classes whose reason the
     site writes (lawRefused, quota, noMethod, badSpell) keep it. Applied once, where `commit`
@@ -705,11 +719,19 @@ def Refusal.voiced (r : Refusal) : Refusal :=
   let given := (r.reason.map fun t => if t.startsWith kernelPrefix then (t.drop kernelPrefix.length).toString else t)
   let reason := match r.cls with
     | "staleRoot" => some (given.getD s!"{obj} moved while you wrote; send the same spell again.")
-    | "budget" => some s!"the turn ran out of {given.getD "ticks"}; make it smaller, or send it again later."
+    | "budget" =>
+      -- A turn is deterministic: the same spell runs out again, so the reason names what ran and never says "later".
+      let (what, where_) := match (given.getD "ticks").splitOn " in " with
+        | [r, w] => (r, s!" while {w} ran")
+        | _ => (given.getD "ticks", if given == some "law ticks" && !obj.isEmpty then s!" judging {obj}'s law" else "")
+      some s!"the turn ran out of {what}{where_}; the same spell runs out the same way: make that part do less, or split it."
+
     | "evaluation" => given
     | "capacity" => match given with
-      | some m => if m.any (· == ' ') then some m else some s!"the host's {m} is full; try later."
-      | none => some s!"the host's {if obj.isEmpty then "capacity" else obj} is full; try later."
+      | some m => if m.any (· == ' ') then some m
+          else if drainingBounds.contains m then some s!"the host's {m} is full; it drains as readings and waits settle: try later."
+          else some (standingBound m obj)
+      | none => some s!"the host's {if obj.isEmpty then "capacity" else obj} is at its bound; waiting frees nothing."
     | "typeMismatch" =>
       let method := ((r.expected.bind fun e => (e.getObjValAs? String "method").toOption)).getD "it"
       let pointer := s!"reply delvetalk {obj} ? for its spell."
@@ -2553,7 +2575,8 @@ def objectCapacity (w : World) (updates : List (String × Object)) : Option Refu
     if principal == w.opener then continue
     let count := fun (os : Std.HashMap String Object) => os.toList.filter (fun (_, o) => hand o.maker == principal && !objectRetired o) |>.length
     if count objects > w.objectQuota && count objects > count w.objects then
-      return some { cls := "capacity", object := some "objects", reason := some "objectsPerPrincipal" }
+      return some { cls := "capacity", object := some "objects", clause := some "objectsPerPrincipal",
+                    reason := some s!"objectsPerPrincipal: you keep {count w.objects} of the {w.objectQuota} things a hand keeps in this town; retire one of yours (delvetalk <thing> retire), or ask the town's hand for room. Waiting frees nothing." }
   return none
 
 mutual
@@ -3295,12 +3318,15 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
     let hand := fun (who : String) => match principalThing who with
       | some t => ((cand.objects[t]?).map fun x => ownerOf x.state).getD who
       | none => who
+    -- A thing the opener owns (the tide, the station) is the town's: there each hand brings its own share
+    -- (`placedPerHand`) and no pool of the others' caps them (`placedOnTownThing` bounds the whole).
+    let townThing := !w.opener.isEmpty && ownerOf o.state == w.opener
     let checkShare (placers : List String) (byOthers : Nat) (limit : String) : Except Refusal Unit := do
       let placer := hand p.principal
       unless placer == ownerOf o.state || openerActs w placer do
         if (placers.filter (hand · == placer)).length ≥ Limits.placedPerHand then
           throw { cls := "capacity", object := some id, reason := some "placedPerHand" }
-        if (placers.filter (hand · != ownerOf o.state)).length ≥ byOthers then
+        if !townThing && (placers.filter (hand · != ownerOf o.state)).length ≥ byOthers then
           throw { cls := "capacity", object := some id, reason := some limit }
     for x in p.placements.filter (·.object == id) do
       let refuse := fun (clause reading : String) => ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
@@ -3365,8 +3391,9 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
             if let some r := unviewable cand p.principal (citesOf cand clause.names).objects then
               throw (refuse "lawReads" s!"{x.keyword} {x.name} cites {r}, which you may not view.")
           checkShare (rows.map (·.owner)) Limits.placedByOthers "placedByOthers"
-          if rows.length ≥ (if want then Limits.wantsPerObject else Limits.rulesPerObject) then
-            throw { cls := "capacity", object := some id, reason := some (if want then "wantsPerObject" else "rulesPerObject") }
+          if rows.length ≥ (if townThing then Limits.placedOnTownThing else if want then Limits.wantsPerObject else Limits.rulesPerObject) then
+            throw { cls := "capacity", object := some id,
+                    reason := some (if townThing then "placedOnTownThing" else if want then "wantsPerObject" else "rulesPerObject") }
           let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }
           next := if want then { next with wants := next.wants ++ [row] } else { next with rules := next.rules ++ [row] }
     let moves := changes.any (·.kind != 4)

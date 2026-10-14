@@ -86,6 +86,14 @@ def spend(st, out, who, use=None):
     return out
 
 
+def uses(st, start=0):
+    """{paints, readings} of the replied calls at or after unix time `start`: a paint is a call spent with `use='paint'`, a reading
+    any other (an interpretation). The watch holds the two to different numbers."""
+    rows = [row for row in st.lines(st.spend) if row['at'] >= start]
+    paints = sum(1 for row in rows if row.get('use') == 'paint')
+    return {'paints': paints, 'readings': len(rows) - paints}
+
+
 def spent(st, start=0):
     """{UTC month: {calls, inputTokens, outputTokens, dollars}} of the replied calls at or after unix time `start`, every
     world's, with `all` their sum."""

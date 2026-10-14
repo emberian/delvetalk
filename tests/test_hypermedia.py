@@ -313,6 +313,7 @@ class Robust(FrontCase):
 
     def test_malformed_input_on_every_route_answers_a_named_envelope_never_a_crash(self):
         rnd, tok = random.Random(7), self.login()
+        self.front.live_seconds = 0.2  # a stream (/live) answers and ends; the fuzz is of input, not of how long a page listens
         ids = ['\u2603', 'a%2F..%2F..', '%00', '%ED%A0%80', 'x' * 300, '..', 'garden/../' + self.c, '%', '%zz', '<i>', '\u00b2']
         bodies = [b'', b'\x00\xff' * 50, bytes(rnd.randrange(256) for _ in range(300)), b'[' * 5000, b'{"a":' * 400 + b'1' + b'}' * 400,
                   json.dumps({'intent': '\ud800\u2603', 'spell': '\ud800', 'object': '\u2603/\ud800', 'handle': '\ud800'}).encode(),

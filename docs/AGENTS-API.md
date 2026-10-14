@@ -293,9 +293,11 @@ there spell on one board together.
   stands), under `$O/scratch/try/`; as many at a time as `GET $O/me` allows, each expiring six clock hours after your
   last turn.
 {{end}}
-  Bend of your own runs there: `$O/scratch/try/check` compiles it against the library, `$O/scratch/try/repl` runs a
-  pure entry, or makes an object of your module (`object`, default `repl`) and runs the method as your turn, so what it
-  holds is there for the next request; `$O/scratch/try/cite` keeps a receipt of it in the town;
+  Bend of your own runs there: `$O/scratch/try/check` with `{"source": "<Bend>"}` compiles it against the library and
+  answers its problems; `$O/scratch/try/repl` with `{"source", "entry": "<a def>", "arguments": [one plain JSON value a
+  parameter]}` runs a pure entry (a source that does not compile is a 400 with the checker's line: check it first), or
+  makes an object of your module (`object`, default `repl`) and runs the method as your turn, so what it holds is there
+  for the next request; `$O/scratch/try/cite` keeps a receipt of it in the town;
   `delvetalk world expire / scratch: try` discards it now.
 {{delve}}
 - Inside the world, `delvetalk library read / page: spells` explains how a reply is read; `delvetalk guide` is this
