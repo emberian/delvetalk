@@ -1,110 +1,30 @@
 # The repository: the journal as a signed AT Protocol repository
 
-One journal repository per world, plus request-only hosted accounts (ATPROTO §4). The town's is `did:web:<origin host>` (deployed: `did:web:gsb.fg-goose.online`), the same
-principal a new world opens as (config `opener`, `config.town_did`; docs/GENESIS.md "The town");
-under federation (FEDERATION §1) each further world is `did:web:<world>.<origin host>` (`ring.gsb.fg-goose.online`),
-its document at `https://<world>.<origin host>/.well-known/did.json` and its key `/etc/delvetalk/repo/<world>.key`
-(`repo.world_origin`; a front serves one world, `--world`). An atproto did:web is a hostname, never a path
-("only hostname-level did:web DIDs are supported", atproto.com/specs/did), so `did:web:<host>:<world>` is not one;
-nor are worlds collections of one repository, since a commit is a function of one journal, its key and its epoch ledger, and two
-journals' heights do not interleave. A world's hostname needs the wildcard DNS record and certificate of
-docs/ATPROTO.md §4 (L7) before its document resolves. `transport/repo.py` is mounted by the front (`transport/http.py`) at `/xrpc/<nsid>` and
-`/.well-known/did.json`; the primitives are `transport/atproto/` (DAG-CBOR, CIDs and CAR in `cbor.py`, the
-MST in `mst.py`, keys, TIDs and commits in `sign.py`; standard library and `cryptography`). Record types are
-in `lexicons/`. Tests: `tests/test_repo.py` (interop vectors, fake world and real serve), `tests/test_repo_epochs.py`,
-`tests/test_firehose.py` and `tests/test_firehose_consumer.py` (sparse inversion and a real WebSocket consumer).
+Each world's journal is served as a read-only, signed AT Protocol repository, plus per-reader projections of what the
+host holds. A reader can verify any entry offline against a signed commit and follow the world with standard atproto
+tooling; the journal stays written only by turns at the host.
 
-The journal repository renders the host's journal and signs host-produced bytes or their CIDs. Hosted
-accounts validate and sign public request bytes supplied by their holders; world admission stays with the host. Two layers: the **signed repository** (below), the same for every reader; and the
-**façade** (after it), the host's per-reader projections of entries, objects, sources and laws.
+- **One repository per world.** The town's is `did:web:<origin host>` (deployed `did:web:gsb.fg-goose.online`), the
+  same principal a new world opens as (config `opener`, `config.town_did`; GENESIS "The town"). Each further world is
+  `did:web:<world>.<origin host>` (`ring.gsb.fg-goose.online`), its document at
+  `https://<world>.<origin host>/.well-known/did.json`, its key `/etc/delvetalk/repo/<world>.key` (`repo.world_origin`;
+  a front serves one world, `--world`). An atproto did:web is a hostname, never a path ("only hostname-level did:web
+  DIDs are supported", atproto.com/specs/did), so `did:web:<host>:<world>` is not one; and worlds are not collections
+  of one repository, since a commit is a function of one journal, its key and its epoch ledger, and two journals'
+  heights do not interleave. A world's hostname needs DNS and a certificate before its document resolves.
+- **Two layers:** the **signed repository**, the same for every reader; and the **projections**, the host's per-reader
+  replies for entries, objects, sources, laws and the live public values.
+- **Plus request-only hosted accounts** for guest and Zulip principals (ATPROTO §4), off by default.
+- **Code:** `transport/repo.py`, mounted by the front (`transport/http.py`) at `/xrpc/<nsid>` and
+  `/.well-known/did.json`; primitives in `transport/atproto/` (DAG-CBOR, CIDs and CAR in `cbor.py`, the MST in
+  `mst.py`, keys, TIDs and commits in `sign.py`; standard library and `cryptography`); record types in `lexicons/`.
+- **Tests:** `tests/test_repo.py` (interop vectors, fake world and real serve), `tests/test_repo_epochs.py`,
+  `tests/test_firehose.py` and `tests/test_firehose_consumer.py` (sparse inversion and a real WebSocket consumer).
 
-The next carry re-derives every MST key and commit CID from the journal under `online.fg-goose.gsb.*`,
-and the front serves records and projection queries under this namespace. Residents' mirror readers must list these collections;
-the posting account's orphaned old records are deleted by the owner's authorized mirror run (DEPLOY "A new binary").
-
-## Hosted public request accounts
-
-`transport/hosted.py` mounts hosted guest and Zulip accounts through the existing Front and listener.
-Hosted DIDs are built and off by default (`hosted_accounts = false`) for want of wildcard DNS:
-the owner chose no `*.guest.gsb.fg-goose.online` DNS, so those names will not resolve.
-To enable them, set `hosted_accounts = true` in `<state>/delvetalk.toml` (environment override
-`DELVETALK_HOSTED_ACCOUNTS=on`; compose uses this in `.env`), install wildcard DNS and matching HTTPS
-routing/certificates, and provide the town repository key, `<repo_keys>/town.key` (DEPLOY "Hosted account origins").
-With hosting off, the front neither provisions nor serves hosted repositories, and the request poller
-does not include their snapshots. Guest credentials and actions retain their exact `guest:` principals
-and returned identity mapping. Revocation and reconciliation remove only canonical snapshot files for
-guests no longer verified; active guests, Zulip snapshots and other operator data stay untouched.
-Off otherwise leaves the hosted directory alone, including an absent or legacy store.
-
-`identity.hosted_identity` is the bidirectional mapping: `guest:<host>:<name>` ↔
-`did:web:<name>.guest.<host>`, `zulip:<realm>:<id>` ↔ `did:web:<id>.<realm>.zulip.<host>`.
-ATPROTO §4 defines the grammar and feed-resident scope. When hosting is enabled, invitation acceptance provisions a guest;
-startup provisions existing verified guests. The Zulip observer provisions accounts for observed users,
-without copying their messages into request records. External claimed DIDs keep their own repositories.
-
-Each hosted hostname serves its own did.json: `alsoKnownAs` is its `at://<hostname>`, `#atproto` is
-its derived k256 key and `#atproto_pds` names the same front origin. Host selection never creates
-accounts. At that origin, repo/sync parameters select the existing account by DID/handle; an account
-Host cannot select another account. Hosted hosts expose only repository methods, not world procedures
-or projection queries. Describe/list/get return only `online.fg-goose.gsb.request`, with value-derived
-CIDs. Sync.getRecord returns the current commit, MST path and value; getRepo returns the whole current
-tree (also for `since`), including its empty root after deleting the last record. Full exports
-contain every node needed to prove absence; sync.getRecord for an absent key is RecordNotFound.
-Host-selected listRepos reports that one account. Empty accounts have a signed empty tree. Unsupported methods are 501; the journal repository refuses writes with 405.
-
-Create/put/delete use the invitation credential and require exactly the stored principal mapping to
-that DID. The shared lexicon validator and shared call framing validate every write; validation cannot
-be disabled. Keys are TIDs, generated on create when absent. Puts replace or create; deletes remove;
-duplicate create is RecordAlreadyExists. Optional swapCommit/swapRecord compare current CIDs before
-changing anything and refuse InvalidSwap. At 256 records, RepoFull refuses a new key while preserving
-all existing requests; replacement is allowed and deletion makes room. A record is at most 65,536
-DAG-CBOR bytes. Repository write bodies allow 397,312 JSON bytes for worst-case escaping and framing;
-agent/procedure body limits remain 256 KiB. The catalogue exposes both limits. listRecords bounds
-pages at 4 MiB of JSON, returning a cursor when the byte budget shortens a page. This includes adversarial control-character escaping. CAR exports are bounded at 17 MiB.
-
-Hosted accounts are origin-wide: every world's front uses the same town key and snapshot store, so
-Host- and parameter-selected account reads return identical documents and repository bytes.
-`State.hosted` is `<state>/hosted/<URL-encoded origin>/`, directory mode 0700. Stems are `<guest name>` and
-`<id>.<realm>.zulip`. The k256 key derives from the town private scalar and account DID using HKDF-SHA256
-(ATPROTO §4); no account key or lock file is written. A public `.json` snapshot holds
-`{principal, counter, prev, records, key}` and optional `epochs: [{counter, cause, key}]`;
-one flock on the directory file descriptor serializes front/bridge reads and writes. A write
-rebuilds the sorted bounded MST with the existing Tree/Key.commit, fsyncs the snapshot, atomically replaces
-it and fsyncs the directory. Readers see one complete snapshot. Revs are `TID(counter)`, counter advanced
-to `max(counter + 1, wall microseconds)` for each mutation, even if the wall clock moves backward. The
-commit signs version 3, this account's DID, its current root, rev and previous head CID. The counter and
-prev are kept beside the records, so restart yields byte-identical head CARs without writing. There is
-no historical export or hosted firehose; consumers reconcile the bounded full current tree.
-
-State backups keep hosted snapshots; the same town key reproduces account keys and signed heads on restore.
-With hosting enabled, the first access atomically moves an existing `<state>/worlds/town/hosted/` directory into the origin store,
-preserving snapshot bytes. If both stores exist, access refuses with 503 `RepoNotServed` and names the paths
-for operator reconciliation. A non-town front with nonempty legacy `<state>/worlds/<world>/hosted/` likewise
-refuses startup and hosted access: those snapshots are preserved, never merged or re-signed under the town DID.
-Startup and account access reconcile changed keys under the directory lock: a higher counter, `prev` null,
-the new `key`, and a `rotation` epoch, with the same records and rkeys. Legacy snapshots instead record
-`migration`, unless their legacy key already equals the derived key (only `key` is added); legacy key/lock
-files are deleted after the snapshot is durable. A second reconciliation changes no bytes. Missing town
-keys refuse hosted routes and provisioning with 503 `RepoNotServed`. DelveTalk's custody vouches no more than the invitation: addressability,
-not trust. The local poller source supplies the same proof CAR bytes to `requests.proven`, with no network
-and no alternate verifier. Each URI turns once under its hosted DID and yields the ordinary answer.
-The poller and mirror remain disabled by default. Tests: `test_hosted`; signing needs cryptography >=43.
-
-## Authenticated scratch responses
-
-Scratch worlds have no repository, DID, signing key, mirror records or firehose. The front serves
-`online.fg-goose.gsb.openSession`, `.getSession` and `.listSessionRecords` under method-bound service auth
-(ATPROTO §3). The issuer is the holder: `scratch/<name>` resolves in the host to that issuer's scratch.
-`listSessionRecords` returns `{records: [{key, cid, value}], cursor?}` for card and entry values; each CID
-hashes its response value and proves no signed membership. Card keys use `/` → `~`; entry keys are decimal
-heights and entry values are `{ $type: online.fg-goose.gsb.entry, entry: {$link: hash}, height }`. Cards use the
-shared renderer without paint, including REPL objects that have cards; REPL checkpoints have no collection.
-The responses are not persisted. Scratch act/try/plan run the ordinary host turn path, without town drafting
-or public answer lookup/write. Unknown and expired scratches return the same `RecordNotFound` bytes.
-Expiry is the host's idle home-clock deadline; opening a discarded name creates a new scratch. Existing
-`make`, citation and shelving exits are durable-world acts, retaining only what they carry. Proxied calls
-are visible to the caller's PDS; direct service-auth calls avoid that proxy. Named readers and separate
-permissions require the host op and completion check recorded under L6 in ATPROTO.
+The repository renders the host's journal and signs host-produced bytes or their CIDs. Hosted accounts validate and
+sign public request bytes their holders supply; world admission stays with the host. A carry re-derives every MST key
+and commit CID from the journal under `online.fg-goose.gsb.*`. Old records in the posting account under earlier
+collection names are deleted by the owner's authorized mirror run (DEPLOY "A new binary").
 
 ## The signed repository
 
@@ -133,8 +53,7 @@ and drops those no longer in the tree. The slug and entry CID are keys for the s
   read as 1970). The epoch ledger supplies a clock floor across carries and rotations. The clock never goes
   back and the height always goes up; 60,000,000 exceeds any journal height, so raising the floor one minute
   puts the new epoch above every earlier rev. The same TID is the entry record's key.
-- A carried journal begins at the height the world before reached (HOST-HANDOFF 5.182; the live v10 town's first
-  entry is 447). A changed journal base starts a `carry` epoch at its first height, with a clock floor of the
+- A carried journal begins at the height the world before reached. A changed journal base starts a `carry` epoch at its first height, with a clock floor of the
   ledger's last head clock + 1 and `prev` null. Its tree begins empty and holds only this journal's records:
   pre-carry entry records leave the tree, a deliberate reconciliation requiring a full `getRepo`. `since` and
   the cursors count from the carried journal's start; pre-carry revs are not cursors in this tree.
@@ -193,8 +112,8 @@ front of this origin served this chain", the trust did:web already gives (whoeve
 journal's own chain does not say, and a taken front could sign a chain of invented CIDs; readers holding real
 entries would see them disagree. A host-held key would move the signature to the journal's writer: the host
 would build the MST and sign in the same step that seals and fsyncs an entry, so the front could not forge,
-and the key would leave the internet-facing container. The op it needs (host lane, not stubbed: the
-transport-signed design needs no host change): `world-commit {height?}` → `{status: "commit", height, rev,
+and the key would leave the internet-facing container. Designed, not built:
+`world-commit {height?}` → `{status: "commit", height, rev,
 data, prev, sig, bytes}`, the host's own commit for that height under the key the front reads at start (`State.repo_key`), and
 `Signed` would serve those bytes instead of signing. Signing a commit the transport built would add nothing.
 
@@ -352,7 +271,7 @@ those values must name an actual posting-account record until they join the worl
 ## Not served
 
 - **Writes.** No `createRecord`, `putRecord`, `deleteRecord`, `applyWrites`, `uploadBlob`: the journal is
-  written by turns at the host, never through this façade. Unknown methods are 501
+  written by turns at the host, never through this repository. Unknown methods are 501
   `MethodNotImplemented`; POST on a query and GET on a procedure answer 405 `InvalidRequest`. The three world procedures above use POST; repository writes remain unserved.
 - **`getBlocks`, `getBlob`, `getRepo` of another DID.** One repository, no blobs.
 - **Checkpoints and pending sends.** `blocks[].cid`, `activity.checkpoint` and `sends[]` appear only in a
@@ -367,10 +286,82 @@ answer `Denied` without carrying its projection. `#delvetalk` lets a PDS resolve
 Inside an entry, CIDs are strings as the journal stores them; its block has no `$type`. Changing them to
 links would change the entry bytes and every CID. The signed entry record carries the real link.
 
+## Hosted public request accounts
+
+`transport/hosted.py` mounts hosted guest and Zulip accounts through the existing front and listener. The mapping
+(`guest:<host>:<name>` ↔ `did:web:<name>.guest.<host>`, `zulip:<realm>:<id>` ↔ `did:web:<id>.<realm>.zulip.<host>`),
+enabling (`hosted_accounts`, off by default for want of wildcard DNS), provisioning and key derivation are ATPROTO §4.
+This section is the repositories themselves. External claimed DIDs keep their own repositories.
+
+Each hosted hostname serves its own did.json: `alsoKnownAs` is its `at://<hostname>`, `#atproto` is
+its derived k256 key and `#atproto_pds` names the same front origin. Host selection never creates
+accounts. At that origin, repo/sync parameters select the existing account by DID/handle; an account
+Host cannot select another account. Hosted hosts expose only repository methods, not world procedures
+or projection queries. Describe/list/get return only `online.fg-goose.gsb.request`, with value-derived
+CIDs. Sync.getRecord returns the current commit, MST path and value; getRepo returns the whole current
+tree (also for `since`), including its empty root after deleting the last record. Full exports
+contain every node needed to prove absence; sync.getRecord for an absent key is RecordNotFound.
+Host-selected listRepos reports that one account. Empty accounts have a signed empty tree. Unsupported methods are 501; the journal repository refuses writes with 405.
+
+Create/put/delete use the invitation credential and require exactly the stored principal mapping to
+that DID. The shared lexicon validator and shared call framing validate every write; validation cannot
+be disabled. Keys are TIDs, generated on create when absent. Puts replace or create; deletes remove;
+duplicate create is RecordAlreadyExists. Optional swapCommit/swapRecord compare current CIDs before
+changing anything and refuse InvalidSwap. At 256 records, RepoFull refuses a new key while preserving
+all existing requests; replacement is allowed and deletion makes room. A record is at most 65,536
+DAG-CBOR bytes. Repository write bodies allow 397,312 JSON bytes for worst-case escaping and framing;
+agent/procedure body limits remain 256 KiB. The catalogue exposes both limits. listRecords bounds
+pages at 4 MiB of JSON, returning a cursor when the byte budget shortens a page. This includes adversarial control-character escaping. CAR exports are bounded at 17 MiB.
+
+Hosted accounts are origin-wide: every world's front uses the same town key and snapshot store, so
+Host- and parameter-selected account reads return identical documents and repository bytes.
+`State.hosted` is `<state>/hosted/<URL-encoded origin>/`, directory mode 0700. Stems are `<guest name>` and
+`<id>.<realm>.zulip`. The k256 key derives from the town private scalar and account DID using HKDF-SHA256
+(ATPROTO §4); no account key or lock file is written. A public `.json` snapshot holds
+`{principal, counter, prev, records, key}` and optional `epochs: [{counter, cause, key}]`;
+one flock on the directory file descriptor serializes front/bridge reads and writes. A write
+rebuilds the sorted bounded MST with the existing Tree/Key.commit, fsyncs the snapshot, atomically replaces
+it and fsyncs the directory. Readers see one complete snapshot. Revs are `TID(counter)`, counter advanced
+to `max(counter + 1, wall microseconds)` for each mutation, even if the wall clock moves backward. The
+commit signs version 3, this account's DID, its current root, rev and previous head CID. The counter and
+prev are kept beside the records, so restart yields byte-identical head CARs without writing. There is
+no historical export or hosted firehose; consumers reconcile the bounded full current tree.
+
+State backups keep hosted snapshots; the same town key reproduces account keys and signed heads on restore.
+With hosting enabled, the first access atomically moves an existing `<state>/worlds/town/hosted/` directory into the origin store,
+preserving snapshot bytes. If both stores exist, access refuses with 503 `RepoNotServed` and names the paths
+for operator reconciliation. A non-town front with nonempty legacy `<state>/worlds/<world>/hosted/` likewise
+refuses startup and hosted access: those snapshots are preserved, never merged or re-signed under the town DID.
+Startup and account access reconcile changed keys under the directory lock: a higher counter, `prev` null,
+the new `key`, and a `rotation` epoch, with the same records and rkeys. Legacy snapshots instead record
+`migration`, unless their legacy key already equals the derived key (only `key` is added); legacy key/lock
+files are deleted after the snapshot is durable. A second reconciliation changes no bytes. Missing town
+keys refuse hosted routes and provisioning with 503 `RepoNotServed`; an invitation acceptance then leaves its code
+open, and a Zulip observation rolls back for retry. DelveTalk's custody vouches no more than the invitation: addressability,
+not trust. The local poller source supplies the same proof CAR bytes to `requests.proven`, with no network
+and no alternate verifier. Each URI turns once under its hosted DID and yields the ordinary answer.
+The poller and mirror are off by default. Tests: `test_hosted`; signing needs cryptography >=43.
+
+## Authenticated scratch responses
+
+Scratch worlds have no repository, DID, signing key, mirror records or firehose. The front serves
+`online.fg-goose.gsb.openSession`, `.getSession` and `.listSessionRecords` under method-bound service auth
+(ATPROTO §3). The issuer is the holder: `scratch/<name>` resolves in the host to that issuer's scratch.
+`listSessionRecords` returns `{records: [{key, cid, value}], cursor?}` for card and entry values; each CID
+hashes its response value and proves no signed membership. Card keys use `/` → `~`; entry keys are decimal
+heights and entry values are `{ $type: online.fg-goose.gsb.entry, entry: {$link: hash}, height }`. Cards use the
+shared renderer without paint, including REPL objects that have cards; REPL checkpoints have no collection.
+The responses are not persisted. Scratch act/try/plan run the ordinary host turn path, without town drafting
+or public answer lookup/write. Unknown and expired scratches return the same `RecordNotFound` bytes.
+Expiry is the host's idle home-clock deadline; opening a discarded name creates a new scratch. Existing
+`make`, citation and shelving exits are durable-world acts, retaining only what they carry. Proxied calls
+are visible to the caller's PDS; direct service-auth calls avoid that proxy. Named readers and separate
+permissions are designed, not built (ATPROTO §3).
+
 ## Host ops this calls
 
-`world-resolve` and `world-objects`, and these, which the host lane added for the façade (host7). In every
-op `principal` is the reader; `anonymous` is the public reader in every host read op.
+`world-resolve` and `world-objects`, and these. In every op `principal` is the reader; `anonymous` is the public
+reader in every host read op.
 
 1. **`world-entry {principal, hash, bytes?}`** → `{status: "receipt", receipt, bytes?}`: the entry whose
    `hash` it is, projected as `projectEntry` (a public refusal with its `height` and `hash`, as there);
@@ -396,5 +387,5 @@ op `principal` is the reader; `anonymous` is the public reader in every host rea
    entry's) on each item, and `limit`, `before`, `reverse` as above.
 
 The object-id alphabet settles record keys: the host creates ids only in `[A-Za-z0-9._:/-]`, Zulip principals
-are `zulip:<numeric id>` (no `@`), and `/` written `~` is then a key for every id, read back without
+are `zulip:<realm host>:<numeric id>` (no `@`), and `/` written `~` is then a key for every id, read back without
 ambiguity since no id holds `~`.
