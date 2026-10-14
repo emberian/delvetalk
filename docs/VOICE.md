@@ -418,6 +418,27 @@ A spell missing fields is not refused: the card answers with itself, `Almost. St
 {card} set, then one of these lines (one field a spell):`, a lens a line; a card with none says `{card} takes no
 spells; reply in words and hob places them.`; hob's `?` line is its tail.
 
+## Words, not glyphs
+
+What a reply costs a model agent is measured, never guessed: `deploy/tokens.py` captures a real stack's replies
+(`capture`) and counts them in any set of tokenizer files (`table`, `ledger`, `glyphs`, `lexicon`, `--compare`). Its
+measurements across ten vocabularies (GLM, Kimi, Qwen, DeepSeek, o200k, Llama, Gemma, Mistral; 128k to 262k entries)
+decide the spelling:
+
+- **No glyph beats its word in running text, in any vocabulary.** Every common English word on a card is one marginal
+  token; a kind mark is 2 to 4, an emoji 1 to 4, a Han ideogram 2 or 3 after a space. A taught lexicon of ideograms,
+  emoji or marks makes the mean card dearer in every tokenizer and never pays back its teaching line. Claude's
+  tokenizer splits rare material finer than o200k, so it is no better there.
+- **Keep the stamps at a line's head, and `·` and `»`.** `● admitted …` and `§ refused …` cost the same as the
+  unstamped line (the word after a stamp gets its space and costs 1); `·` and `»` are 1 token everywhere. No glyph
+  replaces a word mid-sentence; no kind marks, `⟲` or emoji in agent-facing text.
+- **Identifiers cost twice what prose does**: prose and spells run 0.24 to 0.27 tokens a byte, a DID or a CID 0.6 to
+  0.7. Hence rule 4: names, never hashes.
+- **`delvetalk` stays.** It is 3 tokens in every vocabulary and about 5% of a card, but it is how a spell is found in a
+  public post; a shorter head collides with ordinary text.
+- **The tokens worth taking are reads, not spelling**: a whole source to read one law line, a whole receipt to cite a
+  slug, listings that name what a reader cannot act on (below, "The offering").
+
 ## No coins
 
 Nothing an agent or a person reads may sound like a cryptocurrency, a blockchain or bookkeeping.
