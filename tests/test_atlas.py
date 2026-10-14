@@ -122,6 +122,68 @@ class Atlas(InTown):
         broken = self.say('workshop', '\n'.join(lines))
         self.assertIn(f'Layer1:{at - 2}:', broken)  # its line in the block: the spell's three lines come before it
 
+    def test_the_inspector_sets_its_bend_in_type_once_and_the_rest_on_asking(self):
+        """obend 10-14: /inspect/room/14 was 429 KB, its 659 lines set in type as the entry module and again as its kind's
+        layer (one line apart), and once more in the workshop's box for a stranger who could not send it. The entry is set in
+        type once; a layer a few lines off it is those lines; any part is drawn on asking; a panel's fetch draws none."""
+        strip = self.strip['strip']
+        page = self.page('/inspect/' + strip)
+        self.assertEqual(len(re.findall(r'<pre class="bend" id="', page)), 1, re.findall(r'<pre class="bend" id="([^"]+)"', page))
+        self.assertIn('<pre class="bend" id="src">', page)
+        self.assertNotIn('<details class="more" open>', page)  # its receipts folded, as its fields
+        seen = self.host.send({'op': 'world-inspect', 'principal': PEOPLE[HANDLE], 'object': strip, 'source': True})
+        layers = [c['at'] for c in (seen.get('madeFrom') or {}).get('components') or [] if c['body'].strip() != seen['source'].strip()]
+        for at in layers:
+            self.assertIn(f'href="?bend=layer{at}#src{at}"', page)
+            asked = self.page(f'/inspect/{strip}?bend=layer{at}')
+            self.assertIn(f'<pre class="bend" id="src{at}">', asked)
+            self.assertIn('<pre class="bend" id="src">', asked)  # the entry stays, so every link to its lines holds
+        none = self.page(f'/inspect/{strip}?bend=none')
+        self.assertNotIn('<pre class="bend" id="', none)
+        self.assertIn('section class="verbs"', none)
+        self.assertIn(f'data-inspect="/inspect/{strip}?bend=none"', self.page('/town'))  # what a panel fetches
+        stranger = self.request('GET', '/inspect/' + strip, headers={'Accept': 'text/html'})[2].decode()
+        self.assertNotIn('class="ws-text"', stranger)
+        self.assertIn('To send it, <a href="/enter">come in</a>', stranger)
+        self.assertLess(len(stranger), len(page))
+        # An adversarial ?bend= names no part: the default page, nothing echoed.
+        odd = self.page('/inspect/' + strip + '?bend=' + urllib.parse.quote(ATTACK))
+        self.assertNotIn('<script>', odd)
+        self.assertIn('<pre class="bend" id="src">', odd)
+
+    def test_near_a_layer_is_its_lines_against_the_entry(self):
+        from transport import atlas
+        entry = '\n'.join(f'def f{i}() -> Nat:\n  {i}n' for i in range(400))
+        layer = entry.replace('  7n', '  8n')
+        diff, n = atlas.near_diff(entry, layer)
+        self.assertEqual(n, 2)
+        self.assertIn('-  7n\n+  8n', diff)
+        far = '\n'.join(f'def g{i}() -> Nat:\n  {i}n' for i in range(400))
+        self.assertIsNone(atlas.near_diff(entry, far))
+
+    def test_a_private_thing_is_said_to_be_private_and_the_way_to_what_holds_it(self):
+        """obend 10-14: /inspect/mending/drawer answered 404 "no object". The drawer is there and private."""
+        for path in ('/inspect/mending/drawer', '/o/mending/drawer'):
+            s, _, page = self.request('GET', path, headers={'Accept': 'text/html'})
+            text = html.unescape(page.decode())
+            self.assertEqual(s, 403, path)
+            self.assertIn('mending/drawer is private: it is there, and its law lets only some read it.', text)
+            self.assertIn('href="/o/mending"', text)
+        s, _, page = self.request('GET', '/inspect/no-such-thing', headers={'Accept': 'text/html'})
+        self.assertEqual(s, 404)
+        self.assertNotIn(b'is private', page)
+
+    def test_a_stranger_reading_a_page_asks_for_no_paint(self):
+        """A crawl of every /o/ page (obend 10-14 09:05) queues no paint: an anonymous page shows only one already made."""
+        self.host.send({'op': 'world-renders'})  # a worker is present, so a signed-in read would queue
+        before = {i['key'] for i in self.host.send({'op': 'world-renders'})['pending']}
+        for obj in ('commonplace', self.strip['strip'], 'anthology'):
+            s, _, _ = self.request('GET', '/o/' + obj, headers={'Accept': 'text/html'})
+            self.assertEqual(s, 200, obj)
+        self.assertEqual({i['key'] for i in self.host.send({'op': 'world-renders'})['pending']}, before)
+        self.page('/o/anthology')  # the control: the same page, signed in, queues its paint
+        self.assertGreater({i['key'] for i in self.host.send({'op': 'world-renders'})['pending']} - before, set())
+
     def test_the_library_the_modules_and_the_kinds_are_pages(self):
         lib = plain(self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': 'library'})['state'])
         names = [p['name'] for p in lib['pages']['items']]

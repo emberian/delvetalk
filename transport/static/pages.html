@@ -158,6 +158,16 @@
 <details class="more"><summary>law</summary><pre class="listing law">{law}</pre></details><details class="more"><summary>source, {lines} lines <span class="code">{pin}</span></summary><pre class="listing">{source}</pre></details>
 <!-- whole: the brief text view's way to the rest -->
 <p><a href="{href}">the law, the source and every entry</a></p>
+<!-- resend: a form from a page drawn for an earlier session of this browser (a sign-in since, in this tab or another): nothing was done; what it carried, to send again from here (never a key) -->
+<section class="refusal"><p class="fate">§ denied</p><h1 class="title">Send it again</h1>
+<p>This page was drawn for an earlier session of this browser (you came in or signed in since, perhaps in another tab), so nothing was sent.{dropped}</p>
+{said}<form method="post" action="{action}">{fields}<button class="go">Send it again</button></form></section>
+<!-- resend_field -->
+<input type="hidden" name="{name}" value="{value}">
+<!-- resend_said -->
+<blockquote class="under">{text}</blockquote>
+<!-- private: a thing the host says is there that this reader may not see (a refusal's line) -->
+{id} is private: it is there, and its law lets only some read it.
 <!-- refusal: an error or a refusal, as the envelope says it -->
 <section class="refusal"><p class="fate">§ {cls}</p><h1 class="title">{title}</h1><p>{message}</p>{hint}<p class="links">{links}</p></section>
 <!-- hint -->

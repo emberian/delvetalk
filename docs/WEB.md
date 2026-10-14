@@ -299,8 +299,12 @@ fills `static/atlas.html`; the script is the end of `say.js`; every page works w
   the commonplace's own map text is folded at the foot. `?open=<id>` unfolds one without a script.
 - **`/inspect/<id>`**, linked from every place's eyebrow and every panel: its Bend set in type (keywords, strings,
   comments, every line numbered and anchored, every `def`/`form`/`law`/`rule`/`want` anchored and outlined), the entry
-  module open, the layers its kind laid (`madeFrom`) and a kind's body folded, each `import` or `layer over` a link to
-  `/lib/<module>` or to the layer on the page; its facts (kind chain through each kind's `of`, owner, maker, lineage,
+  module open and the only part set in type; the layers its kind laid (`madeFrom`) and a kind's body each its outline and
+  a link that sets it in type beside the entry (`?bend=layer0`, `?bend=body`), or, a layer the entry's but for a few
+  lines, those lines as a diff; `?bend=none` sets nothing in type (a `/town` panel's fetch of its spells). Each `import`
+  or `layer over` a link to `/lib/<module>` or to the layer. (obend 10-14: `/inspect/room/14` was 429 KB, its 659 lines
+  set in type twice and once more in the workshop's box for a stranger; now 193 KB, and the workshop's box is a signed-in
+  reader's, who can send it); its facts (kind chain through each kind's `of`, owner, maker, lineage,
   version, pin, bytes, views); its spells, each a small form posting `do` and `f.<field>` to `/play/<id>` (the view's
   act path: one of the reader's offered forms, judged again by the host, cast as the reader; a grown verb marked, its
   Bend line linked when it has one); **who may do what**: each method's `admits` from `world-inspect` for the reader and
