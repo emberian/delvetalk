@@ -1,0 +1,10 @@
+# a hex board with a view (docs/VIEWS.md): its page draws the hexes, and choosing an empty one places your colour
+of: record
+form: <<END
+name: text 1..64
+size: natural 3..11
+END
+head: {name}
+voice: a board of hexes on a table, colours set down one at a time and never lifted
+about: a board of hexes anyone sets their colour on, one hex a turn, drawn live on its page
+body: hexboard

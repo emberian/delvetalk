@@ -32,6 +32,11 @@ def cardShownChars : Nat := 1400
 def mentionsAddressed : Nat := 4
 /-- The rows of what wants a hand a card's `render` is handed (`TurnLoop.renderCard`, the commonplace's lead). -/
 def cardWanting : Nat := 8
+/-- The wire bytes of a derived view read from outside a turn (`world-derived`; a card's `view`, docs/VIEWS.md): a
+    larger value is refused `viewTooLarge`, never cut. -/
+def maxViewBytes : Nat := 262144
+/-- The nodes of a card's `view` a front draws (docs/VIEWS.md): past it the front draws the first ones and says so. -/
+def maxViewNodes : Nat := 4096
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
     with every change to what replay derives (judging, a derived field, an index replay checks).

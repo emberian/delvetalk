@@ -13,7 +13,7 @@ HOST_TIMEOUT, CONNECT_WAIT = 150, 2  # seconds an op may take; seconds to wait f
 CLOCK = 'transport'  # the clock principal serve opens each world with
 # Ops answered the same when sent twice (reads; a turn, by its identity): only these are re-sent after a broken connection.
 IDEMPOTENT = {'world-' + op for op in 'status view card objects offers history receipt resolve inspect entries entry object publications '
-              'grants source sources state-cid addressee turn render strokes'.split()} | {'serve-status'}
+              'grants source sources state-cid addressee turn render strokes derived'.split()} | {'serve-status'}
 PAINT_STEP = 0.25  # seconds between two looks at a pending paint
 PUBLIC = 'anonymous'  # the reader an unauthenticated request is, and a public channel's: what everyone may read
 TOWN = 'the town'  # what every surface names the world's own principal, its opener (the host's `townName`)

@@ -59,3 +59,46 @@ document.addEventListener('click', (event) => {
     form.submit();
   });
 })();
+// A thing's view (docs/VIEWS.md) is live: it listens on /live/<id> and is drawn again whenever the thing moves; a button,
+// a box or a tile is one click: sent here, and what came back (the reply with its receipt, and the view) is put in
+// place. Without this script a button is a form, a tile a link that fills the box with its spell, and a reload is fresh.
+(function () {
+  var view = document.getElementById('view');
+  if (!view || !window.fetch || !window.DOMParser || !window.FormData) return;
+  var body = view.querySelector('.v-body');
+  if (view.dataset.live && window.EventSource) {
+    new EventSource(view.dataset.live).addEventListener('view', function (ev) { body.innerHTML = ev.data; });
+  }
+  function put(page) {
+    var doc = new DOMParser().parseFromString(page, 'text/html');
+    var fresh = doc.querySelector('#view .v-body'), reply = doc.querySelector('section.reply'), here = document.querySelector('section.reply');
+    if (fresh) body.innerHTML = fresh.innerHTML;
+    if (reply) {
+      reply = document.importNode(reply, true);
+      if (here) here.replaceWith(reply); else view.parentNode.insertBefore(reply, view);
+    }
+  }
+  function send(action, data) {
+    view.classList.add('v-sending');
+    fetch(action, { method: 'POST', body: new URLSearchParams(data), credentials: 'same-origin', headers: { Accept: 'text/html' } })
+      .then(function (r) { if (/\/enter$/.test(r.url)) { location.href = r.url; return ''; } return r.text(); })
+      .then(function (t) { if (t) put(t); })
+      .finally(function () { view.classList.remove('v-sending'); });
+  }
+  view.addEventListener('submit', function (ev) {
+    var form = ev.target.closest && ev.target.closest('form.v-act');
+    if (!form) return;
+    ev.preventDefault();
+    var data = new FormData(form);
+    if (ev.submitter && ev.submitter.name) data.append(ev.submitter.name, ev.submitter.value);
+    send(form.action, data);
+  });
+  view.addEventListener('click', function (ev) {
+    var tile = ev.target.closest && ev.target.closest('a[data-do]'), form = view.querySelector('form.v-do');
+    if (!tile || !form) return;
+    ev.preventDefault();
+    var data = new FormData(form);
+    data.set('do', tile.getAttribute('data-do'));
+    send(form.action, data);
+  });
+})();

@@ -684,6 +684,9 @@ private def executePreparedNativeFrom (prepared : PackageData.Work PackageData.N
   if argumentBytes > inputBytes then throw "typed data input byte capacity"
   let ticks ← bounded limits "ticks" Bounds.ticksDefault Bounds.ticksMax
   let work ← bounded limits "work" ticks Bounds.ticksMax
+  -- How deep the returned value may nest: the wire's depth, or up to a Document's for a caller that asks (a card's
+  -- view, `world-derived`: a long list is a deep chain).
+  let depth ← bounded limits "depth" Bounds.dataWireDepth Bounds.documentWireDepth
   let allowance := min ticks work
   let (preparation, remaining) ← prepared.run allowance
   let source := preparation.source
@@ -711,7 +714,7 @@ private def executePreparedNativeFrom (prepared : PackageData.Work PackageData.N
       -- Recursive aliases and the complete returned value are checked, including
       -- payloads which a later source Decision may explicitly refuse.
       let outputAllowance := min remaining result.remaining.ticks
-      let (_, after) ← (PackageData.validate source.assumptions Bounds.dataWireDepth result.value type).run outputAllowance
+      let (_, after) ← (PackageData.validate source.assumptions depth result.value type).run outputAllowance
       return (.finished result.value type (nodes - result.remaining.nodes)
         ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩,
         some result.state)

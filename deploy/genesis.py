@@ -618,6 +618,36 @@ def parlour(host, opener, prefix='genesis'):
     return made
 
 
+# The first things with a view (docs/VIEWS.md): kind/counter and kind/hexboard (world/kinds, bodies over RECORD), and
+# one of each placed by the opener, which their pages draw live: a shared counter, and a seven by seven board of hexes
+# where choosing one places your colour. An open town's genesis makes them (`open_town`); kinds and things the town
+# has already are kept.
+PLAY_KINDS = {name: read_kind(name) for name in ('counter', 'hexboard')}
+PLAYTHINGS = [('counter', [('id', 'counter'), ('name', 'THE COUNTER')]),
+              ('hexboard', [('id', 'hexboard'), ('name', 'THE HEXBOARD'), ('size', '7')])]
+
+
+def playthings(host, opener, prefix='genesis'):
+    """kind/counter and kind/hexboard and one of each, by the opener's spells, each where the town lacks it; -> made rows.
+    Stops (Stopped) at a refusal."""
+    turn = lambda obj, method, argument, identity: host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': method,
+                                                              'argument': argument, 'identity': identity})
+    made, have = [], set(existing(host, opener))
+    for name, f in PLAY_KINDS.items():
+        if 'kind/' + name not in have:
+            kind = turn('kinds', 'make', rec(name=lab(name), of=lab(f['of']), form=lab(f.get('form', '')), head=lab(f.get('head', '')),
+                                             voice=lab(f.get('voice', '')), about=lab(f.get('about', '')), law=lab(f.get('text', '')),
+                                             body=lab(body_of(f['body']))), f'{prefix}-kind-{name}')
+            made.append({'object': 'kind/' + name, 'module': 'kinds make', 'status': kind.get('status'), 'creator': opener, 'reply': kind})
+            turned('kinds make ' + name, kind)
+    for name, fields in PLAYTHINGS:
+        obj = dict(fields)['id']
+        if obj not in have:
+            made.append(said(host, opener, 'kind/' + name, 'place', fields, f'{prefix}-{obj}', obj))
+            turned(f'kind/{name} place {obj}', made[-1]['reply'])
+    return made
+
+
 def spell(card, action, fields):
     """A spell as the hand types it: the delvetalk line, then a `field: value` line each, a multi-line value as a block."""
     lines = [f'delvetalk {card} {action}']
@@ -793,6 +823,7 @@ def open_town(host, opener, config):
         made.append({'object': 'world', 'module': 'settings', 'status': 'admitted' if limits.get('status') == 'settings' else limits.get('status'),
                      'creator': opener, 'reply': limits})
         turned('the limits for newcomers', {**limits, 'status': made[-1]['status']})
+        made += playthings(host, opener)
     except Stopped as e:
         return made, str(e)
     return made, None

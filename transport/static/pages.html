@@ -99,8 +99,8 @@
 <p class="doors">No doors lead on from here yet.</p>
 <!-- door -->
 <a href="{href}" title="{description}">{label}</a>
-<!-- play: an object to play, as the logged-in principal sees it: its name, what came back, the place, the one box (to send, or to try first), then what is around it -->
-{heading}{reply}{place}
+<!-- play: an object to play, as the logged-in principal sees it: its name, what came back, its view, the place, the one box (to send, or to try first), then what is around it -->
+{heading}{reply}{view}{place}
 <form class="say" method="post" action="/play/{path}"><label>Say something to {name}<textarea id="say" name="text" rows="3" placeholder="in your own words, or a spell">{said}</textarea></label><p class="acts"><button class="quiet-button" name="try" value="1" title="see what it would do; nothing is written">Try it first</button> <button class="go">Send</button></p></form>
 <p class="suggest">{suggestions}</p>{around}
 <!-- suggestion: a spell offered, to edit in the box; it sends nothing -->
@@ -120,13 +120,17 @@
 <!-- quiet: silence is a deliberate state, and the frog's -->
 <p class="quiet"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span class="stamp">— quiet</span> (no reply)</p>
 <!-- object: as anyone may read it: the place, a way to speak to it, what is around it, then the law, the source and the journal on demand -->
-{heading}{shown}{play}{around}{source}{receipts}
+{heading}{view}{shown}{play}{around}{source}{receipts}
 <!-- surface: a read (the book, the history, the map) as a page: its paint above, the exact text a post carries, a drawing beside -->
 <h1 class="title">{title}</h1><section class="scene">{paint}<pre class="card">{text}</pre></section>{drawing}
 <!-- door_map: the doors drawn (pages.door_map): a row for each step from the card the map starts at, each card a link to its own map -->
 <figure class="map"><svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="which cards open onto which" fill="none" stroke="currentColor" font-size="11" text-anchor="middle"><g stroke-opacity=".4">{lines}</g><g fill="currentColor" stroke="none">{nodes}</g></svg></figure>
 <!-- state: an object with no card, its state as a definition list -->
 <div class="state">{state}</div>
+<!-- view: a thing's own view (docs/VIEWS.md), drawn by transport/views.py from its `view`: say.js keeps it live from {live} and makes a button or a tile one click; without it a button is a form, a tile a link that fills the box, and a reload is fresh -->
+<section class="view" id="view" data-live="{live}"><div class="v-body">{body}</div>{do}</section>
+<!-- view_do: what a tile sends with say.js, for a signed-in reader (a tile's `data-do`) -->
+<form class="v-do" method="post" action="/play/{path}" hidden><input type="hidden" name="do" value=""></form>
 <!-- playlink -->
 <p><a class="go" href="/play/{href}">Speak to it</a></p>
 <!-- comein: a reader nobody signed in: the way to speak here -->

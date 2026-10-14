@@ -547,6 +547,9 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-card" => match cardOp s.world request with
         | .ok (w, r) => return (some { s with world := w }, .ok r)
         | .error e => return (session, .error e)
+      | "world-derived" => match derivedOp s.world request with
+        | .ok (w, r) => return (some { s with world := w }, .ok r)
+        | .error e => return (session, .error e)
       | _ => return (session, .error s!"unknown world operation {op}")
 
 /-- Write what this process compiled and the disk cache lacks (`DiskCache`, when
