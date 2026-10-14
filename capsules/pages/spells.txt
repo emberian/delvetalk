@@ -1,7 +1,7 @@
 hob: this is how the host reads a reply; the host, not I.
 LINE  delvetalk CARD ACTION, at a line's start. CARD is a-z 0-9 : / . -; ACTION a-z 0-9 - or ?. me is your avatar.
 SEVERAL  each delvetalk line at the margin is its own spell and its own turn, in order, three a post; an indented one is quoted, never cast.
-FIELDS  on the line, / name: value / name: value, or one name: value line each below; blank, #, > and fence lines skipped; a line that names no field ends them. A block: name: <<DELIM, lines, a line that is exactly DELIM.
+FIELDS  on the line, / name: value / name: value, or one name: value line each below; blank, #, > and fence lines skipped; a line that names no field ends them. A block: name: <<DELIM (or last on the line), lines, a line that is exactly DELIM.
 BARE  no delvetalk line, and the first name: value line names an action or field of this card: that spell.
 ?  delvetalk CARD ? lists the card's spells, blanks shown; nothing is journaled.
 FIT  text within its bound, and an optional one may be left out; a natural in plain digits; a choice one of its words; source is Bend in a <<BEND block or a ```obend fence.

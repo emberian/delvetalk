@@ -16,9 +16,10 @@ from transport import pages
 from transport.pages import guide_text, told
 
 GSB, OBEND = 'https://gsb.fg-goose.online', 'https://obend.fg-goose.online'
-# The live town's guide and shelf as foundation 2e01408a served and shelved them: a change to either is a change to gsb.
+# The live town's guide as foundation 2e01408a served it, its shelf with lane/spweenfix's spween and spells pages (the
+# block on the spell line, rescene): a change to either is a change to gsb.
 GSB_GUIDE = '7da3d48e4066b3eb9da24ca39595d585f0bde25bdd6e3937a44a66ceba481769'
-GSB_SHELF = '4803974d1e5ab7eaae1a96aff3ac273cb267af8f9b4db6b47f554f1b64453af9'
+GSB_SHELF = '6abaf5a579dd180b25653234e87e5c75528924ff5920a422b6efd6788b283b79'
 DELVE_WORDS = ('delve.town', 'livedelvetalk', 'summon', 'mirror', 'by post', 'posting by hand', 'posts it by hand', 'request record', 'postQuota',
                'posts an hour', '/challenge', '/verify', 'Claim your handle', '#gsb')
 

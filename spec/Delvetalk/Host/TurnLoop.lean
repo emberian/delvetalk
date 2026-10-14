@@ -1383,6 +1383,18 @@ def firstFence (text : String) : Option String := Id.run do
   let some stop := body.findIdx? (fun l => (l.dropWhile (· == ' ')).startsWith "```") | return none
   return some ("\n".intercalate (body.take stop))
 
+/-- The first code fence of a reply tagged exactly `tag` (```spween): the lines after it up to a line that starts with
+    ```; none when there is none or it is never closed. -/
+def taggedFence (tag : String) (text : String) : Option String := Id.run do
+  let lines := text.splitOn "\n"
+  let some start := lines.findIdx? (fun l => l.trimAscii.toString == "```" ++ tag) | return none
+  let body := lines.drop (start + 1)
+  let some stop := body.findIdx? (fun l => (l.dropWhile (· == ' ')).startsWith "```") | return none
+  return some ("\n".intercalate (body.take stop))
+
+/-- The fence tags the spell grammar reads as its own (a spell fenced whole, a plan, Bend): never a field's block. -/
+def fenceWords : List String := ["text", "delvetalk", "plan", "obend"]
+
 /-- A spell's fields with a reply's ```obend block as the value of the form's first `source` field it
     lacks (`Form.Kind.source`): a block and a fenced reply are one value, judged by one bound. -/
 def withFence (w : World) (o : Object) (action : String) (argument : Data) (fields : List Spell.Binding) : List Spell.Binding :=
@@ -1393,6 +1405,18 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   match sources.find? (fun n => !fields.any (·.name == n)), firstFence text with
   | some name, some code => fields ++ [{ name, value := code }]
   | _, _ => fields
+
+/-- A spell's fields, as parsed, with a block fenced with the name of a form field it does not name as that field's
+    value (```spween under `delvetalk kind/room make / name: jar`), before the values without a name are bound, so
+    words around the fence never take the field the fence names. -/
+def withTagged (form : Spell.Form) (argument : Data) (fields : List Spell.Binding) : List Spell.Binding :=
+  let text := match argument with
+    | .record fs => ((fs.lookup "text").bind labelOf).getD ""
+    | _ => ""
+  if !text.contains '`' then fields else
+  fields ++ form.fields.filterMap fun f =>
+    if fenceWords.contains f.name || fields.any (Spell.fold ·.name == Spell.fold f.name) then none
+    else (taggedFence f.name text).map ({ name := f.name, value := · })
 
 /-- `delvetalk <card> rules` (docs/FOUNDATION.md §10): every rule the card carries, by name, owner,
     reading, condition and spell, and when it last fired (the entry and the receipt of the turn it
@@ -1773,7 +1797,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
         (if target.offers actMethod && verbWord action && kindAdmits w target principal 4 id "grow"
           then s!", and {action} grows on it: delvetalk {shown} grow / name: {action} / reading: <what it does>" else "") ++ ":")
         (let (fs, ls) := usage (); spellUsage shown fs ls)
-  let fields := withFence w target action argument (Spell.bind form fields)
+  let fields := withFence w target action argument (Spell.bind form (withTagged form argument fields))
   match Spell.fit (.spell id action fields) form with
   | .proposal _ _ entries => match grownAct target action (spellArgument entries) with
     -- A grown verb runs the card's `act` with the verb (docs/FOUNDATION.md §10).
@@ -3228,7 +3252,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
 
 /-- `publishPage {page}` asked of a card whose package declares no `publishPage` (WORLD-REVIEW
     finding 16): the host publishes the card's default page as `Card.defaultPage` wrote it, the card as
-    a stranger sees it and how to reply (the host's usage of its forms and lenses), under `page`, else
+    a stranger sees it and how to reply (the host's usage of the forms offered a stranger, and its lenses), under `page`, else
     the object's id. The result is the post id, as
     `Card.publishPage`'s. The page is public, so a card whose read policy names principals has none:
     refused `noMethod` (codex host 2). -/
@@ -3245,7 +3269,7 @@ def defaultPublishPage (id : String) (argument : Data) : M Data := do
   let card ← match ← renderCard id o "" "" s.intent with
     | .ok doc => liftEval (Delvetalk.Document.render doc)
     | .error clause => evaluation s!"publishPage: the card does not render ({clause})"
-  let usage := spellUsage id (spellForms s.world id o) (declaredLenses s.world o)
+  let usage := spellUsage id (usageForms s.world id o "" (spellForms s.world id o)) (declaredLenses s.world o)
   let body := s!"## Card\n\n{card}\n## How to reply\n\n{usage}"
   if title.utf8ByteSize > Limits.maxTitleBytes || title.any (· == '\n') then evaluation "publishPage: the title is not one line of at most 256 bytes"
   if body.utf8ByteSize > Delvetalk.Document.maxOutputBytes then evaluation "publishPage: the page exceeds its capacity"

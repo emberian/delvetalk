@@ -2,16 +2,16 @@ hob: a scene is a room's own story, walked by choosing.
 ---  optional: id, title, cooldown, requires (min max flags not has)
 === start  a passage; the first is where you begin; prose alone is one
 === key { cups >= 1 }  a passage's guard rides every choice into it
-* [Label] -> next  a choice; with no -> it ends the visit
-* [Label] { gold >= 2, keeps.porch/goblet, "bell/1" wants rain }  variables, what you keep, a law condition
+* [Label] -> next  a choice; no -> ends the visit
+* [Label] { gold >= 2, keeps.porch/goblet, "bell/1" wants rain }  variables, things kept, law
   The tap runs warm.  its text, shown on taking it
   ~ gold += 1  the room's, for everyone: = += -=
   ~ my.gold += 1  yours alone
   ~ cast delvetalk bell/1 ring  a spell, as the owner
-  -> a weight: 3  two or more -> draw one by weight (10 unwritten)
+  -> a weight: 3  two or more draw one by weight (10 unwritten)
   -> b
-{gold} {my.gold}  in text: a value, read when shown
-{ gold >= 2: rich | poor }  text by a guard on the variables
+{gold} {my.gold}  in text: a value, read as shown
+{ gold >= 2: rich | poor }  text by a guard
 {~ rain | snow weight: 3 }  drawn by your turn, the same each reading
 Choices are sticky; once is a guard: { !rang } with ~ rang = true.
 A whole one:
@@ -20,9 +20,8 @@ delvetalk kind/room make / name: the well / spween: <<END
 A well hums{coins >= 1: over {coins} coins}.
 * [Drop a coin]
   ~ coins += 1
-  The water answers {~ low | lower}.
   -> well
 * [Walk on]
 END
-A ```spween block posted to a room makes one under it.
+Or a ```spween block under the line. Your room's, replaced: delvetalk room/1 rescene, the block under it; to another's, it makes yours under it.
 Next: delvetalk library read / page: laws
