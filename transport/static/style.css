@@ -355,6 +355,7 @@ svg.town-graph g.count circle { stroke: var(--paper); stroke-width: 1.5; }
 svg.town-graph g.count.who circle { fill: var(--sage); } svg.town-graph g.count.what circle { fill: var(--silver); }
 svg.town-graph g.count text { fill: var(--paper); font: 700 9.5px var(--sans); text-anchor: middle; }
 section.rooms { display: grid; gap: .5rem; }
+section.rooms > *, details.room .rbody > * { min-width: 0; }
 details.room { border: 1px solid var(--rule); border-radius: 10px; background: var(--leaf); padding: 0 .9rem; scroll-margin-top: 1rem; transition: box-shadow .4s; }
 details.room > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; padding: .6rem 0; width: auto; color: var(--ink); font-size: 1rem; }
 details.room > summary::marker { color: var(--muted); }

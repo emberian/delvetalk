@@ -523,7 +523,7 @@
    "method": "GET",
    "href": "/static/{file}",
    "auth": "none",
-   "does": "style.css, the one stylesheet; atlas.js, which unfolds a room in place, keeps /town and an inspector live and casts a spell or sends the workshop's spell in place; say.js, which fills the reply box with a chosen suggestion and rings what a bell or a place rings (the page works without it)"
+   "does": "style.css, the one stylesheet; say.js, which unfolds a room of /town in place, keeps /town and an inspector live, casts a spell or sends the workshop's spell in place, fills the reply box with a chosen suggestion and rings what a bell or a place rings (the page works without it)"
   }
  ],
  "errors": {

@@ -14,7 +14,6 @@ from transport import pages
 from transport.pages import T as PAGES, by, page, rows, sections, slip, state_of
 
 A = pages.Shaped(sections('atlas.html'))
-HEAD = '<link rel="stylesheet" href="/static/style.css"><script src="/static/say.js" defer></script><script src="/static/atlas.js" defer></script>'
 
 
 def href(kind, obj):
@@ -191,7 +190,7 @@ LINES = 4  # a room's newest lines in its panel
 def panel(obj, view, ways, signed_in, town='', unfold=False):
     """A room unfolded in place: what it is called and what it is, who is here and what lies here, its newest lines,
     its doors out and the ways in (each a link to that room's panel), and the ways to go there, read it, inspect it.
-    The scene, the card and its verbs come from its own pages when it is opened (atlas.js); without a script the
+    The scene, the card and its verbs come from its own pages when it is opened (say.js); without a script the
     links are the way."""
     i = info_of(view, town)
     s = i['state']
@@ -231,7 +230,7 @@ def town(who, nodes, ways, views, *, alone=(), height=None, town_principal='', u
         graph=graph(nodes, ways, info) if nodes else '', panels=panels,
         alone=A['town_alone'].format(panels=lonely) if lonely else '',
         map=A['town_map'].format(text=e(map_text)) if map_text else '')
-    return page('the town', who, body, head=HEAD, layout='atlas')
+    return page('the town', who, body, layout='atlas')
 
 
 # ---- the inspector
@@ -354,7 +353,7 @@ def workshop(obj, edit, signed_in):
     """The workshop, here: the spell that checks this thing's Bend over what it lays on, its source in the block, to edit
     and send; with a script, the same block as a fork of its kind or a layer over this thing. It goes to the workshop's
     own card (`/play/workshop`), the one write path the town has for code; the reply, with each problem's line, comes
-    back beside it (atlas.js), or on the workshop's page without one. `edit` {text, over, kind}: the Bend a reader would
+    back beside it (say.js), or on the workshop's page without one. `edit` {text, over, kind}: the Bend a reader would
     amend (a kind's body, else what the thing runs), what it is checked over, and the kind a fork is after."""
     if not edit or not edit.get('text'):
         return ''
@@ -408,7 +407,7 @@ def inspector(obj, who, view, inspected, *, stranger=None, rules_=(), wants_=(),
         laws=laws(inspected.get('laws') or [], has), rules=rules(rules_, wants_, town),
         fields=A['fields'].format(items=fields) if fields else '',
         source=''.join(blocks) or A['source_none'], workshop=workshop(obj, edit, bool(who)),
-        receipts=receipts), head=HEAD, layout='atlas inspect')
+        receipts=receipts), layout='atlas inspect')
 
 
 # ---- the library: its pages, its modules; the kinds
@@ -421,7 +420,7 @@ def library(who, pages_):
     items = ''.join(A['library_item'].format(href=e('/library/' + quote(p['name'])), name=e(p['name']), title=e(p.get('title') or ''),
                                              kind=e(str((p.get('kind') or {}).get('tag', '') if isinstance(p.get('kind'), dict) else p.get('kind') or '')))
                     for p in pages_)
-    return page('the library', who, A['library'].format(items=items), head=HEAD, layout='atlas')
+    return page('the library', who, A['library'].format(items=items), layout='atlas')
 
 
 def library_page(who, p, names):
@@ -429,7 +428,7 @@ def library_page(who, p, names):
     text = e(p.get('body') or '')
     text = SPELL_PAGE.sub(lambda m: m[1] + (f'<a href="/library/{quote(m[2])}">{m[2]}</a>' if m[2] in names else m[2]), text)
     return page(p['name'], who, A['library_page'].format(name=e(p['name']), title=e(p.get('title') or ''), text=text,
-                                                        spell=e(f"delvetalk library read / page: {p['name']}")), head=HEAD, layout='atlas')
+                                                        spell=e(f"delvetalk library read / page: {p['name']}")), layout='atlas')
 
 
 def modules(who, mods):
@@ -437,7 +436,7 @@ def modules(who, mods):
     items = ''.join(A['module_item'].format(href=e('/lib/' + quote(m['name'])), name=e(m['name']), lines=m['text'].count('\n') + 1,
                                             height=e(str(m.get('height', ''))), first=e(next((l.lstrip('# ').strip() for l in m['text'].split('\n') if l.startswith('#')), '')[:140]))
                     for m in sorted(mods, key=lambda m: m['name'].lower()))
-    return page('the modules', who, A['modules'].format(items=items), head=HEAD, layout='atlas')
+    return page('the modules', who, A['modules'].format(items=items), layout='atlas')
 
 
 def module_page(who, m, names, versions=()):
@@ -446,7 +445,7 @@ def module_page(who, m, names, versions=()):
                     for v in versions if v['cid'] != m['cid'])
     block = source_block(f"{m['name']}.obend", m['text'], 'src', lambda n: f'/lib/{quote(n)}' if n in names else None)
     return page(m['name'], who, A['module_page'].format(name=e(m['name']), height=e(str(m.get('height', ''))), cid=e(m['cid']), source=block,
-                                                       versions=A['versions'].format(items=other) if other else ''), head=HEAD, layout='atlas')
+                                                       versions=A['versions'].format(items=other) if other else ''), layout='atlas')
 
 
 def kinds_page(who, kinds_):
@@ -456,4 +455,4 @@ def kinds_page(who, kinds_):
                                           about=e((k.get('about') or '').split(': delvetalk', 1)[0][:220]), body=A['kind_body'] if k.get('body') else '',
                                           make=e(f"/play/{k['id']}?say=" + quote(f"delvetalk {k['id']} make", safe='')))
                     for k in kinds_)
-    return page('the kinds', who, A['kinds'].format(items=items, n=len(kinds_)), head=HEAD, layout='atlas')
+    return page('the kinds', who, A['kinds'].format(items=items, n=len(kinds_)), layout='atlas')

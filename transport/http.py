@@ -91,7 +91,7 @@ def resolve(method, path):
     get = {('',): 'home', ('.well-known', 'did.json'): 'did', ('style', ''): 'specimen', ('style',): 'specimen'}.get(tuple(parts))
     if method == 'GET' and get:
         return get, {}
-    if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'say.js', 'atlas.js'):
+    if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'say.js'):
         return 'static', {'file': parts[1]}
     if parts[:1] == ['play'] and method in ('GET', 'POST'):
         return ('play' if method == 'GET' else 'reply'), {'object': '/'.join(parts[1:])}
