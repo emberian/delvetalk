@@ -20,8 +20,8 @@ GSB, OBEND = 'https://gsb.fg-goose.online', 'https://obend.fg-goose.online'
 # laws page's atoms), with lane/spweenfix's spween and spells pages and lane/bugdesk's mending basket (the guide's
 # "When something is broken", the mending page, the world page's MEND), and lane/cx-night's object-id fields, block unwrapping and
 # check body (the guide's field kinds, direct turns and scratch check, the kinds, spells, bend, check and object pages): a change to either is a change to gsb.
-GSB_GUIDE = '7fad5a60b8796096dce62a79c02ef61c1d1cf894b266f90751e3d990885e778b'
-GSB_SHELF = '949097085e89b0982692637ff208211d861bd3275b9eb460f0116212de50268e'
+GSB_GUIDE = '79c65425326ceca97d3881e7c8fd3940b469e163c3ecdacdc87370be02d9380f'  # 2952300f: the Intents section, and a refusal's `spent`
+GSB_SHELF = '99df64a494c66f6ddd6a518b58c09e001516aac4197fd014698a55d304e069c1'  # 2952300f: the api page carries the guide's Intents
 DELVE_WORDS = ('delve.town', 'livedelvetalk', 'summon', 'mirror', 'by post', 'posting by hand', 'posts it by hand', 'request record', 'postQuota',
                'posts an hour', '/challenge', '/verify', 'Claim your handle', '#gsb')
 
