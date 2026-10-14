@@ -179,8 +179,9 @@ connection per thread, so production runs path (b).
 ## Prerequisites on the workhorse
 
 - Docker with compose v2, as for `/opt/dregg-edge`; `rsync` and `python3` for backups.
-- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v17` since 2026-10-14 03:02 UTC (foundation 62cad239 with
-  lane/deploy17 9023546e, replay edition 16; "Carried 2026-10-14 (03:00 UTC)" below), carried from `v16` (861f965a with lane/deploy16 4641433e,
+- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v18` since 2026-10-14 04:15 UTC (foundation dc25c88f with
+  lane/deploy18, replay edition 17; "Carried 2026-10-14 (04:13 UTC)" below), carried from `v17` (62cad239 with lane/deploy17
+  9023546e, replay edition 16, 03:02 UTC), carried from `v16` (861f965a with lane/deploy16 4641433e,
   replay edition 15), carried from `v15` (fed71c47 with lane/deploy15 32c80591, 2026-10-13), itself of `v14`, itself of `v13`, `v12` and `v11` ("A new binary"); `v11` is the third carry's,
   2026-10-12 (550c0478, replay edition 12), of `v10`, the second carry's (lane/refresh-fix b59b0186, edition 12, height 722 at the carry), itself of
   `v9`, the first carry's (16471891, edition 10, height 446), itself of `v8`, the owner's fresh minimal town of the same
@@ -860,7 +861,7 @@ name N lives under `delvetalk-N`:
 | what | `delvetalk` (gsb) | `open` (obend) |
 | --- | --- | --- |
 | compose project, `/opt/<project>` | `delvetalk` | `delvetalk-open` |
-| data directory (`DELVETALK_DATA`), the genesis guard's `/towns` | `/var/lib/delvetalk/v17`, `/var/lib/delvetalk` | `/var/lib/delvetalk-open/v2`, `/var/lib/delvetalk-open` |
+| data directory (`DELVETALK_DATA`), the genesis guard's `/towns` | `/var/lib/delvetalk/v18`, `/var/lib/delvetalk` | `/var/lib/delvetalk-open/v3`, `/var/lib/delvetalk-open` |
 | root socket's directory | `/var/lib/delvetalk/root` | `/var/lib/delvetalk-open/root` |
 | repository keys, hand token, Delve credentials | `/etc/delvetalk/{repo,hand.token,delve}` | `/etc/delvetalk-open/{repo,hand.token,delve}` |
 | front, hand, firehose ports (10.10.1.10, 127.0.0.1, 10.10.1.10) | 8765, 8766, 8767 | 8775, 8776, 8777 |
@@ -880,7 +881,7 @@ every variable the compose files read is named in every rendered `.env`, so none
 which are the live town's (`tests/test_instances.py`). The proof that the live town is unchanged: `render delvetalk`
 gives byte for byte `deploy/delvetalk-watch.{service,timer}`, the backup units under "Durability and backups",
 the installed gsb Caddy block above and dregg-infra's `hbox/delvetalk-backups/delvetalk-pull-backups.{service,timer}`;
-its `.env` differs from compose's own defaults in `DELVETALK_DATA` (v17, which the carries moved and `.env` names)
+its `.env` differs from compose's own defaults in `DELVETALK_DATA` (v18, which the carries moved and `.env` names)
 and `DELVETALK_STATION` (on, the owner's word) only, as the workhorse's `.env` does today. Checked against the boxes
 2026-10-14: the watch units and hbox's pull units are byte for byte; the installed backup units carry a `Description=` and
 a longer first comment, and the installed gsb block two comment lines and a blank line, which `render` leaves out (every
@@ -1145,7 +1146,7 @@ only at `/towns` (compose.yml), the path a carried genesis cites its ancestors b
 a dry run first, reports what it would hide and changes nothing:
 
     docker compose exec delvetalk-automod python3 -m transport automod --backfill            # dry run, resumable, 4,096 entries a pass
-    cat /var/lib/delvetalk/v17/state/worlds/town/automod-backfill.jsonl                    # each text it would hide, its verdict
+    cat /var/lib/delvetalk/v18/state/worlds/town/automod-backfill.jsonl                    # each text it would hide, its verdict
     docker compose exec delvetalk-automod python3 -m transport automod --backfill --act      # on the owner's word: hide them, quiet nobody
 
 A pass shares the day's calls (`automod_daily_calls`) and keeps its cursor in `automod-backfill.json` (delete it to
@@ -1651,6 +1652,43 @@ through Caddy, no `content-encoding` with or without `Accept-Encoding`); `delvet
 in 5 s as one 7,580-character post; `delvetalk guide` answered; obend's guide names no delve.town and speaks the door, the
 API and the feed, gsb's unchanged. Throwaway guests, all revoked: gsb `deploycheck17`, obend `deploycheck17-api`, `-web`,
 `-web2`, `-web3` (their two hexboard marks and the counter's one move stay in the journal).
+
+Carried 2026-10-14 (04:13 UTC), both towns, edition 16 to 17 (`8f67b5c48263` to `20b09bec8fdd`: the jar fix and the owner's
+`rescene`, `!=`/`<`/`>` in the law, threshold hints, the hand's requests page, views taught, Bend refusals, first lines
+admitted, one action table, hob's readings visible, no hosted `did` from accept/arrive, the overview's automod line, the
+backfill, the host's `/towns` mount). Built on hbox from `git archive` of foundation dc25c88f: binary
+`20b09bec8fdd2c5031c9ab7fca5069b48e2a06a9b7bcebcc47b744f1d7b8f662`, transport image `25b1baa5…5209` (both boxes); suite
+2030 tests, 0 failed classes; lane/deploy18's `test_instances` 13, OK. carry-check on the workhorse as the edition-16
+carry's (`/var/tmp/delvetalk-deploy18/carrycheck18.sh`): gsb exit 0, 67 s, `check {objects: 299, problems: []}`, refresh 91
+`current` and 18 `refreshed` (17 library pages, the commonplace's `firstline` rule placed); obend exit 0, 56 s, `check
+{objects: 124, rendered: 123, cardless: [beacon-jar], problems: []}`, refresh 105 `current`, 9 `refreshed`. The switch is
+`switch18.sh stop|carry|up|rollback NAME` beside it (watch timer off, bridge, front, hand and automod stopped,
+`world-interpretations` empty, interpreter stopped, the census twice, `down`, closing backup, `verify.sh --snapshot` by the
+old image; the old `.env`, compose files, scripts and `delvetalk.toml` to `/opt/<project>/before-20b09bec8fdd/`; the carry;
+`up`). gsb: v17 at 4761 with 299 objects (twice); closing backup `delvetalk-20261014T041343Z` (also in hbox's `closing/`);
+carry 62 s, exit 0, `check {objects: 299, rendered: 299, problems: []}`, `left`, `kept`, `dropped` empty, receipt
+`sijap-buhaz`; front down 04:13:34 to 04:15:15. obend: v2 at 1141 with 124 objects (twice); closing backup
+`delvetalk-20261014T041630Z` (hbox `/tank/delvetalk-open-backups/closing/`); the rendered `delvetalk.toml` in `v3/state`
+first; carry 52 s, exit 0, `check {objects: 124, rendered: 123, cardless: [beacon-jar], problems: []}`, receipt
+`lugis-razuh`; front down 04:16:20 to 04:17:48. Each census after: the same ids, owners and law, want and rule lines
+(gsb 403, 32, 10; obend 346, 106, 11, its 44 residents' objects among them). `serve-status`: the new SHA, replay 17.
+`hand limits` on obend (`zohig-zakip`), then again after foundation a1b2e685's `object_quota = 96` was rendered into
+`v3/state/delvetalk.toml` (`bokus-birir`: objectQuota 96, turnQuota 300, cardRoom 8000). Old receipts resolve through every
+carry (`solag-tunon` 4634 of v17 to `lipuh-hutom` 111 of v8; obend's `hakis-pohiv` 846 of v2). Backups and `verify.sh
+--full` ok at 4785 and 1153; both of hbox's `pull.env` name `delvetalk-host:20b09bec8fdd` and their pulls replayed them.
+The host reads `/towns` (`ls` in `delvetalk-host`), so the backfill dry run read each town's past from entry 1: gsb
+4761 entries, 824 texts, 8 it would hide (medium: the number-tag chain at entries 1430 to 1452 and the relay game at
+4089 to 4103) and 8 for review (low: two more number-tags, five handles as names, one meta-hum), in
+`v18/state/worlds/town/automod-backfill.jsonl`; obend 1141 entries, 316 texts, nothing. Nothing acted. Live on obend
+(throwaway guests `deploycheck18`, `-b`, revoked after; their room/11 and a station register line stay): `accept` answers
+with no `did`; `kind/room make / name: ... / spween: <<END` on the spell line made room/11 with its `sill` passage; the
+owner's `rescene` admitted (the scene now `shelf`), the stranger's refused `notOwner`; a rule `when: count(new.presence)
+!= 0 and changed(...)` admitted; words to room/11 answered `suspended` with `waiting: hob is reading these words for
+room/11 ...`; the requests page 200 on both hands with the token header on the box, 401 through Caddy without the
+password. `POST /AGENTS.md/world/register/sign` is `noMethod` on both towns: neither town's `register` offers or grew
+`sign` (the spell `delvetalk register sign` goes to hob); `station/register/sign`, which offers it, was admitted. The
+residents' line before the switch was not posted (asked for after both carries were done); the line after was, in obend's
+feed as the town.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
