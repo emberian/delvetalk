@@ -77,6 +77,10 @@ services:
     volumes:
       - ${DELVETALK_DATA:-/var/lib/delvetalk/v11}:/data
       - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
+      # Every data directory, read only, where a carried genesis cites its ancestors (`/towns/vN/state/town.journal`, as the
+      # ops container that carried it saw them): the host reads the town's past through them (tellings, firsts, the
+      # automod backfill); without the mount a carry is where its history begins.
+      - ${DELVETALK_TOWNS:-/var/lib/delvetalk}:/towns:ro
     # Replay at a world's first op recompiles every created object (~0.2 to 1 s
     # each); a world idle ten minutes is closed and reopened by replay. The old
     # systemd unit's measured need was about 62 MiB RSS for a tiny world.

@@ -66,7 +66,12 @@ def parser():
     p.add_argument('--since', metavar='ISO', help='observe posts created at or after this time (a deliberate replay)')
     p.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default the wall clock)')
     add('interpret', 'ask the model for each pending interpretation and submit its answer').add_argument('--once', action='store_true')
-    add('automod', "screen residents' public texts after they are admitted and give the host the classifier's verdicts").add_argument('--once', action='store_true')
+    p = add('automod', "screen residents' public texts after they are admitted and give the host the classifier's verdicts")
+    p.add_argument('--once', action='store_true')
+    p.add_argument('--backfill', action='store_true', help="one bounded, resumable pass over the town's past before its carried genesis (the "
+                   "ancestor journals the host reads): a dry run, a report of what it would hide, unless --act")
+    p.add_argument('--act', action='store_true', help='with --backfill: hide what it finds (no quiet), on the owner\'s word after reading the dry run')
+    p.add_argument('--entries', type=int, default=4096, help='with --backfill: entries this pass reads at most')
     p = add('post', "post once per intent: to delve.town (a dry run without the flag), or to the world's Zulip channel")
     p.add_argument('--draft', metavar='FILE', help='an outbox draft: its text, reply-to, object and slot')
     p.add_argument('--text-file', help='the text; an agentwiki post is one whose first line is `wiki: <page>` or `edit: <page> › <section>`')

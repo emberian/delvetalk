@@ -293,12 +293,97 @@ def status(st):
     return s
 
 
+# ---- the past: a carried town's history before its carried genesis (the edition-16 deploy: never screened)
+
+def chunks(items, n, size=BATCH_BYTES):
+    """`items` in batches of at most `n` texts and `size` clipped bytes, in order."""
+    out, now, used = [], [], 0
+    for i in items:
+        k = len(clip(i['text']).encode())
+        if now and (len(now) >= n or used + k > size):
+            out.append(now)
+            now, used = [], 0
+        now.append(i)
+        used += k
+    return out + ([now] if now else [])
+
+
+def backfill(st, host, ask=None, act=False, entries=4096, clock=time.time):
+    """One bounded, resumable pass over the town's past: the entries the host reads before its own journal (`start` to
+    `base` of `world-screen`: the ancestor journals the carried genesis cites, when the host was given them), each
+    text asked of the classifier as the worker asks it, its share of the day's calls, and given to the host with
+    `dryRun` unless `act` (the owner's word, after reading the dry run): then what it hides is hidden, and nobody is
+    quieted for a past text. Every would-be (or done) act is a line of <state>/automod-backfill.jsonl; the cursor is
+    <state>/automod-backfill.json, so a pass resumes where the last stopped. -> a summary."""
+    w = Worker(st, host, ask, clock)
+    path, report = st.home / 'automod-backfill.json', st.home / 'automod-backfill.jsonl'
+    saved = json.loads(path.read_text()) if path.exists() else {}
+    head = w.send({'op': 'world-screen', 'after': 0, 'limit': 0, 'dryRun': True})
+    if head.get('status') != 'screen':
+        return {'status': 'failed', 'message': head.get('message') or head}
+    start, base = head['start'], head['base']
+    cursor = max(saved.get('cursor', start - 1), start - 1)
+    summary = {'status': 'dryRun' if not act else 'acted', 'start': start, 'base': base, 'scanned': 0, 'texts': 0,
+               'hidden': 0, 'review': 0, 'unanswered': 0}
+    if start > base:
+        return {**summary, 'status': 'nothing', 'cursor': cursor,
+                'reading': 'the host reads no journal before its own: it was not given the ancestor journals its carried genesis cites'}
+    w.policy = head.get('policy') or ''
+    seen = set()  # a text twice in the past is asked about once (a dry run journals nothing, so the host repeats it)
+    line = lambda a, by: st.append(report, canonical({**a, 'by': by, 'would': not act, 'at': clock()}))  # noqa: E731
+    while cursor < base and summary['scanned'] < entries:
+        r = w.send({'op': 'world-screen', 'after': cursor, 'until': base, 'limit': 128, 'dryRun': not act, 'quietHours': 0})
+        if r.get('status') != 'screen':
+            return {**summary, 'status': 'failed', 'cursor': cursor, 'message': r.get('message') or r}
+        texts = {i['key']: i['text'] for i in r.get('items') or []}
+        fresh = [i for i in r.get('items') or [] if i['key'] not in seen]
+        for a in r.get('acted') or []:
+            if a['key'] in seen:
+                continue
+            seen.add(a['key'])
+            summary['hidden'] += 1
+            line({**a, 'text': a.get('text') or texts.get(a['key'], '')}, 'wordlist')
+        seen.update(i['key'] for i in fresh)
+        for items in chunks(fresh, st.config.automod_batch):
+            if not w.budget_left(clock()):
+                st.write(path, {'cursor': cursor, 'base': base})
+                return {**summary, 'status': 'budget', 'cursor': cursor}
+            result = w.call(items)
+            if result.get('status') not in ('replied', 'blocked'):
+                st.write(path, {'cursor': cursor, 'base': base})
+                return {**summary, 'status': 'failed', 'cursor': cursor, 'message': f"{result.get('reason')}: {result.get('detail')}"}
+            given = items if result.get('status') == 'replied' or len(items) == 1 else []
+            for one in ([[i] for i in items] if not given else [given]):  # a blocked batch is read one text at a time
+                reply = result if given else w.call(one)
+                v = w.send({'op': 'world-screen-verdicts', 'items': [{k: i[k] for k in ('key', 'text', 'source', 'author', 'at')} for i in one],
+                            'reply': {k: x for k, x in reply.items() if k in ('status', 'raw', 'reason', 'detail')}, 'quietHours': 0,
+                            'model': reply.get('model') or st.config.automod_model, 'dryRun': not act})
+                summary['unanswered'] += len(v.get('unanswered') or [])
+                for a in v.get('acted') or []:
+                    summary['hidden' if a.get('state') == 'hidden' else 'review'] += 1
+                    line({**a, 'text': texts.get(a['key'], '')}, reply.get('model') or st.config.automod_model)
+            summary['texts'] += len(items)
+        summary['scanned'] += r['through'] - cursor
+        if r['through'] == cursor:
+            break
+        cursor = r['through']
+        st.write(path, {'cursor': cursor, 'base': base})
+    return {**summary, 'cursor': cursor, 'done': cursor >= base, 'report': str(report)}
+
+
 def command(st, a, out):
     """`automod`: a step every second (`--once`: one step and its status printed)."""
     if not st.config.automod:  # off: a process that does nothing, so its service stays healthy and says why
         out.write('automod: off in this config (automod = false)\n')
         out.flush()
         st.daemon('automod', lambda: None, every=30.0)
+        return 0
+    if getattr(a, 'backfill', False):
+        host = st.root_host()
+        try:
+            out.write(canonical(backfill(st, host, act=a.act, entries=a.entries)) + '\n')
+        finally:
+            host.close()
         return 0
     worker = Worker(st, st.root_host())
     try:

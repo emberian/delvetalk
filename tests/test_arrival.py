@@ -62,6 +62,8 @@ class Proof(unittest.TestCase):
         got = self.arrive('wren')
         self.assertEqual((got['status'], got['handle']), ('arrived', 'wren'))
         self.assertEqual(self.id.authenticate(got['credential'])['did'], got['principal'])
+        self.assertNotIn('did', got)  # hosted accounts off (the default): the guest principal alone, nothing hosted
+        self.assertNotIn('did', self.id.accept(self.id.invite('kite')['code']))
         [row] = [r for r in self.id.invitations() if r['name'] == 'wren']
         self.assertEqual((row['state'], row['note']), ('accepted', 'arrived'))  # the hand lists it, and revokes it, as any guest
         self.id.revoke_invitation('wren')

@@ -276,6 +276,11 @@ surroundings: whatever the edits carry, `Moderation.entryItems`), the name recor
 (the transport offers them, `feed:<uri>`). The opener's, the clock's and a thing's own (`@id`) are the town's, never
 screened. Object ids, principals and links are not words.
 
+**The past.** A carried town's history before its carried genesis is screened by a backfill (`transport automod
+--backfill`): the ancestor journals the genesis cites, read through the host (`world-screen {until, dryRun}`, which with
+`dryRun` journals nothing, and `world-screen-verdicts {dryRun}`), a dry run whose report the owner reads before `--act`
+hides anything; a past text quiets nobody. Bounded a pass, resumable by its cursor.
+
 **The worker** (`transport/automod.py`, its own service `delvetalk-automod` on the root socket: a moderation act is the
 opener's) asks `world-screen {after, external}` every second; the host answers the texts written since the cursor less
 any screened, and first runs its wordlist (`Screen.prefilter`: a dozen slurs and child-abuse terms, whole words, digit

@@ -190,7 +190,10 @@ def automod_of(h, n=8):
     elif s['stale']:
         state = f"stopped: no step since {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(s['at']))}"
     else:
-        state = {'ok': 'the classifier answers', 'idle': 'idle', 'down': f"the classifier is down ({s.get('lastError')}); texts wait, the wordlist still acts",
+        last = time.strftime('%H:%M UTC', time.gmtime(s['lastCall']['at'])) if (s.get('lastCall') or {}).get('at') else None
+        state = {'ok': 'working: the classifier answered its last batch' + (f' at {last}' if last else ''),
+                 'idle': ('idle and healthy: nothing has needed the classifier since the worker started' if not s.get('pending')
+                          else f"starting: {s['pending']} waiting for the first batch"), 'down': f"the classifier is down ({s.get('lastError')}); texts wait, the wordlist still acts",
                  'budget': "the day's calls are spent; texts wait, the wordlist still acts", 'no key': 'no key: only the wordlist acts'}.get(s['glm'], s['glm'])
     return {'state': state, 'status': s, 'counts': screened.get('counts') or {}, 'newest': screened.get('items') or []}
 

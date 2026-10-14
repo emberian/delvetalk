@@ -408,7 +408,8 @@ class Identity:
                         or self.db.execute('SELECT 1 FROM challenges WHERE did=? OR (handle=? AND state=?)', (principal, name, 'verified')).fetchone():
                     raise IdentityError('taken')
                 from transport.hosted import Accounts
-                did = hosted_identity(principal, urllib.parse.urlsplit(self.origin).hostname)  # as `accept` answers it
+                # A hosted did:web only where the town hosts accounts (`hosted_accounts`); else the guest principal alone.
+                did = hosted_identity(principal, urllib.parse.urlsplit(self.origin).hostname) if self.st.config.hosted_accounts else None
                 if self.st.config.hosted_accounts:
                     Accounts(self.st).account(principal, create=True)
                 self.db.execute('INSERT INTO invitations(name,principal,code,note,created,expires,state,accepted,address,proof) VALUES(?,?,?,?,?,?,?,?,?,?)',
@@ -425,7 +426,7 @@ class Identity:
                 raise
             else:
                 self.db.execute('COMMIT')
-        return {'status': 'held' if held else 'arrived', 'principal': principal, 'did': did, 'handle': name, 'credential': credential}
+        return {'status': 'held' if held else 'arrived', 'principal': principal, **({'did': did} if did else {}), 'handle': name, 'credential': credential}
 
     # ---- invitations: a code accepted once, naming its guest or leaving the name for the guest to register
 
@@ -489,7 +490,7 @@ class Identity:
                 if not GUEST_NAME.fullmatch(chosen):
                     raise IdentityError('invalid_guest_name')
                 from transport.hosted import Accounts
-                did = hosted_identity(principal, urllib.parse.urlsplit(self.origin).hostname)
+                did = hosted_identity(principal, urllib.parse.urlsplit(self.origin).hostname) if self.st.config.hosted_accounts else None
                 if self.st.config.hosted_accounts:
                     Accounts(self.st).account(principal, create=True)
                 self.db.execute("UPDATE invitations SET state='accepted',accepted=?,name=?,principal=? WHERE id=?", (now, chosen, principal, row['id']))
@@ -503,7 +504,7 @@ class Identity:
                 raise
             else:
                 self.db.execute('COMMIT')
-        return {'status': 'accepted', 'principal': principal, 'did': did, 'handle': chosen, 'credential': credential}
+        return {'status': 'accepted', 'principal': principal, **({'did': did} if did else {}), 'handle': chosen, 'credential': credential}
 
     def invitations(self):
         """Every invitation, newest first, with its state and the time its credential was last used; never a code. A code

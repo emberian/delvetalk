@@ -316,5 +316,75 @@ class Feed_(FrontCase):
         self.assertNotEqual(dark['uri'], foul['uri'])
 
 
+class Line(unittest.TestCase):
+    """The deploy of edition 16: the overview's line read "idle" where the docs promised "the classifier answers". It says
+    what is true: idle and healthy, starting, working (with its last call's time), down, spent."""
+
+    def test_the_overview_line_says_what_is_true(self):
+        import json as json_
+        import types
+        from transport import overview
+        from transport.config import Config
+        with tempfile.TemporaryDirectory() as d:
+            st = State(d, config=Config())
+            h = types.SimpleNamespace(st=st, owner='o', host=types.SimpleNamespace(send=lambda req: {}))
+            st.home.mkdir(parents=True, exist_ok=True)
+            def line(**note):
+                (st.home / 'automod-status.json').write_text(json_.dumps({'at': time.time(), 'pending': 0, **note}))
+                return overview.automod_of(h)['state']
+            self.assertEqual(line(glm='idle'), 'idle and healthy: nothing has needed the classifier since the worker started')
+            self.assertEqual(line(glm='idle', pending=3), 'starting: 3 waiting for the first batch')
+            self.assertTrue(line(glm='ok', lastCall={'at': 60, 'texts': 2}).startswith('working: the classifier answered its last batch at 00:01 UTC'))
+            self.assertIn('down', line(glm='down', lastError='transport: x'))
+
+
+class Past(unittest.TestCase):
+    """The deploy of edition 16: the worker screens what the host's own journal holds, so a carried town's past was never
+    screened. A backfill reads the ancestor journals the carried genesis cites through the host, a dry run first: its
+    report names what it would hide and nothing changes; with the owner's word it hides them, quieting nobody. Refuted
+    by a dry run that hides or journals anything, a past text missing from its report, an act that misses one, or a
+    pass that cannot resume."""
+
+    def test_a_carried_towns_past_is_reported_by_a_dry_run_then_hidden_on_the_owners_word(self):
+        import os
+        import subprocess
+        from tests.host import binary
+        from transport.host import HostProcess
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        town = Town(tmp.name, cleanup=self.addCleanup, furnished=False)
+        kim = 'did:plc:kimkimkimkimkimkimkimkimk'
+        town.send(op='world-arrive', principal=CLOCK, did=kim, handle='kim')
+        self.assertEqual(town.send(op='world-turn', principal=kim, object='porch', method='enter', identity='e', argument=record())['status'], 'admitted')
+        for n, line in enumerate((FOUL, DARK)):
+            self.assertEqual(town.send(op='world-turn', principal=kim, object='porch', method='say', identity=f's{n}', argument=record(line=label(line)))['status'], 'admitted')
+        self.assertEqual(town.send(op='world-snapshot')['status'], 'snapshot')
+        journal, opener = town.journal, town.opener
+        town.close()
+        out = os.path.join(tmp.name, 'carried.journal')
+        p = subprocess.run([binary(), 'carry', '--from', journal, '--out', out, '--reason', 'a newer host'], capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        host = HostProcess(binary(), out)
+        self.addCleanup(host.close)
+        st = State(os.path.join(tmp.name, 'worker'), config=Config(opener=opener, zai_key_file='/nonexistent'))
+        public = lambda: json.dumps(host.send({'op': 'world-view', 'principal': PUBLIC, 'object': 'porch'}))  # noqa: E731
+        glm = Classifier()
+        height = host.send({'op': 'world-status'})['height']
+        dry = automod.backfill(st, host, ask=glm, entries=8)  # bounded: a first pass stops early and resumes
+        self.assertEqual((dry['status'], dry['start']), ('dryRun', 1), dry)
+        while not dry.get('done'):
+            dry = automod.backfill(st, host, ask=glm, entries=8)
+            self.assertIn(dry['status'], ('dryRun',), dry)
+        lines = [json.loads(l) for l in (st.home / 'automod-backfill.jsonl').read_text().splitlines()]
+        self.assertEqual([(l['text'], l['state'], l['would']) for l in lines], [(FOUL, 'hidden', True)])
+        self.assertIn('FOUL-SLUR-MARKER', public())  # a dry run hides nothing
+        self.assertEqual(host.send({'op': 'world-status'})['height'], height)  # and journals nothing
+        (st.home / 'automod-backfill.json').unlink()
+        done = automod.backfill(st, host, ask=glm, act=True, entries=100000)
+        self.assertEqual((done['status'], done['hidden'], done['done']), ('acted', 1, True), done)
+        self.assertNotIn('FOUL-SLUR-MARKER', public())
+        self.assertNotIn(kim, json.dumps(host.send({'op': 'world-status'}).get('quiets') or {}))  # nobody quieted for the past
+
+
 if __name__ == '__main__':
     unittest.main()
