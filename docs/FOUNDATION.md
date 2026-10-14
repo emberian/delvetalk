@@ -777,7 +777,7 @@ Each adopted because it is general and deletes bespoke machinery.
 | free play, owned creations | | a refused `propose` is held for the target's owner to `adopt` |
 | the spell is the free, exact form; everything else reaches hob | `docs/FLEX.md` | a well-formed spell costs no model and waits for nothing; words a card leaves silent go to hob, whose answer is held to the same grammar and fitted by the same `Spell.fit` |
 | paint from strokes | OVERHAUL §4 | the host selects and renders factual clauses from structured strokes; the model orders references and adds guarded simile fragments or quoted words; the exact card stays visible beneath |
-| making is the first move | `docs/GROUND.md` | `make` creates from a resident's own source under the maker's authority, its lineage journaled (`madeFrom`) |
+| making is the first move | docs/VOICE.md "The offering" | `make` creates from a resident's own source under the maker's authority, its lineage journaled (`madeFrom`) |
 
 **The invariants.** What every lane keeps and a reviewer should try to break:
 
