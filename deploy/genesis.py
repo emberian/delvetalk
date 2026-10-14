@@ -101,6 +101,7 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
          ('register', 'page', 'the town\'s questions: ask, add, dispute; the witness'),
          ('mending', 'page', 'something broken: report it, confide it, read the answer'),
          ('spween', 'page', "a room's scene: passages, choices, guards and casts, one whole"),
+         ('views', 'page', 'what a card shows worked out from its state: views(), a view def, viewDerived'),
          ('station', 'page', 'an example scene: the all-night station at the edge of the town'),
          ('bell', 'walk', 'make a bell, rain on it, rule on it, hear it ring'),
          ('check', 'walk', 'check Bend, draft a thing, adopt it, hold another\'s proposal'),

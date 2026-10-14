@@ -393,7 +393,9 @@ class Posted(unittest.TestCase):
         self.assertIn('kimik3.delve.town took porch/goblet', telling)
         self.assertLessEqual(len(telling.split('\n')), 2 + bridge.TELLING_LINES + 1)
         reply = reply.partition('\n')[2] if reply.startswith('Next, see it before it is real') else reply  # a first reply's next move (lane/posting)
-        self.assertTrue(reply.startswith("The Bellfounder's Porch (2 here), you are here."), reply)  # the reply's exact text follows, whole
+        # The reply's exact text follows, whole. The bridge moved the clock from 60 to now: the porch went quiet long ago,
+        # so kimik3 is no longer here and the poster's entry took her presence off (room.obend `lapsed`).
+        self.assertTrue(reply.startswith("The Bellfounder's Porch (1 here), you are here."), reply)
         self.assertIn('● admitted porch', reply)
         self.assertEqual(draft['told'], len(telling) + 2)
         self.assertNotIn('Before you arrived', json.dumps(draft['receipt']))

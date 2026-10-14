@@ -77,6 +77,9 @@ A crossing: `count(new.lines) == 3 and changed(count(new.lines))`; a period: `% 
 Count only rains with `count(new.lines where verb == "rain")`. Comparisons: `== != < <= > >=`.
 `changed(TERM)` takes state, no request facts; missing readings are false. Wants have no old state and refuse it.
 `changed(new.F.COL) by TERM` judges changed rows (LAW §8).
+A mark is a fact a thing's own verb makes: a door's first knock marks it `open`, a bell's ring `rung`, an errand's
+payment `done`; a room makes none. Read one on the thing that has it (`"open" in "door/1".marks.name`), or make a
+lantern with `door:` that lights when its door opens.
 `verbs`, `rules` and `wants` read them back with who placed each and when it last fired; `ungrow`, `unrule` and `unwant`
 take one off. A kind's owner places `delvetalk kind/lamp rule / name: heard / for: things / when: request.method == "write" / then: delvetalk {new.maker} note / text: {request.object} heard`: every lamp acts as itself.
 `for: things` also targets `want`, `unrule` and `unwant`; omitted, it targets the kind itself. `rules`/`wants` show

@@ -73,9 +73,10 @@ def migrate(old: State12) -> State:
 def lineKey(line: Rows.Line) -> {author: String, n: Nat}:
   {author: line.author, n: line.n}
 # A grown verb used on the thing (the host runs `act` for a row of its verb table): a gesture, one
-# line tagged with the verb, and the thing tended; its card shows the newest three.
+# line tagged with the verb (its words, or the verb itself for one that takes none), and the thing tended; its card
+# shows the newest three.
 def act(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:
-  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: input.verb, text: input.text, at: context.height, n: state.next}, next: add 1n, tended: set context.clock}
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: input.verb, text: if Text.blank(input.text) then input.verb else input.text, at: context.height, n: state.next}, next: add 1n, tended: set context.clock}
   match heard(state, input.verb, context):
     case _: actTold(state, input, context)
 def actTold(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:

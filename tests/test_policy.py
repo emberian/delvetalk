@@ -233,7 +233,7 @@ class PolicyObject(Chain):
         self.policy()
         self.garden()
         typed = self.say("delvetalk garden plant\nseed: a fern", obj="garden")
-        self.assertIn("Almost. Still needs colour.", typed["offers"][0]["text"])
+        self.assertTrue(typed["offers"][0]["text"].startswith("Nothing done: plant still needs colour, so nothing was written."), typed)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_prose_at_the_commonplace_is_read_once_by_hob_against_the_doors_forms(self):

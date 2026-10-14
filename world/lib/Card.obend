@@ -261,17 +261,16 @@ def answer(input: Reply, context: Abi.Context, forms: Forms, card: Document.Docu
   answerAs(input, context, forms, card, fn(replied: Replied) -> Replied: replied)
 def answerAs<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
   let replied = unanswered(input, forms)
-  answered(as(replied), replied, card, context, forms)
-def answered<T>(result: T, replied: Replied, card: Document.Document, context: Abi.Context, forms: Forms) -> Activity<T>:
-  if quietly(replied) == false then offeredCard(result, card, whyNot(replied), context, forms) else result
-# The card, why, and the spells the host offers this reader (inspect's `offered`: the law and the
-# card's `actions` leave them), so a stranger's usage lists no keeper's or owner's spell.
+  answered(as(replied), replied, input.spell, card, context, forms)
+def answered<T>(result: T, replied: Replied, spell: Cast, card: Document.Document, context: Abi.Context, forms: Forms) -> Activity<T>:
+  if quietly(replied) == false then offeredCard(result, card, whyNot(replied, spell), context, forms) else result
+# The card, why, and the spells the host offers this reader (inspect's `methods`: the card's forms and its grown
+# verbs that the law and the card's `actions` leave them), so a stranger's usage lists no keeper's or owner's spell
+# and every reader's lists the verbs grown on it (yue's notes: grown verbs missing from the card's spells).
 def offeredCard<T>(result: T, card: Document.Document, why: String, context: Abi.Context, forms: Forms) -> Activity<T>:
   match world.inspect({object: Plans.self(context), source: false}):
-    case inspected(i): tell(result, answerCard(card, why, context, offeredOnly(forms, i.offered)))
+    case inspected(i): tell(result, answerCard(card, why, context, i.methods))
     case _: tell(result, answerCard(card, why, context, forms))
-def offeredOnly(forms: Forms, offered: Document.Names) -> Forms:
-  Lists.filter(forms, fn(f: Form.Form) -> Bool: Lists.any(offered, fn(n: String) -> Bool: n == f.action))
 # A spell in a reply that ran no method is one the host found missing fields (it refuses every
 # other misfit): the card names what it still needs. Prose is silent here, and the host hands it to hob.
 def unanswered(input: Reply, forms: Forms) -> Replied:
@@ -286,12 +285,15 @@ def quietly(replied: Replied) -> Bool:
   match replied:
     case silent(_): true
     case _: false
-# Why a card answered without acting, as its card shows it ("" for the plain usage).
-def whyNot(replied: Replied) -> String:
+# Why a card answered without acting, its first line ("" for the plain usage): a spell missing fields did
+# nothing, and says so before the card (obend #1325 #1326: the pianist and the cat, "admitted", never made).
+def whyNot(replied: Replied, spell: Cast) -> String:
   match replied:
-    case unclear(u): "\nAlmost. Still needs {Text.joined(u.needs)}.\n"
+    case unclear(u): "Nothing done: {spell.action} still needs {Text.joined(u.needs)}, so nothing was {doneWord(spell.action)}. Send the spell again with {if Lists.length(u.needs) == 1n then \"it\" else \"them\"} filled in.\n\n"
     case _: ""
-# The card a reply that ran no method gets: the object's card, then why, then its forms, all
+def doneWord(action: String) -> String:
+  if action == "make" || action == "place" then "made" else "written"
+# The card a reply that ran no method gets: why first, then the object's card, then its forms, all
 # within one budget: forms that would pass Card.limit(context) are the one line naming `?` instead (or
 # nothing, when even that would pass it), and a card named by another's DID prints no spells.
 def answerCard(card: Document.Document, why: String, context: Abi.Context, forms: Forms) -> Document.Document:
@@ -300,7 +302,7 @@ def answerCard(card: Document.Document, why: String, context: Abi.Context, forms
   let used = Document.size(card) + textLength(why)
   let short = Document.text("\nIts spells: delvetalk {name} ?\n")
   let tail = if used + Document.size(spells) <= limit(context) then spells else if printable(name) && used + Document.size(short) <= limit(context) then short else Document.text("")
-  Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why), tail: Document.Documents.cons({head: tail, tail: Document.Documents.nil()})})})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(why), tail: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: tail, tail: Document.Documents.nil()})})})})
 # Every refusal is answered here, by its one line. A spell cast on the card refuses its turn with
 # it (the host's `cardRefused`, its clause and reading parsed from the line): nothing written,
 # nothing offered. Called by another object (`context.caller`), the card says the line and gives

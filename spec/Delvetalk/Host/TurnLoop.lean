@@ -1894,7 +1894,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   -- A grown verb has no form of the card's own for its receive to answer by: what it lacks is refused here.
   | .unclear needs =>
     if (grownAct target action (spellArgument [])).isSome then
-      return .refuse id "unclear" s!"{shown} {action} still needs {", ".intercalate needs}; nothing was written." (blankedTemplate shown form fields)
+      return .refuse id "missingField" s!"{shown} {action} still needs {", ".intercalate needs}; nothing was written." (blankedTemplate shown form fields)
     return receiveHeard w id target argument fields (castData card action)
   | .refused clause reason => return .refuse id clause.name reason ((splitHint shown form fields).getD (blankedTemplate shown form fields))
 

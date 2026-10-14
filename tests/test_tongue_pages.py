@@ -87,7 +87,7 @@ class Tongues(unittest.TestCase):
 
     def test_every_page_fits_a_reply_and_none_in_any_language_is_polite(self):
         shelf = genesis.shelf()
-        self.assertLessEqual(len(shelf), 48)
+        self.assertLessEqual(len(shelf), 49)
         for name, _, _, body in shelf:
             with self.subTest(page=name):
                 self.assertLessEqual(len(body), LIMIT)
