@@ -16,6 +16,7 @@ apart from the Anthropic ledger (tokens only: a subscription has no per-token pr
 """
 import json
 import sqlite3
+import sys
 import time
 
 from transport import model
@@ -70,6 +71,11 @@ def ask_glm(st, system, user, transport=None):
     return {**model.interpret_body(status, raw, c.automod_model), 'seconds': seconds}
 
 
+def log(line):
+    """One line of the container's log (stderr): counts, outcomes and error classes; never a text, a reason's words or a key."""
+    print(line, file=sys.stderr, flush=True)
+
+
 def spend_path(st):
     return st.root / 'automod-spend.jsonl'
 
@@ -105,7 +111,14 @@ class Worker:
         self.policy, self.height, self.backoff, self.wait_until = '', 0, 0, 0.0
         self.calls_today = spent(st, day_start(clock()))['calls']
         self.day = day_start(clock())
+        self.complained = None
         self.note = {'glm': 'idle', 'lastError': None, 'lastCall': None, 'recent': saved.get('recent', []), 'left': saved.get('left', [])}
+
+    def complain(self, kind):
+        """An error as a log line, once until it changes or a batch succeeds (the step runs every second)."""
+        if kind != self.complained:
+            self.complained = kind
+            log(f'automod: error {kind}')
 
     def save(self):
         self.st.write(self.path, {'cursor': self.cursor, 'feed': self.feed_seq, 'pending': self.pending, 'passed': self.passed[-PASSED:],
@@ -130,6 +143,7 @@ class Worker:
             rows = db.execute('SELECT seq, uri, did, text, town FROM feed WHERE seq>? ORDER BY seq LIMIT 64', (self.feed_seq,)).fetchall()
         except sqlite3.Error as err:
             self.note['lastError'] = f'feed: {err}'
+            self.complain(f'feed {type(err).__name__}')
             return [], self.feed_seq
         finally:
             db.close()
@@ -147,6 +161,7 @@ class Worker:
                            'quietHours': self.c.automod_quiet_hours})
             if r.get('status') != 'screen':
                 self.note['lastError'] = f"host: {r.get('message') or r}"
+                self.complain(f"host {r.get('status') or 'silent'}")
                 return
             now = self.clock()
             for i in r.get('items') or []:
@@ -198,6 +213,9 @@ class Worker:
                                                            'inputTokens': usage.get('input_tokens'), 'outputTokens': usage.get('output_tokens'),
                                                            'texts': len(items), 'seconds': result.get('seconds')}))
         self.note['lastCall'] = {'at': self.clock(), 'texts': len(items), 'status': result.get('status'), 'seconds': result.get('seconds')}
+        log(f"automod: batch texts={len(items)} status={result.get('status')} seconds={result.get('seconds')}")
+        if result.get('status') != 'failed':
+            self.complained = None
         return result
 
     def settle(self, items, result):
@@ -223,6 +241,7 @@ class Worker:
             self.pending = [i for i in self.pending if i['key'] not in settled]
         elif status != 'failed':
             self.note['lastError'] = f"host: {r.get('why') or r.get('message') or status}"
+            self.complain(f'settle {status}')
         return status
 
     def tried(self, item):
@@ -241,6 +260,7 @@ class Worker:
         status = result.get('status')
         if status == 'failed':
             self.note.update(glm='down', lastError=f"{result.get('reason')}: {result.get('detail')}")
+            self.complain('classifier failed')
             self.backoff = min(BACKOFF_MAX, max(5, self.backoff * 2))
             self.wait_until = self.clock() + self.backoff
             return False
@@ -386,6 +406,7 @@ def command(st, a, out):
             host.close()
         return 0
     worker = Worker(st, st.root_host())
+    log(f'automod: started world={st.world}')
     try:
         if a.once:
             worker.step()

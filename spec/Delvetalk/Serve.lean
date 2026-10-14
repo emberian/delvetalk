@@ -633,6 +633,13 @@ def parseArgs (args : List String) (c : Config) : Except String Config :=
     | none => throw "--scratch-quota must be a natural number"
   | _ => throw usage
 
+/-- A request's op as the log names it: letters, digits and `-` only, at most 40, else `?` (never a request's words). -/
+def opWord (op : String) : String :=
+  if !op.isEmpty && op.length ≤ 40 && op.all (fun c => c.isAlphanum || c == '-') then op else "?"
+
+/-- A request slower than this is a line of the container's log. -/
+def slowMs : Nat := 2000
+
 /-- `serve`: 0 when told to stop, 75 when another process holds the directory, 64 on bad arguments. -/
 def main (args : List String) : IO UInt32 := do
   let errors ← IO.getStderr
@@ -686,6 +693,10 @@ def main (args : List String) : IO UInt32 := do
   for p in [config.socket, config.rootSocket] do
     if let some dir := p.parent then IO.FS.createDirAll dir
   listen config.socket.toString config.rootSocket.toString config.rootGroup
+  -- The container's log (the live review's R5: a host that logged nothing left two 500s unexplained): one line per
+  -- start and stop, per refused request (its op alone) and per request over `slowMs`; never a text, a key or a body.
+  errors.putStrLn s!"host: started pid={(← IO.Process.getPID).toNat} worlds={srv.worlds.size} replay={Host.Limits.replayEdition} binary={srv.sha.take 12}"
+  errors.flush
   repeat
     let got ← next
     if got.isEmpty then break
@@ -702,6 +713,13 @@ def main (args : List String) : IO UInt32 := do
     let (next, out) ← match request with
       | .ok j => answer srv j root
       | .error _ => pure (srv, errorJson "request is not a JSON object")
+    -- Logged before the reply, so a client that reads the log after its answer finds the line.
+    let took := (← IO.monoMsNow) - started
+    let op := opWord ((request.toOption.bind (·.getObjValAs? String "op" |>.toOption)).getD "")
+    if (out.getObjValAs? String "status").toOption == some "error" then
+      errors.putStrLn s!"host: error op={op} ms={took}"; errors.flush
+    else if took > slowMs then
+      errors.putStrLn s!"host: slow op={op} ms={took}"; errors.flush
     reply id.toUInt64 out.compress
     -- What the request left waiting to cross goes after its reply, before the next request is read.
     srv ← cross next
@@ -711,6 +729,7 @@ def main (args : List String) : IO UInt32 := do
       | some h => h.putStr (line ++ "\n"); h.flush
       | none => errors.putStrLn line; errors.flush
   closeAll
+  errors.putStrLn "host: stopped"; errors.flush
   if let some held := srv.lock then held.unlock
   for p in [config.socket, config.rootSocket, pidfile] do
     try IO.FS.removeFile p catch _ => pure ()

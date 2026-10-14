@@ -882,8 +882,10 @@ class Handler(BaseHTTPRequestHandler):
             self.route(method) if method != 'OPTIONS' else self.options()
         except (ConnectionError, TimeoutError):
             self.close_connection = True
-        except Exception:
-            traceback.print_exc()
+        except Exception as err:
+            where = traceback.extract_tb(err.__traceback__)[-1]
+            print(f"front: 500 {method} {urllib.parse.urlsplit(self.path).path} {type(err).__name__} {Path(where.filename).name}:{where.lineno}",
+                  file=sys.stderr, flush=True)
             if not self.replied:
                 self.fail('internal')
 
@@ -1771,6 +1773,7 @@ class Handler(BaseHTTPRequestHandler):
 def command(st, a, out):
     """`http`: the public front on the config's address."""
     front = Front(st, st.host(), Identity(st, Client(http_transport)))
+    print(f'front: started world={st.world} port={front.server_address[1]}', file=sys.stderr, flush=True)
     try:
         front.serve_forever()
     finally:

@@ -218,7 +218,7 @@ every 5 minutes: it probes (`status`), appends the probe to the world's
 | --- | --- | --- |
 | 5xx answered by the front | `access.log`, `awk '$4 >= 500'` (ring gate: 0) | any in 5 minutes |
 | refusals by class | `world-status.hour.refused` (ROOT §4; until then, the hour's `world-entries`) | `capacity` ≥ 1; `quota` > 5/h; `staleRoot` > 10% of turns |
-| model calls and spend per hour | `hour.interpretations + attempts`; `model-spend.jsonl` summed by hour | > 120 calls/h, or the day past the cap (below) |
+| model readings and spend per hour | `model-spend.jsonl` summed by hour, `use=paint` lines counted apart (`paints`) | > 120 readings/h (not paints), paints over twice `paint_budget` in 24 h, or the day past the cap (below) |
 | reservations held | `world-status.posts.sources[delve]`: `used` of `quota`, `next` | 16 of 16 for two hours (the hand is not clicking, or a loop is drafting) |
 | scratch worlds | `world-status.scratches {open, expiring}` (FEDERATION 2) | open > 40, or any over 16 MiB |
 | journal height and size | `world-status.height`; `stat state/town.journal` | height unchanged for an hour while posts were observed; bytes > 200 MiB (see §c) |

@@ -16,6 +16,7 @@ from pathlib import Path
 from transport import journal as chain, model, post
 
 DEDUPE, URGENT = 6 * 3600, 3600  # seconds between two lines for one condition; for the two that page
+READINGS_HOUR = 120  # model readings (interpretations) an hour; paints are held to the config's paint budget instead
 
 
 def probe(st, host, clock=time.time):
@@ -35,7 +36,9 @@ def probe(st, host, clock=time.time):
     return {'at': int(now), 'world': st.world,
             'front': {'requests5m': len(recent(300)), '5xx5m': sum(1 for x in recent(300) if x[3].startswith('5')),
                       '5xxHour': sum(1 for x in recent(3600) if x[3].startswith('5'))},
-            'hour': status.get('hour'), 'model': {'hour': model.spent(st, now - 3600)['all'], 'day': model.spent(st, now - 86400)['all']},
+            'hour': status.get('hour'),
+            'model': {'hour': {**model.spent(st, now - 3600)['all'], **model.uses(st, now - 3600)},
+                      'day': {**model.spent(st, now - 86400)['all'], **model.uses(st, now - 86400)}, 'paintBudget': c.paint_budget},
             'reservations': post.posts(status),
             'interpretations': {'pending': len(waiting), 'maxAttempts': max([p.get('attempts') or 0 for p in waiting] or [0])},
             'journal': {'height': status.get('height'), 'bytes': chain.size(st.journal) if st.journal.exists() else None,
@@ -83,8 +86,11 @@ def conditions(p, history, unhealthy=()):
         add('quota', f"{refused['quota']} refused quota ({hour.get('window', 'this hour')})", 'D')
     if turns and refused.get('staleRoot', 0) > turns / 10:
         add('staleRoot', f"{refused['staleRoot']} of {turns} turns refused staleRoot", '')
-    if p['model']['hour']['calls'] > 120:
-        add('model', f"{p['model']['hour']['calls']} model calls in the last hour (${p['model']['hour']['dollars']})", 'D')
+    m = p['model']
+    if m['hour']['readings'] > READINGS_HOUR:
+        add('model', f"{m['hour']['readings']} model readings in the last hour ({m['hour']['paints']} paints; ${m['hour']['dollars']})", 'D')
+    if m.get('paintBudget') and m['day']['paints'] > 2 * m['paintBudget']:  # a rolling day holds at most two clock days' budgets
+        add('paints', f"{m['day']['paints']} paints in a day against a budget of {m['paintBudget']} a clock day", 'D')
     r = p.get('reservations') or {}
     held = [q for q in history if p['at'] - q['at'] <= 7200]
     if r.get('quota') and r.get('used', 0) >= r['quota'] and held and p['at'] - held[0]['at'] >= 7000 and \

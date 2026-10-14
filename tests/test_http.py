@@ -311,6 +311,27 @@ class Access(FrontCase):
         self.assertNotIn('Bearer', text)
         self.assertEqual(len(lines), 2 + 2 + 1, lines)  # api, challenge, verify, me, nowhere
 
+    def test_an_unhandled_error_is_a_500_and_one_stderr_line_naming_the_class_and_never_its_value(self):
+        """Refuted by no stderr line, a traceback or the exception's message in it, or a 500 access line without `class=internal`."""
+        import contextlib
+        import io
+        from transport.http import Handler
+        log = Path(self.tmp.name) / 'access.log'
+        self.front.access = AccessLog(log, 'town')
+        err = io.StringIO()
+        with mock.patch.object(Handler, 'route', side_effect=KeyError('secret-value')), contextlib.redirect_stderr(err):
+            s, body = self.call('GET', '/AGENTS.md/api?x=secret-query')
+            for _ in range(100):
+                if log.exists() and log.read_text():
+                    break
+                time.sleep(0.02)
+        self.assertEqual((s, body['class']), (500, 'internal'))
+        lines = err.getvalue().splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertRegex(lines[0], r'^front: 500 GET /AGENTS\.md/api KeyError \S+:\d+$')
+        self.assertNotIn('secret', lines[0])
+        self.assertTrue(log.read_text().split()[7:] == ['class=internal'], log.read_text())
+
     def test_the_compose_healthcheck_reads_the_home_pages_entry_and_refuses_entry_none(self):
         from transport import watch
         st = State(self.tmp.name, config=Config(host_socket=self.socket, http_port=self.port))

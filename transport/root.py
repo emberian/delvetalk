@@ -107,13 +107,39 @@ def entries(st, after=None, limit=20, object=None, principal=None, before=None):
     return [dict(e, slug=slug(e.get('hash'))) for e in got if keep(e)]
 
 
+MODERATED = ('moderated', 'settings')  # outcome tags of the owner's moderation turns and the receipted quotas
+PAGES = 20  # the pages of the journal a modlog reads back looking for its tail
+
+
+def moderation(e):
+    """Whether a journal entry is a moderation act: a root act, `moderated`, `settings`, a turn refused by the hand's power
+    (class `quiet`, the one refusal class a power gives), or a carry, which is kept only as its height and receipt."""
+    out = e.get('outcome') or {}
+    return bool(e.get('root')) or out.get('tag') in (*MODERATED, 'carried') or (out.get('tag') == 'refused' and out.get('class') == 'quiet')
+
+
+def elided(e):
+    """A carried genesis is the whole old world (megabytes): its height and receipt stand for it."""
+    if (e.get('outcome') or {}).get('tag') != 'carried':
+        return e
+    return {'carried': True, 'height': e.get('turn', e.get('height')), 'receipt': slug(e.get('hash'))}
+
+
 def modlog(host, opener, object=None, tail=20):
-    """The moderation log: an object's `world-history`, or the newest root, moderated and opener entries of the journal."""
+    """The moderation log: an object's `world-history`, or the newest moderation acts of the journal (`moderation`: not the
+    refreshes and ordinary turns the opener also takes), read back page by page until `tail` are found. A carried genesis
+    is its height and receipt, never whole."""
     if object:
-        return host.send({'op': 'world-history', 'principal': opener, 'object': object, 'reverse': True, 'limit': min(tail, history_limit(host))}).get('entries') or []
-    page = host.send({'op': 'world-entries', 'principal': opener, 'reverse': True, 'limit': history_limit(host)}).get('entries') or []
-    return [e for e in page if e.get('root') or (e.get('outcome') or {}).get('tag') == 'moderated'
-            or (e.get('identity') or {}).get('principal') == opener][:tail]
+        got = host.send({'op': 'world-history', 'principal': opener, 'object': object, 'reverse': True, 'limit': min(tail, history_limit(host))}).get('entries') or []
+        return [elided(e) for e in got]
+    found, cursor = [], None
+    for _ in range(PAGES):
+        reply = host.send({'op': 'world-entries', 'principal': opener, 'reverse': True, 'limit': history_limit(host), **({'cursor': cursor} if cursor else {})})
+        found += [elided(e) for e in reply.get('entries') or [] if moderation(e)]
+        cursor = reply.get('cursor')
+        if len(found) >= tail or not (reply.get('more') and cursor):
+            break
+    return found[:tail]
 
 
 def find(host, opener, text, observed=()):
