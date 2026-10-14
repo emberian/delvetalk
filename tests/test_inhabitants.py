@@ -697,6 +697,21 @@ class Stranded(test_scenarios.Arc):
         self.assertIsNone(self.var(nobody, "haunts"))
         self.assertIn("stranded", self.marks(nobody))
 
+    def test_a_thing_whose_object_field_has_no_lens_is_not_sent_a_repair(self):
+        """Refuted by obend's bond/2 (`amends`, an object field no body sets) sent a repair that finds nothing: seven
+        turns at each refresh for nothing (the edition-20 carry-check of obend, 2026-10-14). A lantern's `door` is such a
+        field: a phrase there sends no repair, and the refresh reads `current`."""
+        before = set(self.objects())
+        self.admitted(KIM, "kind/lantern", "delvetalk kind/lantern make / name: a lamp / door: station")
+        [lamp] = set(self.objects()) - before
+        self.legacy(lamp, door="the door of the station")
+        tried = self.town.send(op="world-try", principal=OPENER, object="kinds", method="repair", argument=record(), identity="try-repair")
+        kinds = [d for d in tried.get("delivered") or [] if str(d.get("object", "")).startswith("kind/")]
+        self.assertTrue(kinds, tried)
+        self.assertEqual(sum(int((d.get("result") or {}).get("value") or 0) for d in kinds), 0, kinds)
+        rows = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
+        self.assertEqual([r["status"] for r in rows if r.get("slot") == "repair"], ["current"])
+
     def test_only_its_owner_or_the_town_settles(self):
         obj = self.made(KIM, "a porter")
         self.legacy(obj, haunts="the doors of the station")

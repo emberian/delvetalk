@@ -322,6 +322,9 @@ def fieldTold(name: String, value: String) -> Activity<Card.Replied>:
 # after that its arming is quiet. `repaired` is marked when none is stranded any more.
 def strandedFields(state: State) -> Lists.List<String>:
   Lists.filter(Lists.map(lenses(), fn(f: Form.Field) -> String: f.name), fn(name: String) -> Bool: field(state, name) != "" && Text.isObjectId(field(state, name)) == false)
+# Its stranded fields, as a call answers them (a kind's `repair` asks each thing it made before sending it one).
+def strandedNames(state: State, input: {}, context: Abi.Context) -> Activity<Lists.List<String>>:
+  strandedFields(state)
 def strandedLine(state: State, id: String) -> String:
   match strandedFields(state):
     case nil(_): ""
@@ -613,7 +616,7 @@ def forecastWritten(line: String) -> Activity<Bool>:
   let written(_) = write {weather: set textTake(line, 120n)}
   true
 def methods() -> Lists.List<String>:
-  Text.words("~made ~forecast ~act ~cited ~decline")
+  Text.words("~made ~forecast ~act ~cited ~decline ~strandedNames")
 form write:
   text: text 1..280
 form admit:
