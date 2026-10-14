@@ -2627,6 +2627,17 @@ def isTown (w : World) (principal : String) : Bool := !w.opener.isEmpty && princ
 def handleShown (w : World) (principal : String) : String :=
   if isTown w principal then townName else handleOf w principal
 
+/-- Where a card's code came from (`Object.madeFrom`), one line: the object it was made from, whoever
+    turned the entry it cites, and that entry's height; "" for code given whole. -/
+def lineageLine (w : World) (o : Object) : String := Id.run do
+  let some m := o.madeFrom | return ""
+  let some object := (m.getObjValAs? String "object").toOption | return ""
+  let receipt := (m.getObjValAs? String "receipt").toOption.getD ""
+  let some i := w.entries.indexOf? receipt | return s!"After {object}.\n"
+  let by_ := ((w.entries.get? i).bind fun e => ((e.getObjVal? "identity").toOption.bind
+    (·.getObjValAs? String "principal" |>.toOption))).map (handleShown w ·)
+  return s!"After {object}{(by_.map (s!" by {·}")).getD ""}, entry {i + 1}.\n"
+
 /-- How a principal is named on a card: the town as such, the handle the registry holds, else the principal. -/
 def shownName (w : World) (principal : String) : String :=
   let h := handleShown w principal

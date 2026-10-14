@@ -1681,17 +1681,6 @@ def actArgument (verb : String) (argument : Data) : Data :=
 def madeReceipt (w : World) (id : String) : String :=
   (((w.touched[id]?).bind (·[0]?)).bind w.entries.hashAt?).getD ""
 
-/-- Where a card's code came from (`Object.madeFrom`), one line: the object it was made from, whoever
-    turned the entry it cites, and that entry's height; "" for code given whole. -/
-def lineageLine (w : World) (o : Object) : String := Id.run do
-  let some m := o.madeFrom | return ""
-  let some object := (m.getObjValAs? String "object").toOption | return ""
-  let receipt := (m.getObjValAs? String "receipt").toOption.getD ""
-  let some i := w.entries.indexOf? receipt | return s!"After {object}.\n"
-  let by_ := ((w.entries.get? i).bind fun e => ((e.getObjVal? "identity").toOption.bind
-    (·.getObjValAs? String "principal" |>.toOption))).map (handleShown w ·)
-  return s!"After {object}{(by_.map (s!" by {·}")).getD ""}, entry {i + 1}.\n"
-
 /-- The workshop a verb grown with a body is written by (`growBody`). -/
 def workshopId : String := "workshop"
 

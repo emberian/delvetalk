@@ -16,11 +16,13 @@ open Delvetalk.Host
 open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 open Delvetalk.Theory.ObjectiveBendTypes (Ty)
 
-/-- The reads, each the name of the card's definition that renders it. -/
-def reads : List String := ["book", "chronicle", "map"]
+/-- The reads, each the name of the card's definition that renders it: a resident's book, the town's history and
+    door map, a card's Bend (`source`: its law, where it came from, its body or entry source) and what residents
+    made (`makings`: their kinds, bodies and grown verbs, with their makers and what each came from). -/
+def reads : List String := ["book", "chronicle", "map", "source", "makings"]
 
 /-- The reads the commonplace renders for any card that has no definition of its own. -/
-def townReads : List String := ["chronicle", "map"]
+def townReads : List String := ["chronicle", "map", "source", "makings"]
 
 /-- Where the town's reads are rendered when the card has none: the world's square (genesis's commonplace). -/
 def square : String := Spell.townCard
@@ -364,6 +366,72 @@ def waysData (w : World) (reader root : String) (page : Nat) : Data × List Way 
     ("lying", ofList ((lying.filter fun (id, _) => endpoints.contains id).map fun (id, n) => .record [("object", .label id), ("count", .natural n)])),
     ("page", .natural page)], all)
 
+/-! ## A card's Bend, and what residents made -/
+
+/-- A text's lines in pages of at most `room` characters each, the first of `first` (a line longer than its page is
+    a page of its own). -/
+def pagesOf (lines : List String) (room first : Nat) : List String := Id.run do
+  let mut pages : Array String := #[]
+  let mut page := ""
+  for line in lines do
+    if !page.isEmpty && page.length + line.length > (if pages.isEmpty then first else room) then
+      pages := pages.push page
+      page := ""
+    page := page ++ line
+  return (if page.isEmpty then pages else pages.push page).toList
+
+/-- A card's Bend as `reader` may read it (`World.Source`, the `source` read; what `world-inspect` answers, spoken):
+    its pin's slug, its maker, where its code came from (`lineageLine`), what it is over (`of`, a kind's), its law
+    text, and its code (a kind's body, laid over every thing it makes, else its entry module's source), each line
+    indented, cut here into pages of the world's room less what the page's head and foot take (a long list is no
+    value Bend may be handed); `page` the one asked for (0: all of them), `pages` how many. Nothing past its id for a
+    card the reader may not view. -/
+def sourceData (w : World) (reader id : String) (o : Object) (page : Nat) : Data :=
+  let fs := fieldsOf o.state
+  let seen := o.read.permits reader
+  let shown := fun (t : String) => Data.label (if seen then t else "")
+  let body := (text? fs "body").getD ""
+  let code := if !seen then "" else if body.trimAscii.isEmpty then entrySource o else body
+  let room := w.cardRoom - 600  -- the page's head, its next spell and its foot take the rest; the first page its law too
+  let pages := pagesOf ((code.trimRight.splitOn "\n").map (s!"  {·}\n")) room (room - (if seen then o.lawText.length else 0).min (room / 2))
+  let text := if page == 0 then String.join pages else (pages[(page.min pages.length) - 1]?).getD ""
+  .record [("object", .label id), ("page", .natural (if page == 0 then 0 else page.min pages.length)), ("pages", .natural pages.length),
+    ("pin", shown ((Slug.ofCid o.pin).getD "")), ("maker", shown (handleShown w (makerOf w id o))),
+    ("after", shown (lineageLine w o).trimAscii.toString), ("of", shown ((text? fs "of").getD "")),
+    ("law", shown o.lawText), ("body", .boolean (seen && !body.trimAscii.isEmpty)), ("text", .label text)]
+
+/-- What a resident made that others may read and fork (`World.Making`): `kind` (name: what it is over, from:
+    the kind it was made after), `body` (a kind made with Bend of its own), `verb` (grown on `object`; name: the
+    verb); `who` the maker or grower by handle, `at` the entry. -/
+structure Making where
+  what : String
+  object : String
+  name : String
+  who : String
+  from_ : String := ""
+  height : Nat := 0
+
+def Making.data (m : Making) : Data :=
+  .record [("what", .label m.what), ("object", .label m.object), ("name", .label m.name), ("who", .label m.who),
+    ("from", .label m.from_), ("at", .natural m.height)]
+
+/-- Every kind, body and grown verb a hand other than the town made among the cards `reader` may view, newest first. -/
+def makings (w : World) (reader : String) : List Making := Id.run do
+  let mut out : Array Making := #[]
+  for (id, o) in w.objects.toList do
+    unless o.read.permits reader && !avatarId id do continue
+    let fs := fieldsOf o.state
+    let maker := makerOf w id o
+    if id.startsWith "kind/" && !maker.isEmpty && !isTown w maker then
+      let body := (text? fs "body").getD ""
+      let from_ := (o.madeFrom.bind fun m => (m.getObjValAs? String "object").toOption).getD ""
+      out := out.push { what := if body.trimAscii.isEmpty then "kind" else "body", object := id, name := (text? fs "of").getD "",
+                        who := handleShown w maker, from_, height := ((madeEntry w id).map (·.1)).getD 0 }
+    for v in o.verbs do
+      if !isTown w v.grower then
+        out := out.push { what := "verb", object := id, name := v.name, who := handleShown w v.grower, height := v.height }
+  return (out.qsort fun a b => a.height > b.height || (a.height == b.height && a.object < b.object)).toList
+
 /-! ## Rendering by the card's own definition -/
 
 /-- The parameter types of a function type and what it returns past `n` arrows. -/
@@ -434,6 +502,15 @@ def answer (w : World) (reader id : String) (target : Object) (read : String) (f
     | "chronicle" => do
       let a ← asked w fields
       rendered (fun page => annal w reader { a with page }) a.page [("paint", Json.mkObj [("day", toJson a.day)]), ("day", toJson a.day)]
+    | "source" => do
+      let p ← page ()
+      rendered (fun page => match sourceData w reader id target p with
+        | .record fs => .record (fs.map fun (k, v) => if k == "page" then (k, .natural page) else (k, v))
+        | d => d) p []
+    | "makings" => do
+      let p ← page ()
+      let rows := ofList ((makings w reader).map Making.data)
+      rendered (fun page => .record [("page", .natural page), ("rows", rows)]) p []
     | "map" => do
       let p ← page ()
       let (handed, all) := waysData w reader id p
@@ -451,14 +528,17 @@ def spellsOf (card read : String) : List String :=
   | "book" => [s!"delvetalk {card} book", s!"delvetalk {card} book / page: <a page after the first>"]
   | "map" => [s!"delvetalk {card} map"]
   | "chronicle" => ["delvetalk chronicle", "delvetalk chronicle / day: <a day>", "delvetalk chronicle / from: <a day> / to: <a later day>"]
+  | "source" => [s!"delvetalk {card} source"]
+  | "makings" => ["delvetalk makings", "delvetalk makings / page: <a page after the first>"]
   | _ => [s!"delvetalk {card} {read}"]
 
 /-- The reads `?` lists on card `id` (shown as `shown`) for `reader`: those the card renders, and the town's the square
-    renders from any card that has no spell of their name (`owned`, its spells and verbs). -/
+    renders from any card that has no spell of their name (`owned`, its spells and verbs), but `makings`, which is the
+    town's and no card's. -/
 def usage (w : World) (reader id : String) (target : Object) (shown : String) (owned : List String) : String :=
   let mine := reads.filter fun r => (surfaceDef w target r).isSome
   let town := if id == square || !((w.objects[square]?).map (·.read.permits reader)).getD false then [] else
-    townReads.filter fun r => !mine.contains r && !owned.contains r &&
+    townReads.filter fun r => r != "makings" && !mine.contains r && !owned.contains r &&
       (((w.objects[square]?).bind fun sq => surfaceDef w sq r).isSome)
   let all := (mine ++ town).flatMap (spellsOf shown)
   if all.isEmpty then "" else "\nTo read it (nothing is written):\n" ++ String.join (all.map (s!"\n{·}")) ++ "\n"

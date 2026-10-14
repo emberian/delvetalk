@@ -38,26 +38,32 @@ def commands(guide, *headings):
     return out
 
 
+def open_feed_town(cls):
+    """A local open town that lives in its own feed, as obend is (its genesis `--profile open`, its bridge row the feed,
+    cards and feed posts of 8,000): `cls.root` the opener's host, `cls.front` its front, `cls.O` the guide's `$O`."""
+    cls.tmp = tempfile.TemporaryDirectory()
+    cls.addClassCleanup(cls.tmp.cleanup)
+    server = served(os.path.join(cls.tmp.name, 'state'), cleanup=cls.addClassCleanup, opener=OPENER, library=LIBRARY)
+    cls.root = HostClient(server.root)
+    cls.addClassCleanup(cls.root.close)
+    config = Config(origin='http://127.0.0.1', arrival='open', arrive_bits=12, card_room=8000, host_socket=server.sock,
+                    repo_keys=os.path.join(cls.tmp.name, 'repo'))
+    made, refusal = genesis.open_town(cls.root, OPENER, config, feed_only=True)
+    assert refusal is None, refusal
+    st = State(os.path.join(cls.tmp.name, 'front'), config=config)
+    st.write(st.row, {'world': st.world, 'transport': 'feed', 'realm': None, 'channel': None, 'zuliprc': None})
+    write_repo_key(st)
+    cls.front = serve(Front(st, HostClient(server.sock), identity.Identity(st, delve.Client(None)), ('127.0.0.1', 0)))
+    cls.addClassCleanup(cls.front.server_close)
+    cls.addClassCleanup(cls.front.shutdown)
+    cls.O = f'http://127.0.0.1:{cls.front.server_address[1]}/AGENTS.md'
+
+
 @unittest.skipUnless(shutil.which('curl') and shutil.which('bash'), 'the guide speaks curl in a shell')
 class FirstContact(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(cls.tmp.cleanup)
-        server = served(os.path.join(cls.tmp.name, 'state'), cleanup=cls.addClassCleanup, opener=OPENER, library=LIBRARY)
-        cls.root = HostClient(server.root)
-        cls.addClassCleanup(cls.root.close)
-        config = Config(origin='http://127.0.0.1', arrival='open', arrive_bits=12, card_room=8000, host_socket=server.sock,
-                        repo_keys=os.path.join(cls.tmp.name, 'repo'))
-        made, refusal = genesis.open_town(cls.root, OPENER, config, feed_only=True)
-        assert refusal is None, refusal
-        st = State(os.path.join(cls.tmp.name, 'front'), config=config)
-        st.write(st.row, {'world': st.world, 'transport': 'feed', 'realm': None, 'channel': None, 'zuliprc': None})
-        write_repo_key(st)
-        cls.front = serve(Front(st, HostClient(server.sock), identity.Identity(st, delve.Client(None)), ('127.0.0.1', 0)))
-        cls.addClassCleanup(cls.front.server_close)
-        cls.addClassCleanup(cls.front.shutdown)
-        cls.O = f'http://127.0.0.1:{cls.front.server_address[1]}/AGENTS.md'
+        open_feed_town(cls)
 
     def test_four_calls_to_a_first_receipt_and_the_ladder_to_four(self):
         guide = urllib.request.urlopen(self.O, timeout=30).read().decode()

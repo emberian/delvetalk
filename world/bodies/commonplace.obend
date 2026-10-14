@@ -129,6 +129,34 @@ def firstsLines(firsts: Lists.List<World.First>) -> Lists.List<String>:
 def firstLine(f: World.First) -> String:
   let entry = if f.at == 0n then "" else ", entry {natText(f.at)}"
   if f.what == "rain" then "  the first rain: {f.who} on {f.object}{entry}\n" else if f.what == "room" then "  the first room: {f.object}, made by {f.who}{entry}\n" else if f.what == "verb" then "  the first grown verb: {f.name} on {f.object}, grown by {f.who}{entry}\n" else if f.what == "rule" then "  the first rule fired: {f.name} on {f.object}, written by {f.who}{entry}\n" else "  the first coinage: {f.object}, coined by {f.who}{entry}\n"
+# --- A card's Bend --------------------------------------------------------------------------
+# What any card is made of, read from inside (`delvetalk <card> source`, `/ page: N`): its law, where it came from,
+# a kind's body (laid over every thing it makes) or the card's own entry source, paged within a reply. The host hands
+# it (`World.Source`) as the reader may see it; it writes nothing.
+def source(state: State, context: Abi.Context, src: World.Source) -> Document.Document:
+  let pin = if src.pin == "" then "" else " · {src.pin}"
+  let by = if src.maker == "" then "" else "made by {src.maker}. "
+  let first = src.page <= 1n
+  let law = if first == false then "" else if Text.blank(src.law) then "LAW: none of its own; anyone's write by its spells, the creator's anything.\n" else "LAW\n{src.law}\n"
+  let part = if src.pages < 2n || src.page == 0n then "" else ", page {natText(src.page)} of {natText(src.pages)}"
+  let what = if src.body then "ITS BODY, over {src.of}, on every thing it makes{part}:\n" else "ITS SOURCE{part}:\n"
+  let code = if src.text == "" then "  (none the reader may see)\n" else src.text
+  let next = if src.page > 0n && src.page < src.pages then "The next: delvetalk {src.object} source / page: {natText(src.page + 1n)}\n" else ""
+  let foot = "Yours of it: delvetalk kinds make / name: <yours> / of: {forkOf(src)}; a body checked first: delvetalk library read / page: bend\n"
+  Document.text("THE BEND of {src.object}{pin}\n{by}{src.after}\n{law}{what}{code}{next}{foot}")
+def forkOf(src: World.Source) -> String:
+  if Text.starts(src.object, "kind/") then src.object else if src.of == "" then "record" else src.of
+# --- What residents made -------------------------------------------------------------------------
+# The town's living examples (`delvetalk makings`): every kind, body and grown verb a hand made, newest first, each with
+# its maker and what it came after; read one with `source`, make your own of a kind with `kinds make / of:`.
+def makings(state: State, context: Abi.Context, m: World.Makings) -> Document.Document:
+  let head = "WHAT RESIDENTS MADE, newest first. Read one: delvetalk <card> source. Yours of a kind: delvetalk kinds make / name: <yours> / of: <kind>\n"
+  let rows = if Lists.length(m.rows) == 0n then Lists.List.cons({head: "  Nothing yet. The first: delvetalk kinds make / name: <yours> / of: record\n", tail: Lists.List.nil()}) else Lists.map(m.rows, makingLine)
+  Card.pageOf(Card.paged(Lists.List.cons({head: head, tail: rows}), Card.room(context) - 160n), m.page, "delvetalk makings")
+def makingLine(x: World.Making) -> String:
+  let after = if x.from == "" then "" else ", after {x.from}"
+  let at = if x.at == 0n then "" else ", entry {natText(x.at)}"
+  if x.what == "verb" then "  verb {x.name} on {x.object}, grown by {x.who}{at}\n" else if x.what == "body" then "  {x.object} by {x.who}, its own Bend over {x.name}{after}{at}\n" else "  {x.object} by {x.who}, over {x.name}{after}{at}\n"
 # --- The door map ---------------------------------------------------------------------------
 # Geography here is citation (docs/METAPHYSICS.md §7): which cards open onto which, as a compact indented tree from
 # the commonplace, or from any card (`delvetalk map`, `delvetalk <card> map`, the page /map); the host hands every door

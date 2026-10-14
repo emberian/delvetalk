@@ -186,6 +186,83 @@ def guide_pages(origin=None, arrival='invited', feed_only=False, room=1400):
         [(f'guide-{k}', 'page', f'the guide, part {k}: {titles[k - 1]}'[:80], head(k, n) + cut + tail(k, n)) for k, cut in enumerate(cuts, 1)]
 
 
+# A town that lives in its own feed documents itself from inside (the owner: "is the system self-documenting
+# entirely within itself?"): beside the guide, the library shelves the language (`bend`, its examples checked by the
+# town's compiler, the door's body quoted from its file), the world's API (`api`, from transport/static/catalogue.json,
+# the routes this town serves), how the town reads you (`reads`: hob's instruction and the paint's contract, quoted from
+# world/objects/Policy.obend and world/lib/Paint.obend) and the docs a resident writing Bend needs (`authoring`, parts
+# of `voice`), each the text of its one source, in parts where it passes a page. A card's Bend is a read
+# (`delvetalk <card> source`), not a page.
+INSIDE_DOCS = [('authoring', 'writing a body, a kind or a verb in Bend, by hand or through the workshop', ROOT / 'docs' / 'AUTHORING.md', None),
+               ('voice', 'how the town speaks: what a reply reveals, tongues, the book, the history, the map', ROOT / 'docs' / 'VOICE.md',
+                ('What a reply reveals', 'Tongues', 'The book, the history, the map'))]
+BEND_LITERAL = re.compile(r'^def (\w+)\(\) -> String:\n  "((?:[^"\\]|\\.)*)"$', re.M)
+
+
+def literal(path, name):
+    """The string a Bend def of no arguments returns, from its source (one literal, its escapes read)."""
+    found = {m[1]: m[2] for m in BEND_LITERAL.finditer(Path(path).read_text())}
+    return re.sub(r'\\(.)', lambda m: {'n': '\n', 't': '\t'}.get(m[1], m[1]), found[name])
+
+
+def door_excerpt():
+    """The door's body as world/bodies/door.obend has it, from its first comment through its first method, indented."""
+    lines = (ROOT / 'world' / 'bodies' / 'door.obend').read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith('# The door'))
+    stop = next(i for i, line in enumerate(lines) if line.startswith('# Who knocked'))
+    return '\n'.join('  ' + line for line in lines[start:stop]) + '\n'
+
+
+def api_text(arrival='open', feed_only=True):
+    """The world's API as /AGENTS.md/api serves it on this town: each route it has, what it does; the refusal classes."""
+    from transport.http import ARRIVAL, CLAIM
+    api = json.loads((ROOT / 'transport' / 'static' / 'catalogue.json').read_text())
+    routes = [r for r in api['routes'] if (arrival == 'open' or r['name'] not in ARRIVAL) and not (feed_only and r['name'] in CLAIM)]
+    lines = ['hob: the world\'s API, the routes /AGENTS.md/api lists for this town (GET it whole, with every limit and error).']
+    lines += [f"{r['method']} {r['href']} ({r['auth']}): {(r.get('feed') if feed_only else None) or r['does']}" for r in routes]
+    lines += ['REFUSALS, a receipt each, never an HTTP error; transient ones are sent again as they were:']
+    lines += [f"{name}{' (transient)' if v.get('transient') else ''}: {v['means']}" for name, v in api['refusals'].items()]
+    return '\n'.join(lines) + '\n'
+
+
+def reads_text():
+    """How the town reads you: hob's instruction and how your words reach it, quoted from the policy's own source."""
+    policy = ROOT / 'world' / 'objects' / 'Policy.obend'
+    return ('hob: how the town reads you. Words that are no spell come to me, a small model under the world\'s policy, '
+            'which anyone may read whole: delvetalk policy source. These are its own words, the text it sends:\n\n' +
+            literal(policy, 'hob') + '\n\n' + literal(policy, 'quotedNote') + literal(policy, 'answers').rstrip('\n') +
+            '\n\nA card\'s paint is a model\'s too, checked against the card before anyone sees it, the exact card beneath it '
+            'always; its contract: delvetalk library read / page: paint\n')
+
+
+def doc_text(path, sections=None):
+    """A doc of the tree as a page's text: whole, or the named `## ` sections of it, in order."""
+    text = Path(path).read_text()
+    if not sections:
+        return text
+    parts = re.split(r'(?m)^(?=## )', text)
+    return ''.join(next(p for p in parts if p.startswith('## ' + name + '\n')) for name in sections)
+
+
+def parted(name, title, text, limit):
+    """`text` as `name`, `name-2`, …: pages within `limit`, cut at sections (`guide_cuts`), each naming the next."""
+    tail = lambda k, n: f'\nNext: delvetalk library read / page: {name}-{k + 1}' if k < n else ''  # noqa: E731
+    cuts = guide_cuts(text, limit - len(tail(8, 9)))
+    return [(name if k == 1 else f'{name}-{k}', 'page', (title if k == 1 else f'{title}, part {k}')[:80], cut + tail(k, len(cuts)))
+            for k, cut in enumerate(cuts, 1)]
+
+
+def inside(arrival='open', room=8000):
+    """The pages a feed-only town shelves to document itself from inside (INSIDE_DOCS above), within its room."""
+    limit = page_limit(room)
+    return [*parted('bend', 'Objective Bend: a body, its forms and defs, checked; the door as one',
+                    page_body('bend', True).replace('{{door}}\n', door_excerpt()), limit),
+            *parted('api', "the world's API: every route this town serves, every refusal", api_text(arrival), limit),
+            *parted('reads', 'how the town reads you: hob, the policy, your words quoted', reads_text(), limit),
+            *parted('paint', "the paint's contract, as the model is sent it", literal(ROOT / 'world' / 'lib' / 'Paint.obend', 'contract'), limit),
+            *(page for name, title, path, sections in INSIDE_DOCS for page in parted(name, title, doc_text(path, sections), limit))]
+
+
 def guide_tongues(pages):
     """The guide's contents page (`guide_pages`'s first) in each of GUIDE_TONGUES: hob's line in it, the part list as the
     English one has it, the last line's words in it and its spell unchanged."""
@@ -201,7 +278,8 @@ def shelf(origin=None, arrival='invited', feed_only=False, room=1400):
     town's (`feed_only`, its bridge row) each as it tells it, `room` the characters its cards hold."""
     guide = guide_pages(origin, arrival, feed_only, room)
     return [(name, kind, title, page_body(name, feed_only)) for name, kind, title in PAGES] + guide + guide_tongues(guide) + \
-        [(name, kind, title, page_body(name, feed_only)) for name, kind, title in WELCOME + (ARRIVE if arrival == 'open' else [])]
+        [(name, kind, title, page_body(name, feed_only)) for name, kind, title in WELCOME + (ARRIVE if arrival == 'open' else [])] + \
+        (inside(arrival, room) if feed_only else [])
 
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the

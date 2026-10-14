@@ -28,10 +28,11 @@ record State:
 law owner "only the owner shelves a page; anyone reads, and places rules, wants and verbs on it": request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(owner) and unchanged(pages))
 def initial() -> State:
   {owner: "", ownerHandle: "", pages: Relations.empty()}
-# 48 pages, each at most what a reply leaves after the library's receipt line (Card.limit: 1,266 characters in a
-# world of one post's room, kilobytes where the world gives more; `shelve` refuses past it).
+# 96 pages, each at most what a reply leaves after the library's receipt line (Card.limit: 1,266 characters in a
+# world of one post's room, kilobytes where the world gives more; `shelve` refuses past it): a town that documents
+# itself from inside shelves its language, its API and its docs beside the guide.
 def relations() -> Relations.Decls:
-  Lists.append(Relations.Decls.nil(), {field: "pages", key: Text.words("name"), limit: 48n})
+  Lists.append(Relations.Decls.nil(), {field: "pages", key: Text.words("name"), limit: 96n})
 form read:
   page: text 1..120
 form laws:
