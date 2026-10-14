@@ -4723,10 +4723,22 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
   let question := ["?", "？", "؟"].any (((i.getObjValAs? String "utterance").toOption.getD "").trimAscii.toString.endsWith ·)
   let answered := match kind with | .reply _ => !needs.any (·.startsWith "model:") | .timedOut => false
   if !asked && question && answered then return close (cardAnswer w card principal) none
-  -- A summons (the town named, read at the commonplace) that hob reads as nothing still hears the town: one line saying
-  -- how to act (the live review's finding 4: seven greetings on gsb met silence).
-  if !asked && answered && card == commonplaceId && (act.getObjValAs? String "reach").toOption == some "mention" then
-    return close (Tongue.say tongue "heard" ++ "\n") none
+  -- Words addressed to the commonplace itself that hob reads as nothing still hear the town: a summons (the town named)
+  -- or words asked on the card itself (its page, the API: `direct`) get one line saying how to act (the live review's
+  -- finding 4: seven greetings on gsb met silence). Asked on the card, the words that fit its `write` come back as that
+  -- spell, filled, to send as it stands (obend 10-14: "Dreggs to the moon" and "ciao" typed on its page met silence).
+  let reach := (act.getObjValAs? String "reach").toOption.getD ""
+  if !asked && answered && card == commonplaceId && (reach == "mention" || reach == "direct") then
+    let words := ((i.getObjValAs? String "utterance").toOption.getD "").trimAscii.toString
+    let write := if reach != "direct" then none else (forms.find? fun f => f.card == commonplaceId && f.action == "write").bind
+      fun f => match f.fields with
+        | [{ name, kind := .text lo hi }] =>
+          if lo ≤ words.length && words.length ≤ hi && !words.any (· == '\n') && (Spell.segments words).isEmpty
+          then some (spellTemplate commonplaceId f [{ name, value := words }]) else none
+        | _ => none
+    return close (match write with
+      | some spell => Tongue.say tongue "heardWrite" ++ "\n\n" ++ indentSpell spell
+      | none => Tongue.say tongue "heard" ++ "\n") none
   if !asked then return close "" none
   let fields := neededFields needs forms
   -- An ask naming no field the card's spells take: none of them fits the words; the card's `?` lists them.

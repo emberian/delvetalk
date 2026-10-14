@@ -1694,8 +1694,9 @@ def toDisk (key : String) (r : Render) : IO Unit :=
       ("object", toJson r.object), ("version", toJson r.version), ("clause", toJson c), ("detail", toJson d)])
   | .pending _ _ => pure ()
 
-/-- `renderOp` past the request: the strokes `s` painted, queued or shown exact. -/
-def paintOf (c : Cache) (w : World) (s : Strokes) (now : Nat) : IO (Except String (Cache × World × Json)) := do
+/-- `renderOp` past the request: the strokes `s` painted, queued or shown exact; `cached`, painted only from what is
+    already painted or queued, never queued (`uncached`). -/
+def paintOf (c : Cache) (w : World) (s : Strokes) (now : Nat) (cached : Bool := false) : IO (Except String (Cache × World × Json)) := do
     let id := s.object
     let at_ := [("version", toJson s.version)]
     if s.day.isNone && plainOf w id then return .ok (c, w, answer "plain" id at_)
@@ -1721,6 +1722,8 @@ def paintOf (c : Cache) (w : World) (s : Strokes) (now : Nat) : IO (Except Strin
         ("user", toJson ("Strokes:\n" ++ s.text)), ("maxTokens", toJson (if s.tongue == "en" then renderTokens else 2 * renderTokens))]
       let fresh : Render := { object := id, version := s.version, strokes := s, request, fate := .pending 0 0 }
       if let some r ← fromDisk key fresh then return .ok (c.insert key r, w, fateAnswer id key r attended)
+      -- A read that asks for no new paint (an anonymous page, so a crawl spends nothing: obend 10-14, 09:05): the exact card.
+      if cached then return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "uncached")]))
       -- The day's paints spent (`World.paintQuota`): the exact card, saying why; a paint already made still shows.
       let day := w.clock / Limits.clockDay
       if w.paintQuota > 0 && c.paintsOn day ≥ w.paintQuota then
@@ -1737,6 +1740,7 @@ def paintOf (c : Cache) (w : World) (s : Strokes) (now : Nat) : IO (Except Strin
     within `workerGraceMs`, the render queued for when one does); `plain` when the owner opted out; `unknown` /
     `denied` as `world-card`. With no `object` the town's day is painted (`dayStrokes`): the chronicle's day,
     and with `morning` what wants a hand, the morning card; its `object` is "" and its `version` the day. With
+    `cached: true` a paint already made (or queued) is shown and none is queued: `exact {reason: uncached}`. With
     `telling {reader?, since?}` a place's telling (`tellingOf`), keyed as every paint by its strokes, so by the
     place, the version the reader found and their departure: `quiet` when nothing happened while they were away,
     `notAPlace` for a thing nobody enters, and every answer carries `telling {form, frame, since, exact}`.
@@ -1753,7 +1757,7 @@ def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String 
     let told := fun (r : Except String (Cache × World × Json)) => match s.telling with
       | some t => r.map fun (c, w, a) => (c, w, a.setObjVal! "telling" (t.answer s.tongue))
       | none => r
-    return told (← paintOf c w s now)
+    return told (← paintOf c w s now ((j.getObjValAs? Bool "cached").toOption.getD false))
 
 /-- `world-renders`: the renders the worker may ask the model for now, each with the exact request to send. -/
 def rendersOp (c : Cache) (now : Nat) : Json :=
