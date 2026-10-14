@@ -214,14 +214,20 @@ class Run:
                 self.fail("a law refusal without its clause and reading", request, out)
             if self.height() != before + 1:
                 self.fail("a refused turn did not journal exactly one entry", request, self.height() - before)
+            # A refusal that binds its intent says so; a transient one, which the same turn may run again, does not.
+            if (out["class"] in TRANSIENT) == ("spent" in reply):
+                self.fail("a refusal's spent intent unsaid, or a transient one called spent", request, reply.get("spent"))
         if retry and self.rng.random() < 0.3 and not (status == "refused" and reply["receipt"]["outcome"].get("class") in TRANSIENT):
             at = self.height()
             again = self.send(**request)
             receipts = lambda r: [t.get("receipt") for t in r["turns"]] if "turns" in r else r.get("receipt")
             if receipts(again) != receipts(reply) or self.height() != at:
                 self.fail("a retry did not return the retained receipt, journaling nothing", request, reply.get("receipt"), again.get("receipt"))
+            if "receipt" in reply and not str(again.get("replayed", "")).startswith("already answered at entry %d:" % reply["receipt"]["height"]):
+                self.fail("a retry's answer did not say it was the first again", request, again.get("replayed"))
             other = self.send(**dict(request, argument=record(other=label("x"))))
-            if (other.get("status"), other.get("class")) != ("refused", "duplicateIdentity") or self.height() != at:
+            if (other.get("status"), other.get("class")) != ("refused", "duplicateIdentity") or self.height() != at or \
+                    ("receipt" in reply and "answered at entry %d;" % reply["receipt"]["height"] not in other.get("reason", "")):
                 self.fail("another request under a used identity was not duplicateIdentity, journaling nothing", request, other)
         return dict(reply, request=request)
 

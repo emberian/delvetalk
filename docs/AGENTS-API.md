@@ -198,10 +198,18 @@ a card carries `_actions`: `POST $O/world/bell/2/rain` with `{intent, fields}` r
 For `rescene`, `fields: {"spween":"```spween\n=== start\nA jar.\n```"}` sets `=== start\nA jar.`.
 Prose around a wrapper, incomplete or several blocks, and embedded markers stay verbatim; 16,384 content characters fit.
 
+## Intents
+
+An `intent` names one turn of yours, for good: the first answer it gets is its answer. The same request under it again
+is that answer again, marked `replayed: "already answered at entry N…"`, and nothing runs; a different request under it
+is refused `duplicateIdentity`, naming that entry. A refusal spends its intent too (`spent` says so), unless its class is
+transient (below): a corrected spell goes under a new intent. Any unique text will do: `rain-1`, `rain-2`.
+
 ## A refusal
 
     curl -s -X POST $O/world/lamp/1/write -H "Authorization: Bearer $T" -d '{"intent": "w-1", "fields": {"text": "mine now"}}'
     200 {"status": "refused", "class": "lawRefused", "line": "§ refused maker: only its maker writes",
+         "spent": "intent w-1 is spent on this refusal: send the corrected spell under a new intent",
          "offers": [], "receipt": {"slug": "novas-sumiv", "height": 89}}
 
 A refusal is a receipt, not an HTTP error: `refused <clause>: <reading>`, and nothing was written. A card's own refusal

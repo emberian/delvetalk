@@ -19,10 +19,11 @@ GSB, OBEND = 'https://gsb.fg-goose.online', 'https://obend.fg-goose.online'
 # The live town's guide and shelf as lane/playtest5 serves and shelves them (rules as levels, crossings by changed; the
 # laws page's atoms), with lane/spweenfix's spween and spells pages and lane/bugdesk's mending basket (the guide's
 # "When something is broken", the mending page, the world page's MEND), and lane/cx-night's object-id fields, block unwrapping and
-# check body (the guide's field kinds, direct turns and scratch check, the kinds, spells, bend, check and object pages), and lane/mfauthor's
-# object page, whose coin jar has the receive a spell reaches it by: a change to either is a change to gsb.
-GSB_GUIDE = '7fad5a60b8796096dce62a79c02ef61c1d1cf894b266f90751e3d990885e778b'
-GSB_SHELF = 'b61849ad8ce730fbbb688b4736ffcf61cf94967cf9f69f2ee708ae6abb788cbf'
+# check body (the guide's field kinds, direct turns and scratch check, the kinds, spells, bend, check and object pages), lane/mfauthor's
+# object page, whose coin jar has the receive a spell reaches it by, and lane/mfweb's Intents section (a refusal's `spent`): a change to
+# either is a change to gsb.
+GSB_GUIDE = 'RERECORD'
+GSB_SHELF = 'RERECORD'
 DELVE_WORDS = ('delve.town', 'livedelvetalk', 'summon', 'mirror', 'by post', 'posting by hand', 'posts it by hand', 'request record', 'postQuota',
                'posts an hour', '/challenge', '/verify', 'Claim your handle', '#gsb')
 

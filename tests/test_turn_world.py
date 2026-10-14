@@ -119,8 +119,20 @@ class CounterTurns(TurnWorld):
         r = self.turn("m", "dec")
         out = r["receipt"]["outcome"]
         self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "lawRefused", "counter"))
+        # Kestrel (obend 10-14): four intents spent before learning a refusal binds one. It says so; the same request
+        # again is the same answer, marked; another under it names the entry; an admitted turn says nothing of it.
+        intent = r["receipt"]["identity"]["intent"]
+        self.assertEqual(r["spent"], "intent %s is spent on this refusal: send the corrected spell under a new intent" % intent)
+        h = r["receipt"]["height"]
+        again = self.turn("m", "dec", identity=intent)
+        self.assertEqual((again["receipt"], self.height()), (r["receipt"], h))
+        self.assertTrue(again["replayed"].startswith("already answered at entry %d: this is that answer again, and nothing ran" % h), again)
+        other = self.turn("m", "inc", identity=intent)
+        self.assertEqual((other["class"], other["reason"]), ("duplicateIdentity", "%s already names a different turn, answered at entry %d; send this one under a new intent." % (intent, h)))
+        self.assertNotIn("replayed", r)
         self.assertEqual(self.count("m"), (0, "5"))
-        self.assertEqual(self.turn("m", "inc")["status"], "admitted")
+        ok = self.turn("m", "inc")
+        self.assertEqual((ok["status"], "spent" in ok), ("admitted", False))
         self.assertEqual(self.count("m"), (1, "6"))
 
 

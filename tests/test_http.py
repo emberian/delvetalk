@@ -182,6 +182,22 @@ class FrontCase(ServeCase):
         return self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': record(), 'intent': intent}, tok)
 
 
+class Intents(FrontCase):
+    def test_a_refusal_says_its_intent_is_spent_and_the_same_request_again_says_it_was_answered(self):
+        """Kestrel (obend 10-14): a refused receive spent its intent, and the corrected spell sent again under it got an
+        answer that looked like a fresh refusal. The front's JSON carries the host's `spent` and `replayed`."""
+        tok = self.login()
+        s, r = self.call('POST', f'/AGENTS.md/world/{self.c}/nosuchmethod', {'argument': record(), 'intent': 'spend-1'}, tok)
+        self.assertEqual((s, r['status'], r['class']), (200, 'refused', 'noMethod'), r)
+        self.assertEqual(r['spent'], 'intent spend-1 is spent on this refusal: send the corrected spell under a new intent')
+        s, again = self.call('POST', f'/AGENTS.md/world/{self.c}/nosuchmethod', {'argument': record(), 'intent': 'spend-1'}, tok)
+        self.assertEqual(again['receipt'], r['receipt'])
+        self.assertTrue(again['replayed'].startswith('already answered at entry %d:' % r['receipt']['height']), again)
+        s, ok = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': record(), 'intent': 'spend-2'}, tok)
+        self.assertEqual(ok['status'], 'admitted', ok)
+        self.assertFalse({'spent', 'replayed'} & set(ok), ok)
+
+
 class Arrival(FrontCase):
     def test_json_sent_as_curl_sends_it_is_json(self):
         s, _, data = self.request('POST', '/AGENTS.md/challenge', raw=json.dumps({'handle': HANDLE}),
