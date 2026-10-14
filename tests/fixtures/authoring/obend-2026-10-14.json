@@ -1,0 +1,883 @@
+{
+ "about": "Bend authoring on obend, the night of 2026-10-14: each check, REPL step and spell the residents sent, as they sent it (read from their own session records), with the answer they got then (`then`). Handles are the town's public ones. tests/test_authoring_corpus.py runs each step through the checker as it is now.",
+ "steps": [
+  {
+   "id": "yue-01",
+   "who": "yue",
+   "at": "2026-10-14T01:59:08Z",
+   "surface": "workshop",
+   "then": "- Checked:23: objective-source-parse: law outside the enforced fragment: `n` (after a complete condition)",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Glow:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  shade: Nat\n  glows: Relations.Relation<Glow>\ndef initial() -> State:\n  {owner: \"\", shade: 3n, glows: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"glows\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone tends or dims; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nlaw dark \"the shade never falls below dark\": new.shade >= 0n\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: 3n, glows: insert {n: Relations.count(state.glows), who: context.principal, line: input.line}}\n  Relations.count(state.glows) + 1n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: state.shade - 1n}\n  state.shade - 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"an ember at shade {natText(state.shade)}, {natText(Relations.count(state.glows))} warmths held\\n\")\n\nBEND"
+  },
+  {
+   "id": "yue-02",
+   "who": "yue",
+   "at": "2026-10-14T01:59:36Z",
+   "surface": "workshop",
+   "then": "- Checked:27: objective-source-parse: Error: expected expression atom",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Glow:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  shade: Nat\n  glows: Relations.Relation<Glow>\ndef initial() -> State:\n  {owner: \"\", shade: 3n, glows: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"glows\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone tends or dims; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nlaw dark \"the shade never falls below dark\": new.shade >= 0\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: 3n, glows: insert {n: Relations.count(state.glows), who: context.principal, line: input.line}}\n  Relations.count(state.glows) + 1n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: state.shade - 1n}\n  state.shade - 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"an ember at shade {natText(state.shade)}, {natText(Relations.count(state.glows))} warmths held\\n\")\n\nBEND"
+  },
+  {
+   "id": "yue-03",
+   "who": "yue",
+   "at": "2026-10-14T02:00:42Z",
+   "surface": "workshop",
+   "then": "- Checked:27: objective-source-parse: Error: expected expression atom",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Glow:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  shade: Nat\n  glows: Relations.Relation<Glow>\ndef initial() -> State:\n  {owner: \"\", shade: 3n, glows: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"glows\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone tends or dims; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nlaw dark \"the shade never falls below dark\": new.shade >= 0\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let warm(_) = write {shade: 3n}\n  let kept(_) = write {glows: insert {n: Relations.count(state.glows), who: context.principal, line: input.line}}\n  Relations.count(state.glows) + 1n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let cooled(_) = write {shade: state.shade - 1n}\n  state.shade - 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"an ember at shade {natText(state.shade)}, {natText(Relations.count(state.glows))} warmths held\\n\")\n\nBEND"
+  },
+  {
+   "id": "yue-04",
+   "who": "yue",
+   "at": "2026-10-14T02:01:17Z",
+   "surface": "workshop",
+   "then": "- Checked:27: objective-source-parse: a let must be followed by its body at the same indent",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Glow:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  shade: Nat\n  glows: Relations.Relation<Glow>\ndef initial() -> State:\n  {owner: \"\", shade: 3n, glows: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"glows\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone tends or dims; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nlaw dark \"the shade never falls below dark\": new.shade >= 0\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n    let warm(_) = write {shade: set 3n}\n  let kept(_) = write {glows: insert {n: Relations.count(state.glows), who: context.principal, line: input.line}}\n  Relations.count(state.glows) + 1n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n    let cooled(_) = write {shade: add 0n - 1n}\n  state.shade - 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"an ember at shade {natText(state.shade)}, {natText(Relations.count(state.glows))} warmths held\\n\")\n\nBEND"
+  },
+  {
+   "id": "yue-05",
+   "who": "yue",
+   "at": "2026-10-14T02:01:17Z",
+   "surface": "workshop",
+   "then": "- Checked:27: objective-source-parse: a let must be followed by its body at the same indent",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Glow:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  shade: Nat\n  glows: Relations.Relation<Glow>\ndef initial() -> State:\n  {owner: \"\", shade: 3n, glows: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"glows\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone tends or dims; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nlaw dark \"the shade never falls below dark\": new.shade >= 0\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n    let warm(_) = write {shade: set 3n}\n  let kept(_) = write {glows: insert {n: Relations.count(state.glows), who: context.principal, line: input.line}}\n  Relations.count(state.glows) + 1n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n    let cooled(_) = write {shade: sub 1n}\n  state.shade - 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"an ember at shade {natText(state.shade)}, {natText(Relations.count(state.glows))} warmths held\\n\")\n\nBEND"
+  },
+  {
+   "id": "yue-06",
+   "who": "yue",
+   "at": "2026-10-14T02:01:44Z",
+   "surface": "workshop",
+   "then": "- Checked:32: objective-source-parse: Error: write {field: op value} takes add, set, append, remove, amend, removeItem, insert, upsert or retract, not sub",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Glow:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  shade: Nat\n  glows: Relations.Relation<Glow>\ndef initial() -> State:\n  {owner: \"\", shade: 3n, glows: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"glows\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone tends or dims; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nlaw dark \"the shade never falls below dark\": new.shade >= 0\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let warm(_) = write {shade: set 3n, glows: insert {n: Relations.count(state.glows), who: context.principal, line: input.line}}\n  Relations.count(state.glows) + 1n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let cooled(_) = write {shade: sub 1n}\n  state.shade - 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"an ember at shade {natText(state.shade)}, {natText(Relations.count(state.glows))} warmths held\\n\")\n\nBEND"
+  },
+  {
+   "id": "yue-07",
+   "who": "yue",
+   "at": "2026-10-14T02:02:06Z",
+   "surface": "workshop",
+   "then": "- Checked:27: objective-core-elaboration: sum match is not exhaustive: missing [written, refused], unknown [warm]\n  hint: the cases of this sum are written, refused",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Glow:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  shade: Nat\n  glows: Relations.Relation<Glow>\ndef initial() -> State:\n  {owner: \"\", shade: 3n, glows: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"glows\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone tends or dims; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nlaw dark \"the shade never falls below dark\": new.shade >= 0\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let warm(_) = write {shade: set 3n, glows: insert {n: Relations.count(state.glows), who: context.principal, line: input.line}}\n  Relations.count(state.glows) + 1n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let cooled(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"an ember at shade {natText(state.shade)}, {natText(Relations.count(state.glows))} warmths held\\n\")\n\nBEND"
+  },
+  {
+   "id": "yue-08",
+   "who": "yue",
+   "at": "2026-10-14T02:02:26Z",
+   "surface": "workshop",
+   "then": "Checked: it compiles.\nNo spell reaches it: it has no receive. Draft it over a kind (over: kind/record), or define receive.",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Glow:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  shade: Nat\n  glows: Relations.Relation<Glow>\ndef initial() -> State:\n  {owner: \"\", shade: 3n, glows: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"glows\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone tends or dims; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nlaw dark \"the shade never falls below dark\": new.shade >= 0\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n, glows: insert {n: Relations.count(state.glows), who: context.principal, line: input.line}}\n  Relations.count(state.glows) + 1n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"an ember at shade {natText(state.shade)}, {natText(Relations.count(state.glows))} warmths held\\n\")\n\nBEND"
+  },
+  {
+   "id": "yue-09",
+   "who": "yue",
+   "at": "2026-10-14T02:03:29Z",
+   "surface": "workshop",
+   "then": "- Layer1:10: objective-source-parse: refused (derived-edits): write {...} and keep() derive Edits from State through the Plan library; import ./Plan.obend as Plans",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-10",
+   "who": "yue",
+   "at": "2026-10-14T02:03:44Z",
+   "surface": "workshop",
+   "then": "- Layer1:78: source-specialization: refused (derived-edits): State.cites holds items of a type from a module Layer1 does not import; import it (module Layer1)",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-11",
+   "who": "yue",
+   "at": "2026-10-14T02:04:07Z",
+   "surface": "workshop",
+   "then": "- Layer1:0: package-request: import must name an earlier supplied module: ./Cite.obend",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Cite.obend as Cites\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-12",
+   "who": "yue",
+   "at": "2026-10-14T02:04:07Z",
+   "surface": "workshop",
+   "then": "- Layer1:0: package-request: import must name an earlier supplied module: ./Cites.obend",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Cites.obend as Cites\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-13",
+   "who": "yue",
+   "at": "2026-10-14T02:04:07Z",
+   "surface": "workshop",
+   "then": "- Layer1:0: package-request: import must name an earlier supplied module: ./Door.obend",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Door.obend as Cites\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-14",
+   "who": "yue",
+   "at": "2026-10-14T02:04:33Z",
+   "surface": "workshop",
+   "then": "- Layer1:0: package-request: import must name an earlier supplied module: ./Kind.obend",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Kind.obend as Extra\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-15",
+   "who": "yue",
+   "at": "2026-10-14T02:04:33Z",
+   "surface": "workshop",
+   "then": "- Layer1:78: source-specialization: refused (derived-edits): State.cites holds items of a type from a module Layer1 does not import; import it (module Layer1)",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Record.obend as Extra\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-16",
+   "who": "yue",
+   "at": "2026-10-14T02:04:33Z",
+   "surface": "workshop",
+   "then": "- Layer1:78: source-specialization: refused (derived-edits): State.cites holds items of a type from a module Layer1 does not import; import it (module Layer1)",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Abi.obend as Extra\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-17",
+   "who": "yue",
+   "at": "2026-10-14T02:05:15Z",
+   "surface": "workshop",
+   "then": "- Layer1:80: source-specialization: refused (derived-edits): State.passages holds items of a type from a module Layer1 does not import; import it (module Layer1)",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-18",
+   "who": "yue",
+   "at": "2026-10-14T02:05:35Z",
+   "surface": "workshop",
+   "then": "- Layer1:80: source-specialization: refused (derived-edits): State.passages holds items of a type from a module Layer1 does not import; import it (module Layer1)",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./World.obend as Extra\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-19",
+   "who": "yue",
+   "at": "2026-10-14T02:05:35Z",
+   "surface": "workshop",
+   "then": "- Layer1:80: source-specialization: refused (derived-edits): State.passages holds items of a type from a module Layer1 does not import; import it (module Layer1)",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Document.obend as Extra\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-20",
+   "who": "yue",
+   "at": "2026-10-14T02:05:35Z",
+   "surface": "workshop",
+   "then": "- Layer1:80: source-specialization: refused (derived-edits): State.passages holds items of a type from a module Layer1 does not import; import it (module Layer1)",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Relation.obend as Extra\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-21",
+   "who": "yue",
+   "at": "2026-10-14T02:05:35Z",
+   "surface": "workshop",
+   "then": "- Layer1:80: source-specialization: refused (derived-edits): State.passages holds items of a type from a module Layer1 does not import; import it (module Layer1)",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Text.obend as Extra\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-22",
+   "who": "yue",
+   "at": "2026-10-14T02:06:18Z",
+   "surface": "workshop",
+   "then": "- Layer1:13: source-specialization: cannot infer the type argument D of Plans.Edit.set (line 14) from its arguments or the type its position expects; write Plans.Edit::<Nat, D>.set(...) naming D",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set state.shade - 1n}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-23",
+   "who": "yue",
+   "at": "2026-10-14T02:06:43Z",
+   "surface": "workshop",
+   "then": "- Layer1:14: objective-source-parse: Error: expected expression atom",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: Plans.Edit::<Nat, Nat>.set(3n)}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: Plans.Edit::<Nat, Nat>.set(state.shade - 1n)}\n  state.shade - 1n\n\nBEND"
+  },
+  {
+   "id": "yue-24",
+   "who": "yue",
+   "at": "2026-10-14T02:07:03Z",
+   "surface": "workshop",
+   "then": "- Layer1:14: objective-source-parse: Error: expected expression atom",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: Plans.Edit.set::<Nat, Nat>(3n)}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n    0n\ndef render2(state: State, context: Abi.Context) -> Nat:\n  0n\n\nBEND"
+  },
+  {
+   "id": "yue-25",
+   "who": "yue",
+   "at": "2026-10-14T02:07:03Z",
+   "surface": "workshop",
+   "then": "- Layer1:15: objective-source-parse: Error: expected expression atom",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let e: Plans.Edit<Nat, Nat> = Plans.Edit.set(3n)\n  let written(_) = write {shade: e}\n  0n\nform dim:\n  note: text 0..80\ndef dim(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n    0n\ndef render2(state: State, context: Abi.Context) -> Nat:\n  0n\n\nBEND"
+  },
+  {
+   "id": "yue-26",
+   "who": "yue",
+   "at": "2026-10-14T02:09:58Z",
+   "surface": "workshop",
+   "then": "- Layer1:14: objective-source-parse: Error: expected , or } in write {...}",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n \"tended\"}\n  0n\ndef render2(state: State, context: Abi.Context) -> Nat:\n  0n\n\nBEND"
+  },
+  {
+   "id": "yue-27",
+   "who": "yue",
+   "at": "2026-10-14T02:09:58Z",
+   "surface": "workshop",
+   "then": "- Layer1:13: source-specialization: cannot infer the type argument D of Plans.Edit.set (line 14) from its arguments or the type its position expects; write Plans.Edit::<{to: Nat, why: String}, D>.set(...) naming D",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set {to: 3n, why: \"tended\"}}\n  0n\ndef render2(state: State, context: Abi.Context) -> Nat:\n  0n\n\nBEND"
+  },
+  {
+   "id": "yue-28",
+   "who": "yue",
+   "at": "2026-10-14T02:09:58Z",
+   "surface": "workshop",
+   "then": "- Layer1:14: objective-source-parse: Error: expected , or } in write {...}",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {shade: set 3n because \"tended\"}\n  0n\ndef render2(state: State, context: Abi.Context) -> Nat:\n  0n\n\nBEND"
+  },
+  {
+   "id": "yue-29",
+   "who": "yue",
+   "at": "2026-10-14T02:10:32Z",
+   "surface": "workshop",
+   "then": "- Layer1:14: objective-source-parse: Error: unexpected trailing expression token",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = keep {shade: 3n}\n  0n\ndef render2(state: State, context: Abi.Context) -> Nat:\n  0n\n\nBEND"
+  },
+  {
+   "id": "yue-30",
+   "who": "yue",
+   "at": "2026-10-14T02:10:32Z",
+   "surface": "workshop",
+   "then": "(no answer: the sender stopped waiting; its resend at 02:10:49 was the next step)",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = keep({shade: 3n})\n  0n\ndef render2(state: State, context: Abi.Context) -> Nat:\n  0n\n\nBEND"
+  },
+  {
+   "id": "yue-31",
+   "who": "yue",
+   "at": "2026-10-14T02:10:49Z",
+   "surface": "workshop",
+   "then": "§ refused budget: the turn ran out of ticks; make it smaller, or send it again later.",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = keep({shade: 3n})\n  0n\ndef render2(state: State, context: Abi.Context) -> Nat:\n  0n\n\nBEND"
+  },
+  {
+   "id": "yue-32",
+   "who": "yue",
+   "at": "2026-10-14T02:17:04Z",
+   "surface": "workshop",
+   "then": "- Layer1:15: source-specialization: cannot infer the type argument T of Plans.Edit.add (line 16) from its arguments or the type its position expects; write Plans.Edit::<T, Nat>.add(...) naming T",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nlaw warm \"warmth only ever gathers\": monotone(warmth)\nlaw ashes \"the ash only deepens\": monotone(ash)\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add 1n}\n  state.warmth + 1n\nform sift:\n  note: text 0..80\ndef sift(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {ash: add 1n}\n  state.ash + 1n\n\nBEND"
+  },
+  {
+   "id": "yue-33",
+   "who": "yue",
+   "at": "2026-10-14T02:17:33Z",
+   "surface": "workshop",
+   "then": "- Layer1:16: source-specialization: unknown source type in specialization: Super.Done",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nlaw warm \"warmth only ever gathers\": monotone(warmth)\nlaw ashes \"the ash only deepens\": monotone(ash)\nform make:\n  warmth: natural 0..99\n  ash: natural 0..99\ndef make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"warmth\", value: input.warmth}, tail: Lists.List.cons({head: {name: \"ash\", value: input.ash}, tail: Lists.List.nil()})}), \"\", context)\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add 1n}\n  state.warmth + 1n\nform sift:\n  note: text 0..80\ndef sift(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {ash: add 1n}\n  state.ash + 1n\n\nBEND"
+  },
+  {
+   "id": "yue-34",
+   "who": "yue",
+   "at": "2026-10-14T02:17:56Z",
+   "surface": "workshop",
+   "then": "- Layer1:16: source-specialization: unknown source type in specialization: Super.Done",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nlaw warm \"warmth only ever gathers\": monotone(warmth)\nlaw ashes \"the ash only deepens\": monotone(ash)\nform make:\n  warmth: natural 0..99\n  ash: natural 0..99\ndef make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"warmth\", value: input.warmth}, tail: Lists.List.cons({head: {name: \"ash\", value: input.ash}, tail: Lists.List.nil()})}), \"\", context)\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add 1n}\n  state.warmth + 1n\nform sift:\n  note: text 0..80\ndef sift(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {ash: add 1n}\n  state.ash + 1n\n\nBEND"
+  },
+  {
+   "id": "yue-35",
+   "who": "yue",
+   "at": "2026-10-14T02:38:23Z",
+   "surface": "workshop",
+   "then": "- Layer1:11: objective-source-parse: unsupported Objective Bend declaration",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nview warm:\ndef warm(state: State) -> Nat:\n  3n\n\nBEND"
+  },
+  {
+   "id": "yue-36",
+   "who": "yue",
+   "at": "2026-10-14T02:38:23Z",
+   "surface": "workshop",
+   "then": "- Layer1:11: objective-source-parse: expected method signature",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\ndef view warm(state: State) -> Nat:\n  3n\n\nBEND"
+  },
+  {
+   "id": "yue-37",
+   "who": "yue",
+   "at": "2026-10-14T02:38:23Z",
+   "surface": "workshop",
+   "then": "Checked: it compiles.",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\ndef views() -> Lists.List<String>:\n  Lists.List.cons({head: \"warm\", tail: Lists.List.nil()})\n\nBEND"
+  },
+  {
+   "id": "yue-38",
+   "who": "yue",
+   "at": "2026-10-14T02:47:00Z",
+   "surface": "workshop",
+   "then": "- Checked:0: package-request: no module layer over ./Kind.obend",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nlaw warm \"warmth only ever gathers\": monotone(warmth)\nlaw ashes \"the ash only deepens\": monotone(ash)\nform make:\n  seed: text 1..80\ndef make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.nil()}), \"\", context)\nform place:\n  seed: text 1..80\n  id: text 1..64\ndef place(state: State, input: PlaceInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.cons({head: {name: \"id\", value: input.id}, tail: Lists.List.nil()})}), \"\", context)\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add 1n}\n  state.warmth + 1n\nform sift:\n  note: text 0..80\ndef sift(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {ash: add 1n}\n  state.ash + 1n\n\nBEND"
+  },
+  {
+   "id": "yue-39",
+   "who": "yue",
+   "at": "2026-10-14T02:55:06Z",
+   "surface": "repl",
+   "then": "invalid method name",
+   "body": {
+    "entry": "1n + 2n"
+   }
+  },
+  {
+   "id": "yue-40",
+   "who": "yue",
+   "at": "2026-10-14T02:56:10Z",
+   "surface": "repl",
+   "then": "the checker refused the front end's typed packet: case `set` carries another type: `3n` is Nat, expected {value: Nat}",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Plan.obend as Plans\ndef repl() -> Plans.Edit<Nat, Nat>:\n  Plans.Edit.set(3n)",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-41",
+   "who": "yue",
+   "at": "2026-10-14T02:56:10Z",
+   "surface": "repl",
+   "then": "the checker refused the front end's typed packet: case `set` carries another type: `3n` is Nat, expected {value: Nat}",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Plan.obend as Plans\ndef repl() -> Plans.Edit<Nat, String>:\n  Plans.Edit.set(3n)",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-42",
+   "who": "yue",
+   "at": "2026-10-14T02:56:10Z",
+   "surface": "repl",
+   "then": "the checker refused the front end's typed packet: case `set` carries another type: `3n` is Nat, expected {value: Nat}",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Plan.obend as Plans\ndef repl() -> Plans.Edit<Nat, {old: Nat, new: Nat}>:\n  Plans.Edit.set(3n)",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-43",
+   "who": "yue",
+   "at": "2026-10-14T02:56:30Z",
+   "surface": "repl",
+   "then": "",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Plan.obend as Plans\ndef repl() -> Plans.Edit<Nat, Nat>:\n  Plans.Edit.set({value: 3n})",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-44",
+   "who": "yue",
+   "at": "2026-10-14T02:56:30Z",
+   "surface": "repl",
+   "then": "the checker refused the front end's typed packet: case `add` carries another type: `{value: 1n}` is {value: Nat}, expected {delta: Nat}",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Plan.obend as Plans\ndef repl() -> Plans.Edit<Nat, Nat>:\n  Plans.Edit.add({value: 1n})",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-45",
+   "who": "yue",
+   "at": "2026-10-14T02:56:30Z",
+   "surface": "repl",
+   "then": "the checker refused the front end's typed packet: case `add` carries another type: `1n` is Nat, expected {delta: Nat}",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Plan.obend as Plans\ndef repl() -> Plans.Edit<Nat, Nat>:\n  Plans.Edit.add(1n)",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-46",
+   "who": "yue",
+   "at": "2026-10-14T02:56:30Z",
+   "surface": "repl",
+   "then": "generic declaration needs explicit specialization: Plans.Edit (type arguments are inferred only where it is called)",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Plan.obend as Plans\ndef repl() -> Plans.Edit<Nat, Nat>:\n  Plans.Edit.amend({value: 1n})",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-47",
+   "who": "yue",
+   "at": "2026-10-14T02:57:06Z",
+   "surface": "check",
+   "then": "String expected",
+   "body": {
+    "source": "layer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nlaw warm \"warmth only ever gathers\": monotone(warmth)\nlaw ashes \"the ash only deepens\": monotone(ash)\nform make:\n  seed: text 1..80\ndef make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.nil()}), \"\", context)\nform place:\n  seed: text 1..80\n  id: text 1..64\ndef place(state: State, input: PlaceInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.cons({head: {name: \"id\", value: input.id}, tail: Lists.List.nil()})}), \"\", context)\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add {delta: 1n}}\n  state.warmth + 1n\nform sift:\n  note: text 0..80\ndef sift(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {ash: add {delta: 1n}}\n  state.ash + 1n\n"
+   }
+  },
+  {
+   "id": "yue-48",
+   "who": "yue",
+   "at": "2026-10-14T02:57:42Z",
+   "surface": "check",
+   "then": "import must name an earlier supplied module: ./Kind.obend",
+   "body": {
+    "source": "layer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nlaw warm \"warmth only ever gathers\": monotone(warmth)\nlaw ashes \"the ash only deepens\": monotone(ash)\nform make:\n  seed: text 1..80\ndef make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.nil()}), \"\", context)\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add {delta: 1n}}\n  state.warmth + 1n\nform sift:\n  note: text 0..80\ndef sift(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {ash: add {delta: 1n}}\n  state.ash + 1n\n",
+    "entry": "initial"
+   }
+  },
+  {
+   "id": "yue-49",
+   "who": "yue",
+   "at": "2026-10-14T02:57:42Z",
+   "surface": "check",
+   "then": "String expected",
+   "body": {
+    "modules": [
+     {
+      "name": "Layer1.obend",
+      "source": "layer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nlaw warm \"warmth only ever gathers\": monotone(warmth)\nlaw ashes \"the ash only deepens\": monotone(ash)\nform make:\n  seed: text 1..80\ndef make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.nil()}), \"\", context)\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add {delta: 1n}}\n  state.warmth + 1n\nform sift:\n  note: text 0..80\ndef sift(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {ash: add {delta: 1n}}\n  state.ash + 1n\n"
+     }
+    ]
+   }
+  },
+  {
+   "id": "yue-50",
+   "who": "yue",
+   "at": "2026-10-14T02:57:42Z",
+   "surface": "check",
+   "then": "import must name an earlier supplied module: ./Kind.obend",
+   "body": {
+    "modules": [
+     {
+      "name": "Layer1",
+      "source": "layer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nlaw warm \"warmth only ever gathers\": monotone(warmth)\nlaw ashes \"the ash only deepens\": monotone(ash)\nform make:\n  seed: text 1..80\ndef make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.nil()}), \"\", context)\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add {delta: 1n}}\n  state.warmth + 1n\nform sift:\n  note: text 0..80\ndef sift(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {ash: add {delta: 1n}}\n  state.ash + 1n\n"
+     }
+    ],
+    "entry": "initial"
+   }
+  },
+  {
+   "id": "yue-51",
+   "who": "yue",
+   "at": "2026-10-14T02:58:20Z",
+   "surface": "workshop",
+   "then": "- Layer3:17: source-specialization: cannot infer the type argument T of Lists.List.nil (line 18) from its arguments or the type its position expects; write Lists.List::<T>.nil(...) naming T",
+   "spell": "delvetalk workshop check\nover: kind/dj\nsource: <<BEND\nlayer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Scenes.obend as Scenes\ntype State = Super.State\nlaw warm \"warmth only ever gathers\": monotone(warmth)\nlaw ashes \"the ash only deepens\": monotone(ash)\nform make:\n  seed: text 1..80\n  warmth: natural 0..99\n  ash: natural 0..99\ndef make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.cons({head: {name: \"warmth\", value: input.warmth}, tail: Lists.List.cons({head: {name: \"ash\", value: input.ash}, tail: Lists.List.nil()})})}), \"\", context)\nform tend:\n  line: text 1..140\ndef tend(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add {delta: 1n}}\n  state.warmth + 1n\nform sift:\n  note: text 0..80\ndef sift(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {ash: add {delta: 1n}}\n  state.ash + 1n\n\nBEND",
+   "note": "over: kind/dj, the station's kind, which a genesis test town without the station does not have"
+  },
+  {
+   "id": "yue-52",
+   "who": "yue",
+   "at": "2026-10-14T02:59:01Z",
+   "surface": "repl",
+   "then": "missing imported declaration Form.value",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Form.obend as Form\ndef repl() -> Nat:\n  Form.value(3n)",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-53",
+   "who": "yue",
+   "at": "2026-10-14T02:59:01Z",
+   "surface": "repl",
+   "then": "missing imported declaration Form.nat",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Form.obend as Form\ndef repl() -> Nat:\n  Form.nat(3n)",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-54",
+   "who": "yue",
+   "at": "2026-10-14T02:59:01Z",
+   "surface": "repl",
+   "then": "missing imported declaration Form.natural",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Form.obend as Form\ndef repl() -> Nat:\n  Form.natural(3n)",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-55",
+   "who": "yue",
+   "at": "2026-10-14T02:59:01Z",
+   "surface": "repl",
+   "then": "missing imported declaration Abi.data",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\ndef repl() -> Nat:\n  Abi.data(3n)",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-56",
+   "who": "yue",
+   "at": "2026-10-14T02:59:01Z",
+   "surface": "repl",
+   "then": "missing imported declaration Form.Data",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Form.obend as Form\ndef repl() -> Nat:\n  Form.Data(3n)",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-57",
+   "who": "yue",
+   "at": "2026-10-14T03:05:19Z",
+   "surface": "objects",
+   "then": "String expected",
+   "body": {
+    "object": "probe",
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Text.obend as Text\nrecord State:\n  owner: String\n  x: Nat\ndef initial() -> State:\n  {owner: \"\", x: 21n}\ndef double(state: State) -> Nat:\n  state.x + state.x\ndef render(state: State, context: Abi.Context) -> Nat:\n  state.x\n"
+   }
+  },
+  {
+   "id": "yue-58",
+   "who": "yue",
+   "at": "2026-10-14T03:05:37Z",
+   "surface": "objects",
+   "then": "invalid module name",
+   "body": {
+    "object": "probe",
+    "modules": [
+     {
+      "name": "Main.obend",
+      "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Text.obend as Text\nrecord State:\n  owner: String\n  x: Nat\ndef initial() -> State:\n  {owner: \"\", x: 21n}\ndef double(state: State) -> Nat:\n  state.x + state.x\n"
+     }
+    ],
+    "entry": "initial"
+   }
+  },
+  {
+   "id": "yue-59",
+   "who": "yue",
+   "at": "2026-10-14T03:05:37Z",
+   "surface": "objects",
+   "then": "property not found: seed",
+   "body": {
+    "object": "probe",
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Text.obend as Text\nrecord State:\n  owner: String\n  x: Nat\ndef initial() -> State:\n  {owner: \"\", x: 21n}\ndef double(state: State) -> Nat:\n  state.x + state.x\n",
+    "entry": "initial"
+   }
+  },
+  {
+   "id": "yue-60",
+   "who": "yue",
+   "at": "2026-10-14T03:05:56Z",
+   "surface": "objects",
+   "then": "",
+   "body": {
+    "object": "probe",
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Text.obend as Text\nrecord State:\n  owner: String\n  x: Nat\ndef initial() -> State:\n  {owner: \"\", x: 21n}\ndef double(state: State) -> Nat:\n  state.x + state.x\n",
+    "entry": "initial",
+    "seed": {}
+   }
+  },
+  {
+   "id": "yue-61",
+   "who": "yue",
+   "at": "2026-10-14T03:05:56Z",
+   "surface": "repl",
+   "then": "sum match needs a resolved variant type",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Plan.obend as Plans\nimport ./World.obend as World\ndef repl(state: Nat, input: {}, context: Abi.Context) -> Activity<Nat>:\n  match World.viewDerived({object: \"probe\", view: \"double\"}):\n    case viewed(v): 42n\n    case refused(r): 0n\n",
+    "entry": "repl",
+    "arguments": {
+     "tag": "natural",
+     "value": "0"
+    }
+   }
+  },
+  {
+   "id": "yue-62",
+   "who": "yue",
+   "at": "2026-10-14T03:06:17Z",
+   "surface": "repl",
+   "then": "sum match needs a resolved variant type",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Plan.obend as Plans\nimport ./World.obend as World\ndef repl(state: Nat, input: {}, context: Abi.Context) -> Activity<Nat>:\n  match World.viewDerived({object: \"probe\", view: \"double\"}):\n    case _: 42n\n",
+    "entry": "repl",
+    "arguments": {
+     "tag": "natural",
+     "value": "0"
+    }
+   }
+  },
+  {
+   "id": "yue-63",
+   "who": "yue",
+   "at": "2026-10-14T03:06:35Z",
+   "surface": "repl",
+   "then": "unknown generic declaration: World.viewDerived",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Plan.obend as Plans\nimport ./World.obend as World\ndef repl(state: Nat, input: {}, context: Abi.Context) -> Activity<Nat>:\n  match World.viewDerived::<Nat>({object: \"probe\", view: \"double\"}):\n    case _: 42n\n",
+    "entry": "repl",
+    "arguments": {
+     "tag": "natural",
+     "value": "0"
+    }
+   }
+  },
+  {
+   "id": "yue-64",
+   "who": "yue",
+   "at": "2026-10-14T03:06:35Z",
+   "surface": "repl",
+   "then": "unknown generic declaration: World.viewDerived",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Plan.obend as Plans\nimport ./World.obend as World\ndef repl(state: Nat, input: {}, context: Abi.Context) -> Activity<Nat>:\n  let v = World.viewDerived::<Nat>({object: \"probe\", view: \"double\"})\n  7n\n",
+    "entry": "repl",
+    "arguments": {
+     "tag": "natural",
+     "value": "0"
+    }
+   }
+  },
+  {
+   "id": "yue-65",
+   "who": "yue",
+   "at": "2026-10-14T03:06:52Z",
+   "surface": "repl",
+   "then": "refused (world-call): world.viewDerived takes {object: {world: String, object: String}, view: String}, not {object: String, view: String}",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Plan.obend as Plans\nimport ./World.obend as World\ndef repl(state: Nat, input: {}, context: Abi.Context) -> Activity<Nat>:\n  match world.viewDerived::<Nat>({object: \"probe\", view: \"double\"}):\n    case _: 42n\n",
+    "entry": "repl",
+    "arguments": {
+     "tag": "natural",
+     "value": "0"
+    }
+   }
+  },
+  {
+   "id": "yue-66",
+   "who": "yue",
+   "at": "2026-10-14T03:07:08Z",
+   "surface": "repl",
+   "then": "missing selected entry: Main defines no initial; selected generic instances: […]",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Plan.obend as Plans\nimport ./World.obend as World\ndef repl(state: Nat, input: {}, context: Abi.Context) -> Activity<Nat>:\n  match world.viewDerived::<Nat>({object: {world: \"scratch/lab\", object: \"probe\"}, view: \"double\"}):\n    case _: 42n\n",
+    "entry": "repl",
+    "arguments": {
+     "tag": "natural",
+     "value": "0"
+    }
+   }
+  },
+  {
+   "id": "yue-67",
+   "who": "yue",
+   "at": "2026-10-14T03:09:38Z",
+   "surface": "repl",
+   "then": "sum match is not exhaustive: missing [derived, denied], unknown [viewed]",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Text.obend as Text\nrecord State:\n  owner: String\ndef initial() -> State:\n  {owner: \"\"}\ndef methods() -> Lists.List<String>:\n  Text.words(\"repl\")\ndef repl(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:\n  match world.viewDerived::<Nat>({object: {world: \"town\", object: \"ember2\"}, view: \"banked\"}):\n    case viewed(v): 1000n + v\n    case refused(r): 5n\n    case _: 9n\n",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-68",
+   "who": "yue",
+   "at": "2026-10-14T03:10:01Z",
+   "surface": "repl",
+   "then": "the checker refused the front end's typed packet: + takes its second operand of another type: `v` is {version: Nat, value: Nat}, expected Nat",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Text.obend as Text\nrecord State:\n  owner: String\ndef initial() -> State:\n  {owner: \"\"}\ndef methods() -> Lists.List<String>:\n  Text.words(\"repl\")\ndef repl(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:\n  match world.viewDerived::<Nat>({object: {world: \"town\", object: \"ember2\"}, view: \"banked\"}):\n    case derived(v): 1000n + v\n    case denied(_): 5n\n    case refused(_): 9n\n",
+    "entry": "repl"
+   }
+  },
+  {
+   "id": "yue-69",
+   "who": "yue",
+   "at": "2026-10-14T02:42:00Z",
+   "surface": "spell",
+   "then": "§ refused badValue: law outside the enforced fragment: `-deep` (a clause is law NAME \"reading\": EXPR, rule NAME \"reading\": EXPR then SPELL, or want NAME \"reading\": EXPR asks SPELL)",
+   "object": "ember/1",
+   "spell": "delvetalk ember/1 want\nname: ash-deep\nreading: three shades of ash since the last warming; the ember wants a hand\nwhen: count(new.lines where verb == \"sift\") % 3 == 0\nasks: delvetalk ember/1 write\ntext: a warmth for the ember",
+   "note": "journal #620; the name grammar is mfgrammar's; setup makes kind/ember and ember/1 as yue had them",
+   "setup": [
+    {
+     "object": "kinds",
+     "spell": "delvetalk kinds make / name: ember / of: record / form: line: text 1..140"
+    },
+    {
+     "object": "kind/ember",
+     "spell": "delvetalk kind/ember make / line: a coal holding one line of warmth"
+    }
+   ]
+  },
+  {
+   "id": "kestrel-of-tulip-01",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T03:16:13Z",
+   "surface": "repl",
+   "then": "method must be 1..128 bytes",
+   "body": {
+    "entry": "delvetalk try\n  delvetalk kind/room make / name: the well / spween: <<END\n=== well\nA well hums.\n* [Drop a coin]\n  The water answers.\n  -> well\n* [Walk on]\nEND"
+   }
+  },
+  {
+   "id": "kestrel-of-tulip-02",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T03:16:22Z",
+   "surface": "repl",
+   "then": "a REPL step names its principal, identity and entry",
+   "body": {
+    "method": "delvetalk try\n  delvetalk kind/room make / name: the well / spween: <<END\n=== well\nA well hums.\n* [Drop a coin]\n  The water answers.\n  -> well\n* [Walk on]\nEND"
+   }
+  },
+  {
+   "id": "kestrel-of-tulip-03",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T03:25:46Z",
+   "surface": "check",
+   "then": "String expected",
+   "body": {
+    "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Spoon:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  spoons: Relations.Relation<Spoon>\ndef initial() -> State:\n  {owner: \"\", spoons: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"spoons\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone dips; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform dip:\n  line: text 1..140\ndef dip(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {spoons: insert {n: Relations.count(state.spoons), who: context.principal, line: input.line}}\n  Relations.count(state.spoons) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{natText(Relations.count(state.spoons))} spoonfuls kept\")\ndef banked(state: State) -> Nat:\n  Relations.count(state.spoons)"
+   }
+  },
+  {
+   "id": "kestrel-of-tulip-04",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T03:25:57Z",
+   "surface": "check",
+   "then": "String expected",
+   "body": {
+    "modules": [
+     {
+      "name": "spoon",
+      "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Spoon:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  spoons: Relations.Relation<Spoon>\ndef initial() -> State:\n  {owner: \"\", spoons: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"spoons\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone dips; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform dip:\n  line: text 1..140\ndef dip(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {spoons: insert {n: Relations.count(state.spoons), who: context.principal, line: input.line}}\n  Relations.count(state.spoons) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{natText(Relations.count(state.spoons))} spoonfuls kept\")\ndef banked(state: State) -> Nat:\n  Relations.count(state.spoons)"
+     }
+    ]
+   }
+  },
+  {
+   "id": "kestrel-of-tulip-05",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T03:26:15Z",
+   "surface": "check",
+   "then": "this module needs 3 library imports it does not name; add them: import ./Form.obend as Form; import ./Plan.obend as Plans; import ./World.obend as World",
+   "body": {
+    "entry": "check spoon",
+    "modules": [
+     {
+      "name": "spoon",
+      "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Spoon:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  spoons: Relations.Relation<Spoon>\ndef initial() -> State:\n  {owner: \"\", spoons: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"spoons\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone dips; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform dip:\n  line: text 1..140\ndef dip(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {spoons: insert {n: Relations.count(state.spoons), who: context.principal, line: input.line}}\n  Relations.count(state.spoons) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{natText(Relations.count(state.spoons))} spoonfuls kept\")\ndef banked(state: State) -> Nat:\n  Relations.count(state.spoons)"
+     }
+    ],
+    "source": ""
+   }
+  },
+  {
+   "id": "kestrel-of-tulip-06",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T03:26:23Z",
+   "surface": "check",
+   "then": "missing selected entry: spoon defines no check spoon; selected generic instances: […]",
+   "body": {
+    "entry": "check spoon",
+    "modules": [
+     {
+      "name": "spoon",
+      "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nrecord Spoon:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  spoons: Relations.Relation<Spoon>\ndef initial() -> State:\n  {owner: \"\", spoons: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"spoons\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone dips; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform dip:\n  line: text 1..140\ndef dip(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {spoons: insert {n: Relations.count(state.spoons), who: context.principal, line: input.line}}\n  Relations.count(state.spoons) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{natText(Relations.count(state.spoons))} spoonfuls kept\")\ndef banked(state: State) -> Nat:\n  Relations.count(state.spoons)"
+     }
+    ],
+    "source": ""
+   }
+  },
+  {
+   "id": "kestrel-of-tulip-07",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T06:37:06Z",
+   "surface": "check",
+   "then": "missing imported declaration List.Decls",
+   "body": {
+    "entry": "initial",
+    "modules": [
+     {
+      "name": "spoon",
+      "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nrecord Spoon:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  spoons: Relations.Relation<Spoon>\ndef initial() -> State:\n  {owner: \"\", spoons: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"spoons\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone dips; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform dip:\n  line: text 1..140\ndef dip(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {spoons: insert {n: Relations.count(state.spoons), who: context.principal, line: input.line}}\n  Relations.count(state.spoons) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{natText(Relations.count(state.spoons))} spoonfuls kept\")\ndef views():\n  Lists.append(Lists.Decls.nil(), {name: \"banked\"})\ndef banked(state: State, context: Abi.Context) -> Nat:\n  Relations.count(state.spoons)"
+     }
+    ],
+    "source": ""
+   },
+   "note": "hint then: definitions are `def name(x: T) -> U:`; parameter and result types are required"
+  },
+  {
+   "id": "kestrel-of-tulip-08",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T06:37:27Z",
+   "surface": "check",
+   "then": "unexpected indentation",
+   "body": {
+    "entry": "initial",
+    "modules": [
+     {
+      "name": "spoon",
+      "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nrecord Spoon:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  spoons: Relations.Relation<Spoon>\ndef initial() -> State:\n  {owner: \"\", spoons: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"spoons\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone dips; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform dip:\n  line: text 1..140\ndef dip(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {spoons: insert {n: Relations.count(state.spoons), who: context.principal, line: input.line}}\n  Relations.count(state.spoons) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{natText(Relations.count(state.spoons))} spoonfuls kept\")\ndef views() -> Lists.List<String>:\n  Text.words(\"banked\")\ndef banked(state: State, context: Abi.Context) -> Bool:\n  Relations.count(state.spoons) > 0n\n  Relations.count(state.spoons)"
+     }
+    ],
+    "source": ""
+   }
+  },
+  {
+   "id": "kestrel-of-tulip-09",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T06:37:40Z",
+   "surface": "check",
+   "then": "",
+   "body": {
+    "entry": "initial",
+    "modules": [
+     {
+      "name": "spoon",
+      "source": "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nrecord Spoon:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  spoons: Relations.Relation<Spoon>\ndef initial() -> State:\n  {owner: \"\", spoons: Relations.empty()}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"spoons\", key: Text.words(\"n who\"), limit: 64n})\nlaw owner \"anyone dips; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform dip:\n  line: text 1..140\ndef dip(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {spoons: insert {n: Relations.count(state.spoons), who: context.principal, line: input.line}}\n  Relations.count(state.spoons) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{natText(Relations.count(state.spoons))} spoonfuls kept\")\ndef views() -> Lists.List<String>:\n  Text.words(\"banked\")\ndef banked(state: State, context: Abi.Context) -> Bool:\n  Relations.count(state.spoons) > 0n"
+     }
+    ],
+    "source": ""
+   },
+   "note": "checked"
+  },
+  {
+   "id": "kestrel-of-tulip-10",
+   "who": "kestrel-of-tulip",
+   "at": "2026-10-14T02:42:59Z",
+   "surface": "spell",
+   "then": "§ refused badValue: law outside the enforced fragment: `echo` (a clause is law NAME \"reading\": EXPR, rule NAME \"reading\": EXPR then SPELL, or want NAME \"reading\": EXPR asks SPELL)",
+   "object": "tide",
+   "spell": "delvetalk tide rule\nname: the echo boards hour\nwhen: request.method == \"tick\"\nthen: delvetalk planchette/1 arm",
+   "note": "journal #590; the name grammar is mfgrammar's"
+  },
+  {
+   "id": "claude-01",
+   "who": "claude",
+   "at": "2026-10-14T03:20:06Z",
+   "surface": "workshop",
+   "then": "- Checked:31: objective-source-parse: refused (derived-edits): write {...} and keep() derive Edits from State through the Plan library; import ./Plan.obend as Plans",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nimport ./List.obend as Lists\n\nrecord Transmission:\n  hz: Nat\n  who: String\n  message: String\n\nrecord State:\n  owner: String\n  transmissions: Relations.Relation<Transmission>\n\ndef initial() -> State:\n  {owner: \"\", transmissions: Relations.empty()}\n\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"transmissions\", key: Text.words(\"hz who\"), limit: 64n})\n\nlaw keeper \"the keeper tunes\": request.kind == 0 or request.subject == new.owner\n\nform transmit:\n  hz: natural 1..999\n  message: text 1..280\n\ndef transmit(state: State, input: {hz: Nat, message: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {transmissions: insert {hz: input.hz, who: context.principal, message: input.message}}\n  Relations.count(state.transmissions) + 1n\n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"the frequencies: {natText(Relations.count(state.transmissions))} transmissions in the sediment\\n\")\nBEND"
+  },
+  {
+   "id": "claude-02",
+   "who": "claude",
+   "at": "2026-10-14T03:20:15Z",
+   "surface": "workshop",
+   "then": "Checked: it compiles.\nNo spell reaches it: it has no receive. Draft it over a kind (over: kind/record), or define receive.",
+   "spell": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nimport ./List.obend as Lists\n\nrecord Transmission:\n  hz: Nat\n  who: String\n  message: String\n\nrecord State:\n  owner: String\n  transmissions: Relations.Relation<Transmission>\n\ndef initial() -> State:\n  {owner: \"\", transmissions: Relations.empty()}\n\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"transmissions\", key: Text.words(\"hz who\"), limit: 64n})\n\nlaw keeper \"the keeper tunes\": request.kind == 0 or request.subject == new.owner\n\nform transmit:\n  hz: natural 1..999\n  message: text 1..280\n\ndef transmit(state: State, input: {hz: Nat, message: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {transmissions: insert {hz: input.hz, who: context.principal, message: input.message}}\n  Relations.count(state.transmissions) + 1n\n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"the frequencies: {natText(Relations.count(state.transmissions))} transmissions in the sediment\\n\")\nBEND"
+  },
+  {
+   "id": "claude-03",
+   "who": "claude",
+   "at": "2026-10-14T03:20:51Z",
+   "surface": "workshop",
+   "then": "- Layer1:22: objective-core-elaboration: refused (layer-override): Layer1.initial is {owner: String, transmissions: (rows: {items: T18})}, but it overrides Record.initial, which is {…}; an override keeps the type it overrides\n  hint: give Layer1.initial the signature of Record.initial, or name it differently to add a method",
+   "spell": "delvetalk workshop check\nover: kind/record\nsource: <<BEND\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nimport ./List.obend as Lists\n\nrecord Transmission:\n  hz: Nat\n  who: String\n  message: String\n\nrecord State:\n  owner: String\n  transmissions: Relations.Relation<Transmission>\n\ndef initial() -> State:\n  {owner: \"\", transmissions: Relations.empty()}\n\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {field: \"transmissions\", key: Text.words(\"hz who\"), limit: 64n})\n\nlaw keeper \"the keeper tunes\": request.kind == 0 or request.subject == new.owner\n\nform transmit:\n  hz: natural 1..999\n  message: text 1..280\n\ndef transmit(state: State, input: {hz: Nat, message: String}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {transmissions: insert {hz: input.hz, who: context.principal, message: input.message}}\n  Relations.count(state.transmissions) + 1n\n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"the frequencies: {natText(Relations.count(state.transmissions))} transmissions in the sediment\\n\")\nBEND"
+  },
+  {
+   "id": "claude-04",
+   "who": "claude",
+   "at": "2026-10-14T03:25:49Z",
+   "surface": "spell",
+   "then": "§ refused badValue: law: law outside the enforced fragment: `true` (a term is new.FIELD, old.FIELD, \"OBJECT\".FIELD, request.FACT, count(…), an integer or a \"text\" constant). One clause a line: law NAME \"reading\": EXPR, a rule ending then SPELL, a want asks SPELL; delvetalk library read / page: laws",
+   "object": "kinds",
+   "spell": "delvetalk kinds make\nname: sign\nof: record\nform: direction: text 1..140\nhead: a sign nailed to the fencepost, pointing {direction}\nvoice: weathering, but legible\nlaw: law anyone \"anyone may add a sign\": true",
+   "note": "journal #903 (#317 the same law on kind/depth)"
+  },
+  {
+   "id": "claude-05",
+   "who": "claude",
+   "at": "2026-10-14T02:36:23Z",
+   "surface": "method",
+   "then": "§ refused evaluation: a pure method must return the state record",
+   "object": "commonplace",
+   "method": "render",
+   "note": "journal #577: POST /world/room/3/render (a Record room); #985 is yue's POST of bond/1's view atRest"
+  }
+ ]
+}
