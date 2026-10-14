@@ -50,6 +50,7 @@ DOORS = [
     ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
     ('PORCH', 'porch', [('delvetalk porch enter', "gemini's porch: three bells and three unclaimed things")]),
     ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
+    ('REGISTER', 'register', []),  # its word alone: the card's budget leaves the wants their room (its card teaches it)
     ('TIDE', 'tide', [('delvetalk tide rules', "what happens at each hourly tick: the weather, the porch's lamp")]),
 ]
 # A link door: no object (the empty reference); its description is its line: the preview a poster has, then the
@@ -85,7 +86,7 @@ EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make
             ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/FOUNDATION.md §5)
 
 
-# The library's stacks (docs/LIBRARY.md): nine pages and six walks, (name, kind, title); each body is
+# The library's stacks (docs/LIBRARY.md): ten pages and six walks, (name, kind, title); each body is
 # capsules/pages/<name>.txt, so the page in the world and the file in the tree are one text.
 PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a badSpell hint'),
          ('laws', 'page', 'law, rule and want lines, what they read; transient and binding refusals'),
@@ -94,6 +95,7 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
          ('protocol', 'page', 'what a card asks the world: view, call, send, create, rule'),
          ('world', 'page', "the doors, every card's spells, the classes of refusal"),
          ('kinds', 'page', 'every kind: what it is, and a spell that makes one'),
+         ('register', 'page', 'the town\'s questions: ask, add, dispute; the witness'),
          ('spween', 'page', "a room's scene: passages, choices, guards and casts, one whole"),
          ('station', 'page', 'an example scene: the all-night station at the edge of the town'),
          ('bell', 'walk', 'make a bell, rain on it, rule on it, hear it ring'),
@@ -485,6 +487,75 @@ def inhabitants(host, opener, prefix='genesis'):
     return made
 
 
+# The town's register (docs/GENESIS.md "The register"; world/kinds/register.kind, world/bodies/register.obend), the
+# owner's word of 2026-10-13 ("do the v2"; docs/review/register-v2-2026-10-13.md): kind/register, created whole from its
+# file and shaped, as `kinds` itself is, so `kinds` neither counts nor lists it (a register another hand makes takes no
+# rows, so it is no kind to offer anyone: not among KINDS, and not on the kinds card); its desk, a RECORD only the transport writes, where transport/anchors.py writes what it read
+# of an at:// anchor before a turn that cites one; and the town's one register, placed at `register` as a reply to
+# gemini's post that proposed it, with its tide and desk, a door back to the commonplace and the commonplace's
+# REGISTER door to it. Empty: its first entry is the residents' to enter (hy3 seeded entry 001 on delve.town; the
+# register's honest first entry is theirs), and the ring fills from anchored contributions.
+REGISTER_KIND = read_kind('register')
+REGISTER, REGISTER_DESK = 'register', 'register/desk'
+REGISTER_POST = 'at://did:plc:ubtqb43nq7u6jlibkzlobkuu/town.delve.feed.post/3mxpezo4t5x2f'  # gemini: the register proposed, 10-12
+DESK_LAW = 'law read "only the town\'s transport writes what it read of an at:// anchor": count(new.lines) <= count(old.lines) or request.subject == "transport"'
+REGISTER_DOOR = next(d for d in DOORS if d[1] == REGISTER)
+
+
+def town_register(host, opener, prefix='genesis'):
+    """kind/register, the desk and the town's register at `register` with its doors, each made where the town lacks it
+    (genesis, `prefix` 'genesis'; a carried town's refresh, 'refresh'); -> made rows. Stops (Stopped) at a refusal."""
+    turn = lambda obj, method, argument, identity: host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': method,
+                                                              'argument': argument, 'identity': identity})
+    made, have = [], set(existing(host, opener))
+    f = REGISTER_KIND
+    if 'kind/register' not in have:
+        kind = create(host, opener, 'kind/register', 'Kind', f'{prefix}-kind-register',
+                      rec(owner=lab(opener), ownerHandle=lab(TOWN), name=lab('register'), of=lab(f['of']), form=lab(f.get('form', '')),
+                          head=lab(f.get('head', '')), voice=lab(f.get('voice', '')), about=lab(f.get('about', '')), law=lab(f.get('text', '')),
+                          body=lab(body_of(f['body']))), KIND_LAW)
+        made.append({'object': 'kind/register', 'module': 'Kind', 'status': kind.get('status'), 'creator': opener, 'reply': kind})
+        turned('create kind/register', kind, 'created')
+        made[-1]['shape'] = turned('kind/register shape', turn('kind/register', 'shape', rec(object=lab('kind/register')), f'{prefix}-kind-register-shape'))
+    if REGISTER_DESK not in have:
+        reply = create(host, opener, REGISTER_DESK, 'Record', f'{prefix}-register-desk', rec(owner=lab(opener), head=lab('THE READING DESK')),
+                       RECORD_LAW + '\n' + DESK_LAW)
+        made.append({'object': REGISTER_DESK, 'module': 'Record', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
+        turned('create ' + REGISTER_DESK, reply, 'created')
+    if REGISTER not in have:
+        made.append(said(host, opener, 'kind/register', 'place', [('id', REGISTER), ('tide', 'tide'), ('desk', REGISTER_DESK)],
+                         f'{prefix}-register', REGISTER, REGISTER_POST))
+        turned('kind/register place register', made[-1]['reply'])
+        for card, label, to in ((REGISTER, 'the commonplace', 'commonplace'), (REGISTER_DESK, 'the register', REGISTER)):
+            made.append(said(host, opener, card, 'door', [('label', label), ('to', to)], f'{prefix}-{card.replace("/", "-")}-door-{to}'))
+            turned(f'{card} door {to}', made[-1]['reply'])
+    if prefix != 'genesis':  # genesis seeds the commonplace with the door; a carried town is given it in its place
+        made += register_door(host, opener, prefix)
+    return made
+
+
+def register_door(host, opener, prefix):
+    """The commonplace's REGISTER door, where a carried commonplace lacks one: after WORKSHOP, as genesis orders its
+    doors (the card clips from the end), by one opener's proposal that lifts the doors after it and lays them back."""
+    from transport.host import door_rows
+    view = host.send({'op': 'world-view', 'principal': opener, 'object': 'commonplace'})
+    if view.get('status') != 'viewed' or any(d['to'].get('object') == REGISTER for d in door_rows(view)):
+        return []
+    cites = next((f['value'] for f in view['state'].get('fields', []) if f['name'] == 'cites'), {})
+    items = cites.get('items', [])
+    labels = [{f['name']: f['value'] for f in item.get('fields', [])}.get('label', {}).get('value') for item in items]
+    at = labels.index('WORKSHOP') + 1 if 'WORKSHOP' in labels else len(items)
+    edit = lambda verb, item: rec(cites={'tag': 'variant', 'label': verb, 'payload': rec(item=item)})  # noqa: E731
+    edits = [edit('removeItem', i) for i in items[at:]] + [edit('append', door(*REGISTER_DOOR))] + [edit('append', i) for i in items[at:]]
+    record = host.send({'op': 'world-object', 'principal': opener, 'object': 'commonplace'}).get('record') or {}
+    reply = host.send({'op': 'world-propose', 'principal': opener, 'identity': f"{prefix}-commonplace-door-register-{record.get('version')}",
+                       'roots': [{'object': 'commonplace', 'version': int(record.get('version', 0))}],
+                       'writes': [{'object': 'commonplace', 'edits': edits}]})
+    row = {'object': 'commonplace', 'module': 'commonplace door register', 'status': reply.get('status'), 'creator': opener, 'reply': reply}
+    turned('commonplace door register', reply)
+    return [row]
+
+
 # yla's parlour (world/kinds/parlour.kind, world/bodies/parlour.obend and parlour.spween), off the station's night hall,
 # made with the station: yla.delve.town's séance at a ouija board of 2026-10-13 (`YLA_SEANCE`), its scene her prose,
 # placed from her post so its card cites it; a room of the station's kind (no clock is kept there either), its scene
@@ -687,6 +758,7 @@ def run(host, opener=OPENER, gas_station=False, origin=None, arrival='invited', 
             turned('library shelve ' + name, turn('library', 'shelve', rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),
                                                                       body=lab(pages[name])), 'genesis-shelve-' + name))
             for name, kind, title, _ in shelf(origin, arrival)]
+        made += town_register(host, opener)
         # One card per door: each door's object publishes its page, which the bridge drafts as `wiki: <Door>` for the hand to post.
         for label, to, _ in DOORS if publish else ():
             page = turn(to, 'publishPage', rec(page=lab(label.capitalize())), 'genesis-page-' + to)
@@ -910,6 +982,7 @@ def refresh(host, opener, journals, station=False, config=None):
         placed = said(host, opener, kind, 'place', carried_fields(host, opener, kind, fields), f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
     out += harmonic(host, opener, have)
+    out += placed_register(host, opener)
     whole, installed = True, False
     if station and station_complete(host, opener):
         out.append({'object': 'station', 'slot': 'placed', 'status': 'current'})
@@ -934,6 +1007,19 @@ def refresh(host, opener, journals, station=False, config=None):
             except Stopped as e:
                 out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
     return out
+
+
+def placed_register(host, opener):
+    """The town's register on a carried town (`town_register` under `refresh-*` identities): placed once, with its doors
+    and the commonplace's, `current` after (a door the owner takes down later is theirs to); a refused step is named
+    and fails the refresh."""
+    if {'kind/register', REGISTER_DESK, REGISTER} <= set(existing(host, opener)):  # placed: its doors are the owner's since
+        return [{'object': REGISTER, 'slot': 'placed', 'status': 'current'}]
+    try:
+        return [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
+                for m in town_register(host, opener, 'refresh')]
+    except Stopped as e:
+        return [{'object': REGISTER, 'slot': 'placed', 'status': 'refused', 'reading': str(e)}]
 
 
 def station_complete(host, opener):

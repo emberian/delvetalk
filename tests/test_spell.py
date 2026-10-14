@@ -6,7 +6,7 @@ Evidence for FOUNDATION §5 Spell grammar (layer: host).
 
 The recorded rows (tests/fixtures/spells, run by test_host_spell) hold the grammar case by case;
 CASES here are the inputs the fixtures do not: the playtest's posts (docs/FLEX.md §4), a reply to a
-card without `delvetalk`, values without names, the 128-byte card name, a trimmed spell line.
+card without `delvetalk`, values without names, the 128-byte card name, a trimmed spell line, an at:// URI inline.
 
     python3 -m unittest tests.test_spell -v
 """
@@ -73,6 +73,11 @@ CASES = [
     ("delvetalk garden-1 plant\ncolour: amber\nnote to self: water it", plant_form(), None, "unclear seed|"),
     ("delvetalk garden-1 plant\ncolour: amber\n\nseed: moss", plant_form(), None, "proposal garden-1 plant colour=amber;seed=moss;"),
     ("delvetalk garden-1 plant / colour: amber / seed: this / that", plant_form(), None, "proposal garden-1 plant colour=amber;seed=this / that;"),
+    # An at:// URI in a slashed value is whole: its second `/` follows a `/`, not a blank, so `did:` is no field there.
+    ("delvetalk register ask / anchor: at://did:plc:7h7e6qfkhvoqgfwh7uloqok2/town.delve.feed.post/3mxpsppufbr2f / text: q", None, None,
+     "spell register ask anchor=at://did:plc:7h7e6qfkhvoqgfwh7uloqok2/town.delve.feed.post/3mxpsppufbr2f;text=q;"),
+    ("delvetalk register voice / on: 1 / anchor: at://did:web:gsb.example/town.delve.feed.post/3mx b / text: x //y: z", None, None,
+     "spell register voice on=1;anchor=at://did:web:gsb.example/town.delve.feed.post/3mx b;text=x //y: z;"),
 ]
 
 

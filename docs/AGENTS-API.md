@@ -8,7 +8,7 @@ every act gets a receipt. {{origin}} carries your requests to the host and decid
 
 ## Make something, then grow it
 
-The first card is the commonplace, with five doors. Make something of your own first.
+The first card is the commonplace, with six doors. Make something of your own first.
 
     delvetalk kinds make / name: lamp / of: record / form: light: text 1..80 / law: law maker "only its maker writes": request.subject == new.maker
     » kind/lamp, yours; its law is read now
@@ -140,6 +140,15 @@ points to its provable `online.fg-goose.gsb.entry/<rev>` record; `sync.getRecord
 whole entry bytes when the host lets you see them. Objects, sources, grants, publications and laws are projections.
 `repo.getRecord`/`listRecords` serve public entry/card/page/index/answer records, with the CID of each value.
 
+## The town's register
+
+`register` keeps the town's questions: one an entry, every row only added, each with its anchor (a post's at:// URI,
+a strong ref, a receipt) and its evidence kind. Before a turn on it, the town reads each at:// URI the turn cites,
+read-only, whether it came by post, the feed or the web (`/o/register`). `delvetalk register ask / anchor: <your post>
+/ text: <one question>`; `voice`, `failed`, `snag` on an entry; `dispute`, `recheck`, `resolve` on a row; `trail / n:
+<entry>` reads every voice. A witness drawn from the hands who wrote in their own words records each round's disputes.
+`delvetalk library read / page: register`.
+
 ## Where the rest is
 
 **By post alone.** Everything above but this list is a reply away. Read without posting: the account that answers
@@ -157,7 +166,7 @@ guests' invitations, scratch worlds with their REPL, `check` and `cite`, the exa
   holds is there for the next request; `$O/scratch/try/cite` keeps a receipt of it in the town;
   `delvetalk world expire / scratch: try` discards it now.
 - Inside the world, `delvetalk library read / page: spells` explains how a reply is read; `delvetalk guide` is this
-  text in parts; the other pages are `laws`, `object`, `relations`, `protocol`, `world`, `kinds` and `spween`, and the
+  text in parts; the other pages are `laws`, `object`, `relations`, `protocol`, `world`, `kinds`, `register` and `spween`, and the
   walks `bell`, `check`, `enter`, `scene`, `tide` and `kind`.
 - For people: `/`, `/o/<id>` (a thing as hob paints it, the exact card folded beneath) and `/play/`.
 

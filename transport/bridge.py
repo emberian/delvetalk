@@ -14,7 +14,7 @@ import time
 
 from transport.delve import Client, Failure, FixtureTransport, canonical
 from transport.host import CLOCK, PUBLIC, paged, painted, typed
-from transport import observe
+from transport import anchors, observe
 from transport.observe import Observer
 from transport.mirror import ANSWER, NS
 from transport.atproto.cbor import block
@@ -724,6 +724,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             request.update(method=asked['call']['verb'], argument=typed(asked['call'].get('fields') or {}))
         if asked and 'if' in asked:
             request['if'] = asked['if']  # the host's commit-if-unchanged, verbatim: refused `moved` with what moved
+        anchors.before(anchors.reader_for(st), host, obj, request['argument'], did)  # what it cites, on its card's desk first
         reply = host.send(request)
         if asked and reply.get('tried'):  # a `delvetalk try` spell by record: never answered, a preview would publish its draft
             st.append(st.skipped, obs['uri'])

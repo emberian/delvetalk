@@ -2,7 +2,7 @@ hob: the frog on the quiet line. I read words that are not a spell; the cards an
 
 ✾ DELVETALK · THE COMMONPLACE
 
-Five doors. Indented lines are typed back whole; » is what comes back; words reach hob.
+Six doors. Indented lines are typed back whole; » is what comes back; words reach hob.
 What wants a hand, turning daily:
 6 more wait on other hands
 porch: a room nobody is in
@@ -21,6 +21,7 @@ PORCH
 WORKSHOP
   delvetalk workshop make / name: lamp / description: a lamp anyone lights
   » hob drafts the Bend; checked, held as #n for you to adopt
+REGISTER
 TIDE
   delvetalk tide rules
   » what happens at each hourly tick: the weather, the porch's lamp

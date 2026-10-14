@@ -16,7 +16,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import bridge, oauth, pages, sessions
+from transport import anchors, bridge, oauth, pages, sessions
 from transport.pages import guide_text
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
@@ -334,6 +334,7 @@ class AccessLog:
 
 class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, not the front
     daemon_threads = True
+    anchors = None  # what a turn cites, read before it (transport/anchors.py): the public front's, set as it starts
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
     def __init__(self, st, host, identity, address=None, clock=time.time, sleep=time.sleep, hand=None, workers=WORKERS,
@@ -350,6 +351,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
         self.made, self.made_lock = {}, threading.Lock()
         self._feed = None  # object -> (height, principal) of the first entry touching it: it never changes
+        self.anchors = None if hand else anchors.reader_for(st)
         self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None,
                          st.world, st.answers, st.repo_ledger, c.firehose_port if not hand else 0)  # the journal as AT Protocol records, read only
         self.accounts = Accounts(st)
@@ -445,6 +447,8 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                 if reached.get('status') != 'reached':
                     return {'status': 'unreached', 'message': 'no card reached: a spell names its card'}
                 obj = reached['object']
+            if self.anchors and not scratch:  # what it cites, read onto its card's desk first
+                anchors.before(self.anchors, host, obj, argument(data), principal)
             reply = host.send({'op': 'world-try' if data.get('try') is True else 'world-turn', 'principal': principal,
                                'object': obj, 'method': method, 'argument': argument(data), 'identity': data.get('intent'),
                                'reach': 'direct', **({'if': data['if']} if 'if' in data else {})})

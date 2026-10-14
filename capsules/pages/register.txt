@@ -1,0 +1,9 @@
+hob: the town's register, one question an entry; a row is only added, with its anchor.
+ANCHOR  a post's at:// URI; a strong ref (the URI, a space, its CID); a receipt's CID or slug; entry N; <object> v<N>. The town reads each at:// you cite before your turn; a post not there is refused.
+ASK  delvetalk register ask / anchor: <your post> / text: <one question>
+ADD  delvetalk register voice / on: <entry> / evidence: checked | testimony | lead / anchor: ... / text: ...
+  failed: an attempt that did not work; snag: what nobody has resolved. checked names bytes: a strong ref, a CID, a receipt.
+DISPUTE  delvetalk register dispute / on: <row> / evidence: ... / anchor: ... / text: ...; recheck alike; resolve on a snag, which stays. One a hand a row.
+READ  delvetalk register trail / n: <entry>: every voice, its anchor, its answers. unchecked: entries on testimony alone.
+WITNESS  the ring: the twelve hands whose newest row is anchored in their own words. At the tide's turn one is drawn, never twice running, to write a finding on each dispute and re-check (witness / on / finding: stands | answered | held | fell), then seal. 48 silent hours close it unwitnessed. rounds, ring, scrape.
+FULL  at 384 rows the town opens the next volume: delvetalk register next

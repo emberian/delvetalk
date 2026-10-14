@@ -2,9 +2,10 @@
 
     python3 -W ignore rehearsal/register_play.py <out.json>
 
-A fresh genesis (tests/town.Town, fresh=True). The opener makes kind/register from world/kinds/register.kind, the
-desk the transport writes its readings on, and the town's register/1. Before every spell, the transport reads what
-the spell cites (transport/anchors.py), as the bridge would, from a fixed table of the posts as pds.delve.town served
+A fresh genesis (tests/town.Town, fresh=True), which since 2026-10-13 places kind/register, its desk and the town's
+`register` (deploy/genesis.py `town_register`); the play makes the town's register/1 beside it, as it did before genesis
+placed one, so its rounds start where the report's did (its heights are not the report's). Before every spell, the
+transport reads what the spell cites (transport/anchors.py `Reader.before`), as the bridge does, from a fixed table of the posts as pds.delve.town served
 them (read once, read-only, with com.atproto.repo.getRecord/listRecords; nothing is posted). The table also holds posts
 made up for the hands that have none on delve.town: the stranger wren, mallory and her two confederates oriel and
 quill. They are marked `synthetic`, and their CIDs are digests of their URIs.
@@ -30,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from deploy import genesis  # noqa: E402
-from tests.test_register import BURY, PDSReader, cid_of, make_desk, make_kind, spell  # noqa: E402
+from tests.test_register import BURY, DESK, PDSReader, cid_of, spell  # noqa: E402
 from tests.test_spween import hashed  # noqa: E402
 from tests.town import Town  # noqa: E402
 from tests.wire import label, nat, record  # noqa: E402
@@ -90,6 +91,7 @@ PDS = {
 SYNTHETIC = {f'at://{did}/town.delve.feed.post/3mxr{n:09d}': None for did in (WREN, *COVENANT) for n in (1, 2)}  # sable is in COVENANT
 SYNTHETIC = {u: (cid_of(u), WHO[u.split('/')[2]]) for u in SYNTHETIC}
 READER = PDSReader({u: c for u, (c, _) in {**PDS, **SYNTHETIC}.items()})
+BEFORE = anchors.Reader(client=READER, hourly=10 ** 6, hand=10 ** 6)  # a play's hour holds every reading it makes
 
 
 def post(rkey_or_uri):
@@ -130,9 +132,9 @@ class Play:
     def cast(self, demand, who, card, action, fields=(), note=''):
         self.n += 1
         text = spell(card, action, fields)
-        anchors.read(self.town.client, text, client=READER)  # what the spell cites, read before it is carried
-        reply = self.town.send(op='world-turn', principal=who, object=card, method='receive', identity=f'play-{self.n}',
-                               argument=record(text=label(text), post=label('')))
+        argument = record(text=label(text), post=label(''))
+        anchors.before(BEFORE, self.town.client, card, argument, who)  # what the spell cites, read before it is carried
+        reply = self.town.send(op='world-turn', principal=who, object=card, method='receive', identity=f'play-{self.n}', argument=argument)
         return self.step(demand, who, text, reply, note)
 
     def row(self, demand, who, card, action, on=None, evidence=None, anchor=None, text='', note='', finding=None):
@@ -226,9 +228,7 @@ def play(out):
         p = Play(town)
         for did, handle in HANDLES.items():
             town.send(op='world-arrive', principal='transport', did=did, handle=handle)
-        p.step('setup', OPENER, 'kinds make / name: register (world/kinds/register.kind)', make_kind(town))
-        p.step('setup', OPENER, 'world-create desk (RECORD; only the transport writes it)', make_desk(town))
-        made = p.cast('setup', OPENER, 'kind/register', 'make', [('tide', 'tide'), ('desk', 'desk')])
+        made = p.cast('setup', OPENER, 'kind/register', 'make', [('tide', 'tide'), ('desk', DESK)])
         reg = re.search(r'\b(register/\d+)', made['offers'][-1]['text']).group(1)
         rules = [r for r in town.send(op='world-rules', principal=OPENER, object='tide')['rows'] if f'{reg} rotate' in r['then']]
         p.log[-1]['note'] = f"the town's rule on the tide: {rules[0]['line'] if rules else 'NONE'}"
@@ -352,7 +352,7 @@ def play(out):
         p.row('dispute', MEITAN, reg, 'dispute', on=summary, evidence='checked', anchor=strong('3mxpg2bdszh2f'),
               text=f'#{summary} flattens: gemini\'s rules [13] are in their own bytes, and they disagree with "everyone agrees".')
         # The owner's way out: mallory's register takes no rows; the town's amendment is the opener's, journaled.
-        mine_reg = re.search(r'\b(register/\d+)', p.cast('bury', MALLORY, 'kind/register', 'make', [('tide', 'tide'), ('desk', 'desk')])['offers'][-1]['text']).group(1)
+        mine_reg = re.search(r'\b(register/\d+)', p.cast('bury', MALLORY, 'kind/register', 'make', [('tide', 'tide'), ('desk', DESK)])['offers'][-1]['text']).group(1)
         p.row('bury', HY3, mine_reg, 'ask', anchor=strong('3mxpsppufbr2f'), text='Can an owner bury a snag on their own register?')
         p.op('bury', MALLORY, f'world-amend {reg}: drop `kept` (not its owner)', op='world-amend', identity='bury-amend', object=reg, version=p.version(reg), law='')
         # Root, as before: a deletion stops the register until the number returns.

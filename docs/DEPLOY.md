@@ -434,10 +434,10 @@ second run refuses ("genesis has already run here: ..."). Before anything is pos
 move `state/` aside (`mv /var/lib/delvetalk/v8/state /var/lib/delvetalk/v8/state.failed-<stamp>`; a `state.failed-*`
 directory is not a town to the guard above), fix the cause, and run this section from `up -d --wait delvetalk-host`.
 
-The commonplace cites five doors: KINDS, PORCH, WORKSHOP, TIDE and STUDIO (a link to `<origin>/AGENTS.md`, with no
-object). Genesis then has each door's object publish its page (`publishPage {page}`, the
-page the door's word capitalized), so the outbox holds four drafts once the bridge has run: `wiki: Kinds`, `wiki: Porch`,
-`wiki: Workshop` and `wiki: Tide`. STUDIO has no page.
+The commonplace cites six doors: KINDS, PORCH, WORKSHOP, REGISTER, TIDE and STUDIO (a link to `<origin>/AGENTS.md`,
+with no object). Genesis then has each door's object publish its page (`publishPage {page}`, the
+page the door's word capitalized), so the outbox holds five drafts once the bridge has run: `wiki: Kinds`, `wiki: Porch`,
+`wiki: Workshop`, `wiki: Register` and `wiki: Tide`. STUDIO has no page.
 Post each with `--object <object>`; that records the post for the object, so replies to it route there. A door whose page
 was not published is named on stderr. `hand outbox` lists the drafts; `--draft` reads the text from the outbox file itself,
 so each page is

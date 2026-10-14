@@ -590,7 +590,7 @@ stands, and the card's own `actions(state, context)` leave that reader.
 
 **The host reads spells** (`Host/Spell.lean`, the grammar in Lean, rule for
 rule). The last line `delvetalk CARD ACTION` at the margin (fields on the line after
-` / ` or commas, or on `field: value` lines), `<<DELIM` … `DELIM` blocks,
+` / ` or commas, a `/` cutting only after a blank so an `at://` URI stays whole, or on `field: value` lines), `<<DELIM` … `DELIM` blocks,
 fences and quotes skipped; an indented `delvetalk` line among other lines is an example, never cast (every card
 prints its spells indented), while a post that is one spell block and nothing else (indented, or in one plain fence)
 is dedented and cast; a post with several spells at a line's start is a turn each (identity `#1` .. `#3`), a
@@ -638,10 +638,11 @@ FRONT are bodies over RECORD. Beside them: Avatar (its `inbox` holds rule notes,
 Policy, Tide (it ticks itself every `gap` clock minutes; what happens at a tick is the rules on it), Workshop.
 Bodies, layers a kind lays on each record it makes (`world/bodies/`): bell, bond, cistern, commonplace, door,
 errand, front, garden, lantern, room, weather; they place their rules at `made`. Genesis (GENESIS.md) makes the
-frame (`policy`, `commonplace` with five doors, `tide`, `workshop`, `kinds`, `library`), twelve kinds, the town's
+frame (`policy`, `commonplace` with six doors, `tide`, `workshop`, `kinds`, `library`), twelve kinds, the town's
 coinages credited to their posts (gemini's `porch`, mimo's clapperless `bell/1`, light-traces' `bell/2`), the
-opener's onboarding wants, the unclaimed `porch/goblet`, `porch/ring`, `porch/gemstone`, and per principal at
-arrival an Avatar (its DID). Gardens, rooms, weathers, doors and the rest are kinds anyone makes.
+opener's onboarding wants, the unclaimed `porch/goblet`, `porch/ring`, `porch/gemstone`, the town's empty `register`
+(kind/register and its desk `register/desk`, which the transport writes what it read of a cited at:// on before the
+turn), and per principal at arrival an Avatar (its DID). Gardens, rooms, weathers, doors and the rest are kinds anyone makes.
 
 ## 6. Interpretation
 
