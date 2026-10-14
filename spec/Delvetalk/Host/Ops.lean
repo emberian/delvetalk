@@ -2682,12 +2682,12 @@ def principalNamed (w : World) (handle : String) : Option String :=
     activity's), the same in every frame of the turn and in its law's context, "" for a turn a
     principal began. None is chosen by the client. -/
 def contextData (id principal handle town caller intent : String) (height clock : Nat) (kind command : String)
-    (post : String := "") (sender : String := "") : Data :=
+    (post : String := "") (sender : String := "") (room : Nat := Limits.cardShownChars) : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
     ("handle", .label handle), ("town", .label town), ("caller", .label caller), ("sender", .label sender), ("intent", .label intent), ("height", .natural height),
     ("clock", .natural clock),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
-      ("program", .label ""), ("immediatelyPrevious", .boolean false), ("post", .label post)])]
+      ("program", .label ""), ("immediatelyPrevious", .boolean false), ("post", .label post)]), ("room", .natural room)]
 
 /-- A record the host builds (a Context, a law's Request) as the receiving code's own library
     declares it: the fields its type names, in its order, each fitted alike. An object compiled
@@ -2703,7 +2703,7 @@ partial def fitRecord (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBend
 
 /-- The fields `contextData` fills. -/
 def contextFields : List String :=
-  ["world", "object", "principal", "handle", "town", "caller", "sender", "intent", "height", "clock", "inputOrigin"]
+  ["world", "object", "principal", "handle", "town", "caller", "sender", "intent", "height", "clock", "inputOrigin", "room"]
 
 /-- A Context type: a record (through the bounds) naming the principal and the intent, every
     field of which the host fills. An older library's Context with fewer fields is one too. -/
@@ -2733,7 +2733,7 @@ def withBindingContext (world : Option World) (entry : Delvetalk.CheckedEntry) (
   let command := ((request.getObjVal? "artifact").toOption.bind fun a => (a.getObjValAs? String "entry").toOption).getD ""
   let context := contextData (← request.getObjValAs? String "object") principal
     ((world.map (handleShown · principal)).getD "") ((world.map (·.opener)).getD "") "" (← request.getObjValAs? String "intent")
-    ((world.map (·.height)).getD 0) ((world.map (·.clock)).getD 0) "repl" command
+    ((world.map (·.height)).getD 0) ((world.map (·.clock)).getD 0) "repl" command (room := (world.map (·.cardRoom)).getD Limits.cardShownChars)
   return request.setObjVal! "arguments" (Json.arr (arguments.push (dataJson (fitRecord bounds ct context))))
 
 /-- An object's Bend law on one ordinary write: none when it admits. -/
@@ -2757,7 +2757,7 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
                       reading := some s!"the law of {id} reads {r}, which you may not see." }
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
-  let context := contextData id subject (handleShown w subject) w.opener caller p.intent w.height w.clock "law" method (sender := p.sender)
+  let context := contextData id subject (handleShown w subject) w.opener caller p.intent w.height w.clock "law" method (sender := p.sender) (room := w.cardRoom)
   let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
     ("kind", .natural kind), ("pin", .label pin),
     ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
@@ -4665,20 +4665,35 @@ def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener 
     world's model readings a day, a hand's turns an hour, a hand's objects, the world's paints a day. -/
 def quotaKeys : List String := ["postQuota", "interpretQuota", "modelQuota", "turnQuota", "objectQuota", "paintQuota"]
 
-/-- `w` with each quota `get` names (`quotaKeys`), the rest as they stand. -/
+/-- The sizes a later `settings` entry may name beside the quotas: the characters a reader is shown of a card
+    (`World.cardRoom`, `Limits.cardShownChars` to `Limits.maxCardRoom`). The moderated `settings` power names quotas only. -/
+def roomKeys : List String := ["cardRoom"]
+
+/-- Every natural a later `settings` entry may name. -/
+def settingKeys : List String := quotaKeys ++ roomKeys
+
+/-- `w` with each quota and size `get` names (`settingKeys`), the rest as they stand. -/
 def withQuotas (w : World) (get : String → Option Nat) : World :=
   { w with postQuota := (get "postQuota").getD w.postQuota, interpretQuota := (get "interpretQuota").getD w.interpretQuota,
            modelQuota := (get "modelQuota").getD w.modelQuota, turnQuota := (get "turnQuota").getD w.turnQuota,
-           objectQuota := (get "objectQuota").getD w.objectQuota, paintQuota := (get "paintQuota").getD w.paintQuota }
+           objectQuota := (get "objectQuota").getD w.objectQuota, paintQuota := (get "paintQuota").getD w.paintQuota,
+           cardRoom := (get "cardRoom").getD w.cardRoom }
+
+/-- A size a settings entry names, within its bounds. -/
+def checkRoom (k : String) (n : Nat) : Except String Unit :=
+  if k == "cardRoom" && (n < Limits.cardShownChars || n > Limits.maxCardRoom) then
+    throw s!"cardRoom is {Limits.cardShownChars} to {Limits.maxCardRoom} characters"
+  else pure ()
 
 /-- A later `settings` entry (`world-settings`, the `settings` power; docs/ROOT.md §2.2): the opener
     replaces quotas (`quotaKeys`), each value the last one named, with a reading. -/
 def settingsChange (w : World) (principal intent digest : String) (values : List (String × Nat)) (reading : String)
     (extra : List (String × Json) := []) : Except String (World × Json) := do
   if w.opener.isEmpty || principal != w.opener then throw "settings are the opener's"
-  if values.isEmpty then throw s!"settings names none of {", ".intercalate quotaKeys}"
-  for (k, _) in values do
-    unless quotaKeys.contains k do throw s!"no setting {k}"
+  if values.isEmpty then throw s!"settings names none of {", ".intercalate settingKeys}"
+  for (k, n) in values do
+    unless settingKeys.contains k do throw s!"no setting {k}"
+    checkRoom k n
   if let some r := retained w principal intent digest then return (w, r)
   let w1 := withQuotas w (fun k => values.lookup k)
   let outcome := Json.mkObj ([("tag", toJson "settings")] ++ values.map (fun (k, n) => (k, toJson n)) ++ [("reading", toJson reading)])
@@ -5192,6 +5207,7 @@ def settingValue (w : World) (k : String) : Option Json :=
   | "turnQuota" => some (toJson w.turnQuota)
   | "objectQuota" => some (toJson w.objectQuota)
   | "paintQuota" => some (toJson w.paintQuota)
+  | "cardRoom" => some (toJson w.cardRoom)
   | "opener" => some (toJson w.opener)
   | "libraryLaw" => some (toJson w.libraryLaw)
   | _ => none
@@ -5306,6 +5322,7 @@ def applyRoot (w : World) (outcome : Json) : Except String World := do
         | "turnQuota" => pure { w with turnQuota := ← natOf v }
         | "objectQuota" => pure { w with objectQuota := ← natOf v }
         | "paintQuota" => pure { w with paintQuota := ← natOf v }
+        | "cardRoom" => do let n ← natOf v; checkRoom "cardRoom" n; pure { w with cardRoom := n }
         | "opener" => pure { w with opener := ← v.getStr? }
         | "libraryLaw" => pure { w with libraryLaw := ← v.getStr? }
         | _ => throw s!"no setting {k}"

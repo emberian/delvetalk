@@ -390,6 +390,7 @@ def run (w : World) (id : String) (o : Object) (reader name : String) (c : Compi
   let some entry := c.entry | throw "noCard"
   let (domains, _) := peeled 3 c.type
   let context := contextData id reader (handleShown w reader) w.opener "" "" w.height w.clock (if whole then Card.wholeKind else "card") name
+    (room := w.cardRoom)
   let fit := fun (i : Nat) (d : Data) => match domains[i]? with
     | some ty => fitRecord c.bounds ty d
     | none => d

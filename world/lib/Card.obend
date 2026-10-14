@@ -62,7 +62,7 @@ def valueText(value: Form.Value) -> String:
 # The context of a reader nobody is: what a card shows a
 # stranger. Mine is "(yours)" when the principal is the reader.
 def stranger() -> Abi.Context:
-  {world: "", object: "", principal: "", handle: "", town: "", caller: "", sender: "", intent: "", height: 0n, clock: 0n, inputOrigin: {kind: "", object: "", command: "", program: "", immediatelyPrevious: false, post: ""}}
+  {world: "", object: "", principal: "", handle: "", town: "", caller: "", sender: "", intent: "", height: 0n, clock: 0n, inputOrigin: {kind: "", object: "", command: "", program: "", immediatelyPrevious: false, post: ""}, room: 1400n}
 # The card's own id for a spell it prints: the object rendering it, or `word` for a card
 # rendered outside the world (a probe, a page).
 def called(context: Abi.Context, word: String) -> String:
@@ -106,17 +106,20 @@ def shortened(fragment: String) -> String:
 # lines are.
 def budget() -> Nat:
   1200n
-# What readers see of a reply is 1,400 characters: the card and the receipt line the host stamps
-# under it (transport/bridge.py `receipt_line`: `● admitted <id> v<n>, entry <n>, receipt <slug>`
-# and the link `<origin>/o/<id>#v<n>`, the id twice; 120 covers the rest with an origin of up to
+# What readers see of a reply is the world's room (`Context.room`, the host's `cardRoom`): 1,400 characters, what one
+# delve.town post holds (`post`), unless the world gives more (a town that lives in its own feed: kilobytes). The card
+# and the receipt line the host stamps under it (transport/bridge.py `receipt_line`: `● admitted <id> v<n>, entry <n>,
+# receipt <slug>` and the link `<origin>/o/<id>#v<n>`, the id twice; 120 covers the rest with an origin of up to
 # 60). A card takes what its receipt leaves (`limit`); a renderer gives its lists what its fixed
 # parts leave of that, one budget across the whole card (`left`).
 def post() -> Nat:
   1400n
+def room(context: Abi.Context) -> Nat:
+  if context.room < post() then post() else context.room
 def receipt(object: String) -> Nat:
   2n * textLength(object) + 120n
 def limit(context: Abi.Context) -> Nat:
-  if context.inputOrigin.kind == "whole" then whole() else if receipt(context.object) >= post() then 0n else post() - receipt(context.object)
+  if context.inputOrigin.kind == "whole" then whole() else if receipt(context.object) >= room(context) then 0n else room(context) - receipt(context.object)
 # A card rendered whole (the host's `world-card {whole}`, a read's `whole`) has no limit: a transport that threads a
 # long text into parts (transport/post.py `parts`) cuts it itself.
 def whole() -> Nat:

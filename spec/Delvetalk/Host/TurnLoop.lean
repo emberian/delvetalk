@@ -874,6 +874,7 @@ def hasMethod (o : Object) (name : String) : Bool :=
     object (`caller`, "" for `world-card`), and the turn's intent and height. -/
 def cardContext (w : World) (id reader caller intent : String) (height : Nat) (method : String) (whole : Bool := false) : Data :=
   contextData id reader (handleShown w reader) w.opener caller intent height w.clock (if whole then Card.wholeKind else "card") method
+    (room := w.cardRoom)
 
 /-- A pure definition of `id`'s package run on its committed state (the first argument) through the
     stored path under this turn's ticks (KERNEL-HANDOFF §15): only the rows it forces are fetched,
@@ -1033,6 +1034,7 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   let c ← compiledMethod obj "handle"
   let entry ← entryOf c
   let context := contextData handler s.subject (handleShown s.world s.subject) s.world.opener self s.intent s.world.height s.world.clock "handle" "" s.post s.sender
+    s.world.cardRoom
   let (domain, arguments) := match c.type with
     | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ ct _)) => (d, [obj.state, plan, fitRecord c.bounds ct context])
     | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
@@ -2019,7 +2021,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
           (some ((← expectedNow).setObjVal! "cases" (Json.mkObj [("at", toJson path), ("given", toJson word), ("cases", toJson cases)]))))
     else pure argument
   let context := contextData id s.subject (handleShown s.world s.subject) s.world.opener caller s.intent s.world.height s.world.clock
-    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post s.sender
+    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post s.sender s.world.cardRoom
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([storedState obj, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([storedState obj, fitRecord compiled.bounds ct context], r)
@@ -2652,6 +2654,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
       recordCells id o.version { scalar := true }
       let context := contextData id s.subject (handleShown s.world s.subject) s.world.opener self s.intent s.world.height s.world.clock "view" view s.post s.sender
+        s.world.cardRoom
       match ← derivedView id o view context with
       | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause
@@ -4471,18 +4474,18 @@ def cardRendered (w : World) (id reader : String) : Option String :=
     | (.ok (.ok document), _) => (Delvetalk.Document.render document).toOption
     | _ => none
 
-/-- `text` followed by `block` within `Limits.cardShownChars` characters, the one place the bound is applied to a
-    card: over it, `text` is cut to leave room for a closing line that says so and where the rest is read, and
-    `block` (whole lines) stands after it. -/
-def clipCard (id text block : String) : String :=
-  let bound := Limits.cardShownChars
+/-- `text` followed by `block` within `bound` characters (`Limits.cardShownChars`, or a world's `cardRoom`), the one
+    place the bound is applied to a card: over it, `text` is cut to leave room for a closing line that says so and
+    where the rest is read, and `block` (whole lines) stands after it. -/
+def clipCard (id text block : String) (bound : Nat := Limits.cardShownChars) : String :=
   let whole := if block.isEmpty then text else (if text.isEmpty || text.endsWith "\n" then text else text ++ "\n") ++ block
   if whole.length ≤ bound then whole else
   let note := s!"\n[clipped at {bound} characters; world-inspect {id} reads its source]\n"
   (text.take (bound - note.length - block.length)).toString ++ note ++ block
 
-/-- The card `id` shows its readers as `text`, clipped by `clipCard`, with one line for each want it holds
-    (`wants <name>: <reading>: <spell>`, `wantRows` for `reader`) while the lines stay within a quarter of the bound. -/
+/-- The card `id` shows its readers as `text`, clipped by `clipCard` at the world's `cardRoom`, with one line for each
+    want it holds (`wants <name>: <reading>: <spell>`, `wantRows` for `reader`) while the lines stay within a quarter of
+    the one-post bound (`Limits.cardShownChars`). -/
 def shownCard (w : World) (id reader text : String) : String :=
   let lines : List String := match w.objects[id]? with
     | some o => (wantRows w reader id o).map fun (row : Json) =>
@@ -4492,7 +4495,7 @@ def shownCard (w : World) (id reader text : String) : String :=
     | none => []
   let (block, _) := lines.foldl (init := ("", true)) fun (held : String × Bool) (l : String) =>
     if held.2 && held.1.length + l.length ≤ Limits.cardShownChars / 4 then (held.1 ++ l, true) else (held.1, false)
-  clipCard id text block
+  clipCard id text block w.cardRoom
 
 /-- `cardRendered` within `Limits.cardShownChars` characters, "" for none: what an interpretation shows the model
     of the card answered (its wants go with it as `wants`, whole). -/

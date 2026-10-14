@@ -25,8 +25,12 @@ def maxObjectIdBytes : Nat := 128
 def spellsPerReply : Nat := 3
 /-- Acts one plan carries (`Spell.plan`, `runPlan`): one turn, judged once at its commit. -/
 def planActs : Nat := 8
-/-- The characters of a card any reader is shown: `world-card`, a question's answer, the model's copy (docs/FLEX.md §2, docs/AGENTS-API.md). -/
+/-- The characters of a card any reader is shown: `world-card`, a question's answer, the model's copy (docs/FLEX.md §2, docs/AGENTS-API.md);
+    what one delve.town post holds. A world may give its readers more (`World.cardRoom`), never its model's copy. -/
 def cardShownChars : Nat := 1400
+/-- The most a world's `cardRoom` may be (`world-settings {cardRoom}`): a town that lives in its own feed shows kilobytes,
+    within one document's output (`Bounds.documentOutputBytes`) many times over. -/
+def maxCardRoom : Nat := 65536
 /-- The mentions of one post that are addressed, in its order (the bridge turns each on the mentioned avatar); the
     rest are ignored, so a post cannot fan out to everyone it names. -/
 def mentionsAddressed : Nat := 4
@@ -832,6 +836,10 @@ structure World where
       none). Past it a card is read exact, `exact {reason: budget}` (`Enchant.paintOf`); the day's count is the
       render cache's, never journaled, as paints are not. -/
   paintQuota : Nat := 0
+  /-- The characters a reader is shown of a card, and what Bend's `Card.limit` gives a card (`Context.room`):
+      `Limits.cardShownChars`, one delve.town post, unless `world-settings {cardRoom}` gives more (at most
+      `Limits.maxCardRoom`; docs/DEPLOY.md "A second instance"). The model's copy of a card stays at the default. -/
+  cardRoom : Nat := Limits.cardShownChars
   /-- This clock hour's counts. -/
   hourCounts : HourCounts := {}
 
