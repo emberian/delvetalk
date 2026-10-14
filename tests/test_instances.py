@@ -48,11 +48,11 @@ class Live(unittest.TestCase):
         env = dict(line.split('=', 1) for line in self.live.env().splitlines() if not line.startswith('#'))
         self.assertEqual((env['COMPOSE_PROJECT_NAME'], env['DELVETALK_DATA'], env['DELVETALK_ROOT'], env['DELVETALK_REPO_KEYS'],
                           env['DELVETALK_HTTP_PORT'], env['DELVETALK_HAND_PORT'], env['DELVETALK_OPENER']),
-                         ('delvetalk', '/var/lib/delvetalk/v15', '/var/lib/delvetalk/root', '/etc/delvetalk/repo', '8765', '8766',
+                         ('delvetalk', '/var/lib/delvetalk/v16', '/var/lib/delvetalk/root', '/etc/delvetalk/repo', '8765', '8766',
                           'did:plc:6amo7col5h4ciq2gpm5eur7b'))
 
     def test_against_compose_defaults_only_the_data_directory_and_the_station_differ(self):
-        """compose.yml's own defaults are the live town's; its `.env` moved two of them since (v11 to v15 by the
+        """compose.yml's own defaults are the live town's; its `.env` moved two of them since (v11 to v16 by the
         carries, the station by the owner's word), and names the rest as compose would take them."""
         defaults = {}
         for name in ('compose.yml', 'compose.hand.yml'):
@@ -116,6 +116,31 @@ class Instances(unittest.TestCase):
                                 backup_minute=5, config={'no_such_setting': 1})
         with self.assertRaises(SystemExit):
             bad.toml()
+
+
+
+class Image(unittest.TestCase):
+    """The transport image carries every document the transport and genesis read at run time: an open town's genesis
+    read docs/AGENTS-ARRIVE.md, which the image lacked, and refused at the deploy of obend (2026-10-14); the
+    rehearsal ran from a checkout, which has every file. A file must be both in the build context (the dockerignore's
+    re-included paths) and copied."""
+
+    def test_every_document_read_at_run_time_is_copied_into_the_image(self):
+        from deploy import genesis
+        from transport import http, pages
+        copied = set()
+        for line in (ROOT / 'deploy' / 'Dockerfile.transport').read_text().splitlines():
+            if line.startswith('COPY ') and '--from' not in line:
+                copied.update(line.split()[1:-1])
+        context = [line[1:] for line in (ROOT / 'deploy' / 'Dockerfile.transport.dockerignore').read_text().splitlines()
+                   if line.startswith('!')]  # the build context is `*` and these, re-included
+        read = {pages.GUIDE, pages.ARRIVE, http.EXAMPLES, genesis.GUIDE, Path(Config().plan)}
+        for path in sorted(read):
+            rel = path.resolve().relative_to(ROOT).as_posix()
+            self.assertTrue(any(rel == c or rel.startswith(c.rstrip('/') + '/') for c in copied),
+                            f'{rel} is read at run time but deploy/Dockerfile.transport does not copy it')
+            self.assertTrue(any(rel == c or rel.startswith(c.rstrip('/') + '/') for c in context),
+                            f'{rel} is read at run time but deploy/Dockerfile.transport.dockerignore leaves it out of the build')
 
 
 if __name__ == '__main__':

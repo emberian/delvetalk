@@ -8,7 +8,7 @@
 [delvetalk]
 origin = "https://gsb.fg-goose.online"
 opener = "did:plc:6amo7col5h4ciq2gpm5eur7b"  # the live journal's opener (DEPLOY "First start"); a new world omits it
-data = "v15"
+data = "v16"
 http_port = 8765
 hand_port = 8766
 firehose_port = 8767

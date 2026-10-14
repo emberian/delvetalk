@@ -716,6 +716,10 @@ class Handler(BaseHTTPRequestHandler):
                 origin = f'{ref.scheme}://{ref.netloc}' if ref.netloc and ref.username is None else ''
             except ValueError:
                 origin = ''
+        if origin == 'null' and self.headers.get('Sec-Fetch-Site') == 'same-origin':
+            # Under `Referrer-Policy: no-referrer` (the edge's baseline_headers) a browser sends `Origin: null` on its own
+            # forms (Fetch, "serializing a request origin"); Sec-Fetch-Site, which no page can set, says it is ours.
+            origin = self.server.origin
         if origin != self.server.origin or self.headers.get('Sec-Fetch-Site') == 'cross-site':
             self.fail('denied', 'browser writes require the exact town origin')
             return False
