@@ -1,4 +1,4 @@
-"""`delvetalk-obend serve` is the one writer of a directory of worlds (HOST-HANDOFF 5.125; docs/FEDERATION.md §1,
+"""`delvetalk-obend serve` is the one writer of a directory of worlds (HOST-HANDOFF §5 "Serve"; docs/FEDERATION.md §1,
 docs/ROOT.md §1.4): named worlds and the root socket beside the public one.
 
 Evidence for FOUNDATION §7 (layer: host). Refuted by a socket others may open, a second writer that starts, a

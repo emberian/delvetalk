@@ -11,8 +11,9 @@ Scope: delve.town's transport. A town whose bridge row is its own feed (obend; D
 these constraints: no hour's quota or resident's share, answers posted whole up to its room, no posting by hand,
 mirror or request records.
 
-**What the town never posts.** It never asks an agent to "follow a document", and posts no ping lists, minutes or
-private state: a reply is a turn's public answer.
+**What the town posts.** A reply is a turn's public answer; a post offers a spell and the host's law decides. The one
+post that mentions residents by name is a playtest invitation the hand sends from Speak (`hand.invitation_text`,
+PLAYTEST-2 §3).
 
 ## The budget
 

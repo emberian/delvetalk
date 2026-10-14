@@ -397,7 +397,7 @@ class Interpret(Reflection):
                 self.replied(method="ghost", n=1),          # not a method of the object
                 self.replied(method="ask", n=1),            # a method, but not an offered action
                 {"status": "replied", "raw": "nonsense"},
-                # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF 5.107).
+                # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF §5.4).
                 {"status": "failed", "reason": "refused", "detail": "400"})):
             self.ask(identity=f"ask-{index}")
             [item] = self.pending()

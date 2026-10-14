@@ -102,7 +102,7 @@ document.addEventListener('click', (event) => {
     send(form.action, data);
   });
 })();
-// The town unfolded and its inspector (transport/atlas.py, docs/WEB.md "The town unfolded"). Every page here works
+// The town unfolded and its inspector (transport/atlas.py, docs/WEB.md "The town at a glance"). Every page here works
 // without this script: a room's panel opens as a <details>, a spell is a form that posts to its card's page, the
 // workshop's spell posts to the workshop. With it: a room unfolds with its scene, view and spells fetched from its own
 // pages; a spell or the workshop's answer comes back in place, a problem's line a link into the box; the drawing,

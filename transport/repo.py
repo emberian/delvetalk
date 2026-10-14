@@ -90,7 +90,7 @@ class Signed:
     reader's projection of the entry; signing is deterministic over (journal, key, ledger). Epochs raise the
     clock floor before a carry's first entry or after a rotation's height, without changing existing record keys.
 
-    A carried journal continues the heights of the world before (HOST-HANDOFF 5.182): its first entry is height
+    A carried journal continues the heights of the world before (HOST-HANDOFF §3): its first entry is height
     `base` + 1, not 1. `heights` and `revs` count positions in this journal (1 the first entry), and a height read
     from the host becomes a position by `position`."""
 

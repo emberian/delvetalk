@@ -1,4 +1,4 @@
-"""Posting reservations and model retries are host facts (HOST-HANDOFF 5.107; codex transport 9, 10).
+"""Posting reservations and model retries are host facts (HOST-HANDOFF §5.5, §5.4).
 
 Evidence for the host's decisions (layer: host): a `delve` post is reserved against the journaled
 `postQuota` per clock hour before the network is touched, once per intent, and given back only by a

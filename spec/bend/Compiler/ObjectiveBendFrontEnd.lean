@@ -451,7 +451,7 @@ structure Lowering where
   /-- The package's text: the top-level clauses of the entry module and of every module it is a
   layer over, the lowest first (a clause in any other module refuses). Its laws (`Lowering.laws`) the artifact commits and the host judges every write of an
   object pinned to the artifact by (`Delvetalk.Host.Law.denote`); its rules and wants are the host's
-  to place on every object it makes (KERNEL-HANDOFF §27). -/
+  to place on every object it makes (KERNEL-HANDOFF §11). -/
   clauses : List ObjectiveBendLaw.Clause
   /-- The typing proposal for the selected term, or why there is none: built once. -/
   proposal : Except String Json

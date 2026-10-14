@@ -1,11 +1,11 @@
-"""A text word for a sum of empty cases at the boundary (HOST-HANDOFF 5.52): where an argument from
+"""A text word for a sum of empty cases at the boundary (HOST-HANDOFF §5.1 "Typed arguments"): where an argument from
 outside (a direct `world-turn`, an interpretation's proposal) has a text where the method's input has a
 closed sum whose every case has an empty payload, the text is taken as the case of that name, in a field,
 a nested record or a list; a word naming no case is refused `typeMismatch` naming the cases (a direct
 turn) or answered `unclear` naming them (a proposal). A sent or delivered argument is typed already and
 is never read so.
 
-Evidence for HOST-HANDOFF 5.52 (layer: host). Refuted by a case word that does not run the method with the
+Evidence for HOST-HANDOFF §5.1 (layer: host). Refuted by a case word that does not run the method with the
 case, a word naming no case that is admitted or refused without the cases, or a proposal whose word
 reaches the object as text.
 
@@ -98,7 +98,7 @@ class SumWords(Reflection):
         return self.host.send(op="world-interpretation", id=item["id"],
                               reply={"status": "replied", "model": "m", "raw": "\n".join(["delvetalk garden plant"] + [f"{k}: {v}" for k, v in argument.items()])})
 
-    # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF 5.64).
+    # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF §5.4).
     def test_a_proposals_word_is_the_case_and_one_naming_none_is_unclear_naming_them(self):
         settled = self.interpret({"colour": "violet", "seed": "rue"})
         verdict = settled["receipt"]["outcome"]["verdict"]

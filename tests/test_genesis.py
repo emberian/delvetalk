@@ -96,7 +96,7 @@ class Genesis(unittest.TestCase):
                 self.assertFalse(re.match(r'(please |you |hang |make |inspirit |tend |rain )', row['reading']), row)
 
     def test_the_tide_ticks_itself_every_hour_with_nobody_posting(self):
-        """OFFERING §4: the opener's first tick starts the tide, which then ticks itself every 60 clock minutes;
+        """VOICE "The offering": the opener's first tick starts the tide, which then ticks itself every 60 clock minutes;
         a clock jump ticks it once, at the clock it wakes to."""
         tide = next(m for m in self.made if m['object'] == 'tide')
         self.assertEqual(tide['tick'], 'admitted', tide)
@@ -831,7 +831,7 @@ class Commonplace(unittest.TestCase):
         first = self.host.send({'op': 'world-wanting', 'principal': stranger, 'oldest': True, 'limit': 8})['rows'][0]
         wanted = '\n%s: %s\n  %s\n' % (first['object'], first['reading'], first['asks'])
         self.assertIn(wanted, blank)
-        # The card itself leads with it (the web's card, and the answer to a question hob reads nothing into, 5.171, are
+        # The card itself leads with it (the web's card, and the answer to a question hob reads nothing into, HOST-HANDOFF §5.4, are
         # this text): the host hands `renderWanting` the page and waiting count, as it hands it the reader.
         shown = self.host.send({'op': 'world-card', 'principal': stranger, 'object': 'commonplace'})['text']
         self.assertEqual(shown.split('\n')[3], 'What wants a hand, turning daily:', shown)
@@ -863,7 +863,7 @@ class Commonplace(unittest.TestCase):
         hello = self.say(reader, 'commonplace', 'hello', 'hello')
         self.assertEqual((hello['status'], hello['result']['label'], hello.get('offers', [])), ('admitted', 'silent', []), hello)
         # A field line that reached the commonplace and names a door's action is the host's to fit (HOST-HANDOFF
-        # 5.163): it runs at once, no model, as the reader's turn on the first door taking it (the porch, a room),
+        # §5.4): it runs at once, no model, as the reader's turn on the first door taking it (the porch, a room),
         # whose card refuses it by its own clause.
         got = self.host.send({'op': 'world-turn', 'principal': reader, 'object': 'commonplace', 'method': 'receive', 'reach': 'fields',
                               'argument': record(text=label('choose: Open'), post=label('at://x/p/by-field-line')), 'identity': 'by-field-line'})

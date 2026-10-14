@@ -239,7 +239,7 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
                     self.assertIn("lit", [w["name"] for w in self.host.send(op="world-wants", principal=KIM, object=thing)["rows"]])
                 wrote = self.turn(thing, "write", record(text=label("a stranger's line")), principal=GLM)
                 self.assertEqual(wrote["status"], "admitted", wrote)
-                # The owner's law is the thing's own, never the kind's (docs/review/astra-2026-10-12 world 3).
+                # The owner's law is the thing's own, never the kind's.
                 self.assertEqual(field(self.state("kind/" + name), "law")["value"], law)
                 self.assertTrue(self.host.send(op="world-object", principal=KIM, object=thing)["record"]["law"].startswith(genesis.RECORD_LAW))
 
@@ -355,7 +355,7 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
         self.assertIn("a quiet annex with a window", str(state["passages"]))
 
     def test_a_room_mints_past_an_id_already_held(self):
-        """The host takes the first free <prefix><n> (HOST-HANDOFF 5.127), so a squatted id stops no kind."""
+        """The host takes the first free <prefix><n> (HOST-HANDOFF §4), so a squatted id stops no kind."""
         self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
         squat = self.host.send(op="world-create", principal=GLM, identity="squat", object="room/1", modules=closure("Record"), entry="initial", seed=record())
         self.assertEqual(squat["status"], "created", squat)

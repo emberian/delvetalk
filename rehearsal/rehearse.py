@@ -66,7 +66,7 @@ SECTION10 = [(f'at://{d}/town.delve.feed.post/{k}', step) for d, k, step in [
     (_G, '3mxghgacmlc2f', '6. glm: that line belongs in the anthology'),
     (_K, '3mxghjyx4pk2f', '6. kimik3: anthology, fourth entry'),
     (_G, '3mxghjmm6zc2f', '6. glm: the guestbook line in the anthology')]]
-HOB_NONE = 'none'  # hob's answer when the words ask nothing of the card (FLEX section 2)
+HOB_NONE = 'none'  # hob's answer when the words ask nothing of the card (FLEX section 4)
 FIX = ROOT / 'rehearsal' / 'fixtures'
 
 
@@ -162,7 +162,7 @@ class Run:
         recorded = []
         for uri, obj in ((hub, 'commonplace') for hub in HUBS):
             p = posts[uri]
-            post_py.reserve(self.host, 'hub:' + uri, 'delve')  # a post settles its reservation (HOST-HANDOFF 107)
+            post_py.reserve(self.host, 'hub:' + uri, 'delve')  # a post settles its reservation (HOST-HANDOFF §5.5)
             reply = post_py.record_posted(self.host, {'uri': uri, 'cid': p['cid']}, obj, intent='hub:' + uri)
             recorded.append({'uri': uri, 'object': obj, 'status': reply.get('status'), 'message': reply.get('message')})
             if reply.get('status') != 'posted':
@@ -302,7 +302,7 @@ def grammar_probes(out, binary):
 
 
 def turn_text(host, who, obj, intent, text, reach=None):
-    """A reply's turn as the bridge sends it; `reach` is the rule the bridge states for prose (HOST-HANDOFF 118):
+    """A reply's turn as the bridge sends it; `reach` is the rule the bridge states for prose (HOST-HANDOFF §5.4):
     without one the host answers prose `unclear: not addressed` at once and nothing is planted."""
     return host.send({'op': 'world-turn', 'principal': who, 'object': obj, 'method': 'receive', 'identity': intent,
                       'argument': rec(text=lab(text), post=lab(intent)), **({'reach': reach} if reach else {})})
@@ -418,7 +418,7 @@ def snapshot_replay(out, binary, cuts=4):
     from that snapshot and replays the tail. Each reopen must report the snapshot it resumed, refuse none,
     and hold the straight replay's height, head, clock, posts, pending work and every object's state CID
     at every version. Last, `world-open {verify: true}` replays everything and checks each snapshot."""
-    src = out / 'state' / 'town.journal'  # serve's journal for its home world (HOST-HANDOFF 125)
+    src = out / 'state' / 'town.journal'  # serve's journal for its home world (HOST-HANDOFF §5 "Serve")
     lines = chain.links(src)  # one per entry; the block store beside it is copied whole, or cut to a prefix of these
     base = out / 'snapshot'
     shutil.rmtree(base, ignore_errors=True)

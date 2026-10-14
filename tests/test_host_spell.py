@@ -1,7 +1,7 @@
 """The host's spell parser (spec/Delvetalk/Host/Spell.lean, op `spell-parse`) answers every recorded
 input as the fixtures say: parse, bare and fit, with the refusal clause names.
 
-Evidence for WHOLENESS section 2 (layer: host): the host parses spells. The fixtures
+Evidence for FOUNDATION §5 "Spell grammar" (layer: host): the host parses spells. The fixtures
 (tests/fixtures/spells/*.json) were recorded from the Bend grammar, which the host agreed with on
 every row before world/lib/Spell.obend's parser was deleted (lane/objects9); the host is the
 grammar now; tests/test_spell.py adds the cases the recording lacks.

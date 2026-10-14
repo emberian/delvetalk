@@ -83,7 +83,7 @@ class Drafts(BridgeCase):
 
 
 class DefaultPage(BridgeCase):
-    """WORLD-REVIEW finding 16: a card that declares no `publishPage` has the host's default page, the card
+    """A card that declares no `publishPage` has the host's default page, the card
     as a stranger sees it and how to reply, under the given page or its id."""
 
     def test_a_card_without_publish_page_gets_the_default_page(self):

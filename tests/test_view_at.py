@@ -2,7 +2,7 @@
 answered as `view` answers the present one, under read authority, with the root recorded at the
 object's CURRENT version.
 
-Evidence for HOST-HANDOFF 5.47 (layer: host). Refuted by a state other than the one the version had, a
+Evidence for HOST-HANDOFF §5.3 (layer: host). Refuted by a state other than the one the version had, a
 root at the old version, a future version answered, or a private object answered.
 
     python3 -W error -m unittest tests.test_view_at -v

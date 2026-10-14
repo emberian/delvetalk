@@ -99,7 +99,7 @@ class Bell(Arc):
         self.assertRegex(self.card(again), r"Already rung, by .+ at entry \d+\.")
         self.assertEqual(self.town.send(op="world-object", principal=OPENER, object=bell)["record"]["version"], version)
         long = self.say(GLM, bell, "delvetalk %s rain\ntext: %s" % (bell, "x" * 201))
-        # A misfit is hob's at every card (HOST-HANDOFF 5.163): the turn waits, and hob's none leaves the host's badSpell with the usage.
+        # A misfit is hob's at every card (HOST-HANDOFF §5.4): the turn waits, and hob's none leaves the host's badSpell with the usage.
         out = self.hob_says_none(long, GLM)["outcome"]
         self.assertEqual((out["tag"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), out)
         self.assertIn("delvetalk %s rain" % bell, out["hint"])
@@ -115,7 +115,7 @@ class Garden(Arc):
         self.assertIn("delvetalk garden/bell/1 rain", card)
         self.assertEqual(self.things(), ["garden/bell/1"])
         again = self.say(KIM, "garden", "delvetalk garden plant\nseed: %s\ncolour: silver" % ("y" * 81))
-        # The misfit is hob's (HOST-HANDOFF 5.163): the turn waits, hob's none leaves the host's badSpell and nothing is planted.
+        # The misfit is hob's (HOST-HANDOFF §5.4): the turn waits, hob's none leaves the host's badSpell and nothing is planted.
         out = self.hob_says_none(again, KIM)["outcome"]
         self.assertEqual((out["tag"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), out)
         self.assertEqual(self.things(), ["garden/bell/1"])

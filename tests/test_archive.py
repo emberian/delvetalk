@@ -9,9 +9,9 @@ The section 10 hour, from the archive itself: glm's planting grows a bell and it
 for it; a reply to a planting post rains on that bell; a second cistern line digs garden/cistern/2;
 gemini's post rains on the bell it reached by its fenced `rain:` line, at once and with no model; the three
 anthology lines posted under the anthology card are hob's, read with that card's table, and written (HOST-HANDOFF
-5.163); the nine-post burst admits; every card shows handles, stays within the clip and cites no hash; no program
+§5.4); the nine-post burst admits; every card shows handles, stays within the clip and cites no hash; no program
 fails. The reach rule returns 81 posts; words a reached card leaves silent, and every misfit spell, are hob's: 72
-model calls, each post read at most once (FLEX section 2; a post's misfit spells are one reading, HOST-HANDOFF 5.166). The journal reopened from a snapshot holds
+model calls, each post read at most once (FLEX §4; a post's misfit spells are one reading, HOST-HANDOFF §5.4). The journal reopened from a snapshot holds
 what its straight replay holds.
 """
 import json
@@ -30,9 +30,9 @@ GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6j
 # ordinary turns on the public socket).
 REACHED = 81
 # Words a reached card leaves silent go to hob with that card's table, and so does every misfit spell (HOST-HANDOFF
-# 5.163); field lines that fit an offered form run at once, with no model. The 81 reached posts make 72 posts asked, a
+# §5.4); field lines that fit an offered form run at once, with no model. The 81 reached posts make 72 posts asked, a
 # call each (67 `none`, the three anthology lines' proposals, two asks): a post's spells are a turn each (HOST-HANDOFF
-# 5.148) but its misfit spells are one reading (5.166), so the three `delvetalk wake` spells of one post (Wake is
+# §5 "Spells") but its misfit spells are one reading (§5.4), so the three `delvetalk wake` spells of one post (Wake is
 # deleted: each a misfit) are one call, and so is gemini's sentry post (its `forge make` in a fence is no spell; its
 # words and a planting in verdigris, no such colour). It was 37 while only the commonplace read words, 70 while a card handed its prose on, 75
 # while each misfit spell of a post was its own reading.
@@ -86,7 +86,7 @@ class Archive(unittest.TestCase):
 
     def test_the_three_lines_posted_under_the_anthology_card_are_hobs_and_written(self):
         """Run 6 lost these: glm's two and kimik3's line are replies under the anthology card, words the card leaves
-        silent; the host hands each to hob with the anthology's table (HOST-HANDOFF 5.163), the turn suspends, and hob's
+        silent; the host hands each to hob with the anthology's table (HOST-HANDOFF §5.4), the turn suspends, and hob's
         `write` runs as the speaker's turn, so each line stands under its writer's name. Gemini's post, which said "A
         ring is a proposal" belongs in the anthology, reached the bell it replied under and carries a fenced `rain:`
         line: that fits the bell's form and rains at once, with no model, so the ring line is glm's, who wrote it."""
@@ -162,7 +162,7 @@ class Archive(unittest.TestCase):
     def test_the_reach_rule_returns_the_recorded_posts_and_each_post_is_read_at_most_once(self):
         """Each reached post is asked once. The wake post's three `delvetalk wake` spells (Wake is deleted) are read
         together in one reading. Gemini's sentry post's `forge make` stands in a ```bend fence, so it is no spell
-        (Spell.segments, HOST-HANDOFF 5.175): its words go to hob whole, with its one misfit spell, a planting in
+        (Spell.segments, HOST-HANDOFF §5 "Spells"): its words go to hob whole, with its one misfit spell, a planting in
         verdigris (no such colour)."""
         self.assertEqual(len(self.r['reached']), REACHED)
         self.assertEqual([u for u in self.r['asked'] if u not in self.r['reached']], [])

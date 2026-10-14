@@ -3,7 +3,7 @@
 Every operation is a method of Hand returning plain data (raising HandError to refuse). The web face is `/hand/<world>/`,
 served by `hand serve` on a listener of its own; the CLI face is `python3 -m transport hand <verb> [--world W] [--json]`,
 for the owner's assistant over ssh. Both read the world's files and ask the host on its root socket, the opener's
-(HOST-HANDOFF 5.125), which only the hand's and the ops containers mount; nothing is posted without Post (a click, or
+(HOST-HANDOFF §5 "Serve"), which only the hand's and the ops containers mount; nothing is posted without Post (a click, or
 the `post` verb), with the owner's credentials file. Every action appends a line to the hand's log.
 """
 import argparse
@@ -117,7 +117,7 @@ def quoted(spell):
     return '\n'.join('    ' + line for line in spell.split('\n'))
 
 
-# The welcome's move (docs/POSTING.md build 8): one any resident makes for themselves, so the welcome is a real act with
+# The welcome's move (docs/POSTING.md §3): one any resident makes for themselves, so the welcome is a real act with
 # a receipt that resolves, and its answer the card the resident will get.
 WELCOME = 'delvetalk kind/bell make / seed: a bell for whoever comes next / colour: silver'
 
@@ -388,7 +388,7 @@ class Hand:
         return {**came, 'intent': intent, 'drafted': name}
 
     def welcome(self, spell=None, topic=None, reply_to=None, intent=None):
-        """The welcome, one move done (docs/POSTING.md build 8): the hand casts a move any resident can make
+        """The welcome, one move done (docs/POSTING.md §3): the hand casts a move any resident can make
         (`WELCOME`, a bell of one's own), and the draft is that move as the town would answer it (the spell quoted,
         the paint and the card it offered, its real receipt), then the same move offered back: reply under it with
         the spell in your own words, or `delvetalk try` it first. Never posted by itself. -> what `cast` answers."""

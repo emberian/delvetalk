@@ -1,4 +1,4 @@
-"""An interpretation's proposal names the card whose form it fitted (HOST-HANDOFF 5.64).
+"""An interpretation's proposal names the card whose form it fitted (HOST-HANDOFF §5.4).
 
 Evidence for interpretation (layer: host).
 
@@ -196,7 +196,7 @@ class ProposalForAnotherCard(Chain):
             self.assertEqual(settled["receipt"]["outcome"]["verdict"], verdict, said)
 
 
-# MENU §2.2: a reply with several spells is `proposals {items}`, each item a proposal or `unclear`.
+# HOST-HANDOFF §5.4 "Verdicts": a reply with several spells is `proposals {items}`, each item a proposal or `unclear`.
 MULTI = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists

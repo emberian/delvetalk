@@ -10,7 +10,6 @@ reader's system setting (`prefers-color-scheme`). "Read the design" links the do
 | `play.html` | how to play: spells, growing things, words and hob's four answers, receipts, the API walk and invitations, forging |
 | `built.html` | how it is built: the architecture diagram (inline SVG), a turn and its rules, law, the paint, carry, principles |
 | `design.html` | the documents and who reads each |
-| `status.html` | tests, the gate, the rehearsal runs table |
 | `front.css` | the front's stylesheet, `transport/static/style.css`, by a link |
 | `style.css` | the site's own rules |
 

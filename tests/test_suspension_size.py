@@ -3,7 +3,7 @@ entry size.
 
 Evidence for FOUNDATION §11, §12 (layer: rehearsal).
 
-A commonplace suspension journals only what changed (rehearsal run 6, finding 5; HOST-HANDOFF 5.34):
+A commonplace suspension journals only what changed (rehearsal run 6, finding 5; HOST-HANDOFF §5.6):
 nine prose replies under the hub each suspend on hob's one reading (every prose reply to the root
 with a policy goes to hob; there is no mention gate). The program's own checkpoint
 tokens and the offered forms are shared blocks, so a suspension after the first adds only what its

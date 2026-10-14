@@ -3,7 +3,7 @@ type, checked against the world's protocol.
 
 Evidence for FOUNDATION §10 (layer: kernel).
 
-World calls (WHOLENESS §1): `Activity<R>` yields `World.Message`s, `world.METHOD::<T>(arg)`
+World calls (FOUNDATION §3): `Activity<R>` yields `World.Message`s, `world.METHOD::<T>(arg)`
 is the perform of `{object: {world: "", object: "world"}, method, argument: Data}` typed by
 the world's protocol at T, and each call site resumes at its own result type.
 
@@ -15,7 +15,7 @@ from tests.bend import closure
 from tests.test_turn import Host
 from tests.wire import nat, record, variant
 
-# A stand-in for world/lib/World.obend (the objects lane's file): the shapes WHOLENESS fixes.
+# A stand-in for world/lib/World.obend (the objects lane's file): the shapes FOUNDATION §3 fixes.
 WORLD = """edition ObjectiveBend 1
 import ./Plan.obend as Plans
 record Message:

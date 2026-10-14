@@ -1,5 +1,5 @@
 """An object whose relations are full, every row at its widest, keeps each cell under
-`Bounds.maxCellBytes` (its scalar part and every row, KERNEL-HANDOFF §15 step 4) and still takes a
+`Bounds.maxCellBytes` (its scalar part and every row, KERNEL-HANDOFF §15 "The state as cells") and still takes a
 write.
 
 Evidence for FOUNDATION's scale rule (layer: objects). Refuted by a full object's scalar part past

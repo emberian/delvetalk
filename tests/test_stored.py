@@ -266,7 +266,7 @@ class StoredReads(StoredCase):
 
 
 class RelationPrimitives(StoredCase):
-    """`relationCount` and `relationLookup` (KERNEL-HANDOFF section 16 item 15): a stored relation
+    """`relationCount` and `relationLookup` (KERNEL-HANDOFF §15 "The relation primitives"): a stored relation
     answers a count from its handle and a lookup by its key with a binary search over its keys,
     fetching one row and only when it is read; any other relation is walked to the same answer."""
 
@@ -310,7 +310,7 @@ class RelationPrimitives(StoredCase):
 
     def test_a_lookup_fetches_the_one_row_it_reads(self):
         # Refuted if a hit over 2,048 rows fetches any row but its own or reports a span (it reads its key,
-        # not the keys below it: KERNEL-HANDOFF §16 item 15b).
+        # not the keys below it: KERNEL-HANDOFF §15 "Reads").
         reply = self.run_entry("rainAt", state(2048), nat(1500))
         self.assertEqual(reply["value"], {"tag": "label", "value": "rain 1500"})
         self.assertEqual(self.keys(reply), [1500])
@@ -346,7 +346,7 @@ class RelationPrimitives(StoredCase):
         # that column's order); the walk of the same rows answers.
         reply = self.run_entry("rainByText", state(6), {"tag": "label", "value": "rain 3"})
         self.assertEqual((reply["status"], reply["reads"]["rows"]), ("refused", []), reply)
-        # It says why (KERNEL-HANDOFF §16 item 19), as a turn's refusal does.
+        # It says why (KERNEL-HANDOFF §2, `refusalText`), as a turn's refusal does.
         self.assertIn("a lookup's key is not its relation's declared key", reply["failure"])
         walked = self.run_entry("rainByText", state(6), {"tag": "label", "value": "rain 3"}, stored=False)
         self.assertEqual(walked["value"], {"tag": "label", "value": "3"})

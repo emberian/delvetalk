@@ -1,11 +1,11 @@
 """A stranger's generic write, reprogram or amendment does none of what the object's own methods
-refuse them: codex objects review (docs/review/codex-2026-10-10/objects.md) findings 1 to 8.
+refuse them: the eight findings of a codex review of the objects.
 
 Evidence for FOUNDATION §4 (layer: objects).
 
 A `world-propose` write reached an object's law as kind 0 with no method, the kind of the object's
 own method writes, so a law that admitted "anyone's kind-0 write" admitted a stranger's forged
-state. The host now judges it as `proposed` (kind 3; HOST-HANDOFF 93), so an owner clause or the
+state. The host now judges it as `proposed` (kind 3; HOST-HANDOFF §5.1), so an owner clause or the
 default law refuses a stranger's proposal (`owner`). The objects keep a belt: every owner law holds
 `unchanged(owner)`, so a migration cannot write the authority that admits it (a bond's
 countersignatures are the signer's own: tests/test_bond.py); Tide has an owner who alone

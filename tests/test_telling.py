@@ -3,7 +3,7 @@ when a resident enters a place, the host hands the painter the strokes of what h
 of that place (who came and left, what was said and written, what was taken, laid down or hung, what was made, the
 rules that fired) and its making, and verifies the paint as it verifies a card's.
 
-Evidence for HOST-HANDOFF 5.161's tellings (layer: host). Refuted by: a telling naming a visitor, a line or an act the
+Evidence for HOST-HANDOFF §5 "Enchantment"'s tellings (layer: host). Refuted by: a telling naming a visitor, a line or an act the
 journal of the place does not hold; the reader's own comings and goings told back to them; a telling whose strokes
 move after the reader arrived (a second model call for the same arrival); a quiet absence costing a model call; a
 telling of a thing nobody enters; a telling that addresses its reader.

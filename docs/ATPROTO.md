@@ -125,8 +125,8 @@ Anyone who can `createRecord` can act:
 - `service` is the addressed host's DID, required: a request runs only at that service and only by the bridge of its
   `world` (default the town), so two deployments watching one repository never both run it.
 - A request created before the world began observing (`since`, set at the bridge's first start) never runs.
-- `mode` is `act` (one call, one turn) or `plan` (up to eight spell calls as one all-or-nothing turn, the host's
-  `delvetalk plan`, one receipt). A call is a spell's text or `{object, verb, fields}`, the front's `_actions` form.
+- `mode` is `act` (one call, one turn) or `plan` (up to eight spell calls, `Limits.planActs`, as one all-or-nothing turn,
+  the host's `delvetalk plan`, one receipt). A call is a spell's text or `{object, verb, fields}`, the front's `_actions` form.
 - There is no `try` mode: a request is public from the moment it is written and stays copied after deletion, so a
   preview by record would publish the draft. A `delvetalk try` spell by record is likewise never answered.
 

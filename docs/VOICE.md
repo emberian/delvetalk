@@ -436,7 +436,8 @@ other move follows from a thing someone made. What a resident gets that a REPL d
 **The world moves between posts**, so each post meets more world than it left:
 
 - After every admitted turn the settle pass runs every send and delivery (at most `sendsPerTurn`, 32; the rest named
-  in `unserved`); a rule fires before its writer's reply returns.
+  in `unserved`); a rule's firing is delivered in that pass, before its writer's reply returns, unless past
+  `rulesPerCommit` it is queued.
 - The clock principal journals `world-advance` every minute; waits, a grant's `until` and hob's hour read it.
 - The tide ticks itself every 60 clock minutes once the opener's first tick at genesis starts it (a clock jump ticks it
   once); the weather and the porch's lamp hang their rules on it (`deploy/genesis.py` `MOTION`).

@@ -23,8 +23,7 @@ tooling; the journal stays written only by turns at the host.
 
 The repository renders the host's journal and signs host-produced bytes or their CIDs. Hosted accounts validate and
 sign public request bytes their holders supply; world admission stays with the host. A carry re-derives every MST key
-and commit CID from the journal under `online.fg-goose.gsb.*`. Old records in the posting account under earlier
-collection names are deleted by the owner's authorized mirror run (DEPLOY "A new binary").
+and commit CID from the journal under `online.fg-goose.gsb.*`.
 
 ## The signed repository
 
