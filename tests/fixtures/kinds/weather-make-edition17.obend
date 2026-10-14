@@ -1,0 +1,18 @@
+layer over ./Kind.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Form.obend as Form
+import ./Rows.obend as Rows
+type State = Super.State
+form make:
+  over: text 1..128
+  tide: text 1..128
+def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:
+  Super.making(state, Lists.List.cons({head: {name: "over", value: input.over}, tail: Lists.List.cons({head: {name: "tide", value: input.tide}, tail: Lists.List.nil()})}), "", context)
+form place:
+  over: text 1..128
+  tide: text 1..128
+  id: text 1..64
+def place(state: State, input: PlaceInput, context: Abi.Context) -> Activity<Super.Done>:
+  Super.making(state, Lists.List.cons({head: {name: "over", value: input.over}, tail: Lists.List.cons({head: {name: "tide", value: input.tide}, tail: Lists.List.cons({head: {name: "id", value: input.id}, tail: Lists.List.nil()})})}), "", context)

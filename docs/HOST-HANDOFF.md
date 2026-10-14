@@ -3025,6 +3025,20 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    as the same setting lower, objects, paints said exact, hob's spells, one scratch world, a world that sets none
    unchanged in status and snapshot bytes).
 
+230. **A kind's make is known by where it sits, not by its text (lane/deploy19; the refused edition-19 carry-check).**
+   5.199's `reshape` compared the kind's top module with `layerSource(of, form)` regenerated under the running code, so
+   any change to the generator refused every carried kind whose form changed: 8ddb1ba6 made `place`'s `id` an `object
+   1..64`, and both towns' `kind/weather`, `lantern`, `bond`, `errand` and `front` kept edition 17's `id: text 1..64`
+   layers (`refused shaped`). Nothing on a kind records the text its make was laid with, and none is needed: the host
+   writes each layer's first line as its link to the module below (`layerLine`), so the make, the first layer on Kind,
+   reads `layer over ./Kind.obend` and anything laid over it `layer over ./Layer1.obend`. `reshape` now re-lays only
+   when the top module is that one layer (`Kind.madeLayer`), which is exactly when `reprogram`, replacing the top
+   module, replaces the make; a layer over the make, or no make yet, is refused by name with its form left. Any make
+   text an edition ever generated re-shapes, and a future generator change needs no carry-time special case. Tests:
+   `test_genesis.ReshapeAnEarlierMake` (gsb's edition-17 weather make, read from its journal, laid on a town's
+   kind/weather, refreshed to genesis's `object` form: `refreshed`, place and make offering `object`, a second refresh
+   all `current`; red before), `test_genesis.Reshape` (a layer over the make still refused).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
