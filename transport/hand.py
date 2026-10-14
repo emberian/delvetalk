@@ -18,7 +18,7 @@ import urllib.parse
 from html import escape as e
 from pathlib import Path
 
-from transport import bridge, byhand, measure, model, post, pages, root
+from transport import bridge, byhand, measure, model, overview, post, pages, root
 from transport.bridge import awaiting_path, uri_hash
 from transport import observe
 from transport.delve import Failure, canonical
@@ -57,6 +57,11 @@ def integer(form, name, default=None):
         return int(raw) if raw else default
     except ValueError:
         raise HandError(f'{name}: give an integer') from None
+
+
+def left_text(left):
+    """A vacate's places, said: `; left porch (entry 9), station (entry 10)`, or nothing."""
+    return '; left ' + ', '.join(f"{x['object']} ({'entry ' + str(x['entry']) if x.get('entry') else x['status'] + ': ' + str(x.get('why'))})" for x in left) if left else ''
 
 
 def outcome_of(receipt):
@@ -546,7 +551,7 @@ class Hand:
                 got = self.flag(form.get('address', ''), on=verb == 'flag')
                 return f"{verb}ged {form.get('address', '').strip()}: the hand flags {', '.join(got['flagged']) or 'nothing'}"
             got = self.revoke_guest(name)
-            return f"revoked {got['name']}: {counted(got['credentials'], 'credential')} ended"
+            return f"revoked {got['name']}: {counted(got['credentials'], 'credential')} ended" + left_text(got['left'])
         except (HandError, ValueError) as err:
             return str(err)
 
@@ -651,12 +656,13 @@ class Hand:
         row = self.guest(name)
         if not (reading or '').strip():
             raise HandError('turn-away needs a reading')
-        got = self.revoke_guest(name) if row['state'] != 'revoked' else {'name': name}
+        got = self.revoke_guest(name) if row['state'] != 'revoked' else {'name': name, 'left': self.vacate(row['principal'], f'{name} turned away')}
         quieted = self.act('mod', 'quiet', {'who': row['principal'], 'hours': str(self.TURNED_AWAY_HOURS), 'reading': 'turned away at the door: ' + reading.strip()})
         return {**got, 'quieted': (quieted.get('receipt') or {}).get('height')}
 
     def quiet_guest(self, name, hours, reading):
-        """The `quiet` power on one guest, from the guest list: their turns refused until the clock passes `hours`."""
+        """The `quiet` power on one guest, from the guest list: their turns refused until the clock passes `hours`, the
+        places they were present in left first (`act`)."""
         return self.act('mod', 'quiet', {'who': self.guest(name)['principal'], 'hours': str(hours), 'reading': reading})
 
     def unquiet_guest(self, name, reading):
@@ -683,12 +689,56 @@ class Hand:
         return {'flagged': mine}
 
     def revoke_guest(self, name):
+        """The code and the credential end, and the guest leaves every place it was still present in (`vacate`)."""
         try:
             got = self.identity.revoke_invitation((name or '').strip())
         except IdentityError as err:
             raise HandError(f'revoke-invite {name}: {err.code}') from None
         self.log('revoke-invite', None, name=got['name'], principal=got['principal'], credentials=got['credentials'])
-        return got
+        left = self.vacate(got['principal'], f"{got['name']} revoked") if got.get('principal') else []
+        return {**got, 'left': left}
+
+    # ---- a guest gone (revoked, quieted, turned away) leaves the places it was present in, each by the place's own leave
+
+    def places(self, who):
+        """[(object, principal)]: every object of this world whose presence holds `who`, a principal or the handle it is
+        present under, as the opener reads them."""
+        from transport.mirror import ids
+        out = []
+        for obj in ids(self.host, self.owner):
+            view = self.host.send({'op': 'world-view', 'principal': self.owner, 'object': obj})
+            out += [(obj, r['who']) for r in pages.rows(pages.state_of(view).get('presence')) if r.get('who') and who in (r['who'], r.get('handle'))]
+        return out
+
+    def gone(self):
+        """The principals whose presence should be nowhere: every revoked guest's, every principal quieted now."""
+        revoked = [g['principal'] for g in self.guests() if g['state'] == 'revoked' and g.get('principal')]
+        clock = self.host.send({'op': 'world-status'}).get('clock') or 0
+        return list(dict.fromkeys(revoked + [p for p, q in overview.ledger(self.st).quiets.items() if q['until'] > clock]))
+
+    def vacate(self, who=None, reading=''):
+        """In every world serve holds, each place still holding `who` (else every one of `gone`) is left through the place's
+        own `leave`: root's `as`, a turn under the guest, journaled and marked root, `vacated: <reading>` its reason; then a
+        line in the hand's log. -> [{world, object, principal, status, entry}]."""
+        if not (reading or '').strip():
+            raise HandError('vacate needs a reading')
+        whos = [who] if who else self.gone()
+        left = []
+        for world in [w.get('name') for w in self.host.send({'op': 'serve-status'}).get('worlds') or []] or [self.st.world]:
+            h = self.at(world)
+            for w in whos:
+                for obj, principal in h.places(w):
+                    try:
+                        got = h.act('root', 'as', {'principal': principal, 'object': obj, 'method': 'leave', 'argument': '{"tag": "record", "fields": []}',
+                                                   'intent': f'hand:vacate:{obj}:{int(self.clock() * 1000)}', 'reason': f'vacated: {reading.strip()}'})
+                    except HandError as err:
+                        got = {'status': 'error', 'message': str(err)}
+                    receipt = got.get('receipt') or {}
+                    left.append({'world': world, 'object': obj, 'principal': principal, 'status': (receipt.get('outcome') or {}).get('tag') or got.get('status'),
+                                 'entry': receipt.get('height'), **({'why': got.get('message') or (receipt.get('outcome') or {}).get('class')} if got.get('status') != 'admitted' else {})})
+        if left:  # an act only where a place was left
+            self.log('vacate', None, who=who or '(every one gone)', reading=reading.strip(), left=left)
+        return left
 
     # ---- watching: the journal and the outbox together, newest first
 
@@ -933,6 +983,9 @@ class Hand:
             req = root.request(face, verb, given, self.owner, self.clock)
         except (ValueError, KeyError, OSError) as err:
             raise HandError(f'{verb}: {err}') from None
+        quieting = (face, verb) == ('mod', 'quiet') and given.get('who') or (face, verb) == ('root', 'quiet') and str(given.get('hours', '0')).strip() not in ('', '0') and given.get('principal')
+        if quieting:  # a quieted hand's turns are refused, its leave too: it leaves first
+            self.vacate(quieting, 'quieted: ' + (given.get('reading') or given.get('reason') or '').strip())
         got = self.host.send(req)
         if got.get('status') == 'error':
             raise HandError(f"{verb}: {got.get('message')}")
@@ -963,14 +1016,16 @@ class Hand:
 
     # ---- the web face: (method, path, cookie header, form) -> (code, html, headers)
 
-    def handle(self, method, target, cookie='', form=None):
+    def handle(self, method, target, cookie='', form=None, given=''):
+        """`given`: the secret as a header (`X-Delvetalk-Hand-Token`, which the anchor's Caddy sets behind its password);
+        else the query's `token`, once, which becomes a cookie, else that cookie (the ssh forward)."""
         parts = urllib.parse.urlsplit(target)
         query = {k: v[0] for k, v in urllib.parse.parse_qs(parts.query).items()}
         jar = dict(c.strip().partition('=')[::2] for c in cookie.split(';'))
-        given = query.get('token') or jar.get(HAND_COOKIE, '')
-        if not hmac.compare_digest(given.encode(), self.token.encode()):
+        header, given = bool(given), given or query.get('token') or jar.get(HAND_COOKIE, '')
+        if not self.token or not hmac.compare_digest(given.encode(), self.token.encode()):
             return 404, pages.page('not found', None, '<h1>not found</h1>'), []
-        if query.get('token'):
+        if query.get('token') and not header:
             return 302, '', [('Set-Cookie', f'{HAND_COOKIE}={self.token}; Path=/hand/; HttpOnly; SameSite=Strict; Max-Age=2592000'), ('Location', '/hand/')]
         world, _, rest = parts.path.rstrip('/')[len('/hand/'):].partition('/')
         if not world:  # the worlds page; its one form, a guest's, is answered on the page itself, so a new code is never in a URL
@@ -991,7 +1046,7 @@ class Hand:
                 done = {'note': str(err)}
             if done is not None:
                 note = ' '.join(str(v) for v in done.values() if isinstance(v, (str, list)))
-                back = {'root': '/root/?', 'mod': '/root/?', 'newcomers': '/root/?', 'speak': '/speak?', 'invite': '/speak?',
+                back = {'root': '/root/?', 'mod': '/root/?', 'newcomers': '/root/?', 'vacate': '/root/?', 'speak': '/speak?', 'invite': '/speak?',
                         'morning': '/speak?', 'welcome': '/speak?'}.get(rest.partition('/')[0], '/?')
                 anchor = '#outbox' if back == '/?' else ''
                 back = '/hand/?' if rest == 'root/expire' else base + back  # a scratch world is expired from the worlds
@@ -1000,7 +1055,8 @@ class Hand:
         page = None
         if method == 'GET':
             page = (lambda query: h.read_page(rest, query)) if rest in READ_FORMS else {
-                '': h.page, 'speak': h.speak_page, 'plan': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page}.get(rest)
+                '': h.page, 'speak': h.speak_page, 'plan': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page,
+                'overview': h.overview_page}.get(rest)
         if page is None:
             return 404, shell('not here', world, H['missing'].format(text=e(f'no page {rest} in the hand'))), []
         try:
@@ -1016,6 +1072,8 @@ class Hand:
         if rest == 'newcomers/limits':  # an open town's limits, set from its config (root page, "Newcomers")
             got = self.limits(form.get('reading') or None)
             return {'done': f"limits: {got.get('status')}, entry {(got.get('receipt') or {}).get('height')}"}
+        if rest == 'vacate':  # a gone guest's places left (root page, "Moderation")
+            return {'done': 'vacate: ' + (left_text(self.vacate(form.get('who', '').strip() or None, form.get('reading', '')))[2:] or 'nobody gone is present anywhere')}
         if rest == 'newcomers/slow':  # the town's slow switch (root page, "Moderation")
             got = self.slow(form.get('slow') == 'on', form.get('reading', ''))
             return {'done': f"slow {form.get('slow')}: {got.get('status')}, entry {(got.get('receipt') or {}).get('height')}"}
@@ -1165,6 +1223,40 @@ class Hand:
             toggle=f'<a class="door" href="{q(here)}">FOLLOW</a>' if still else f'<a class="door" href="{q(here + "&still=1")}">HOLD STILL</a>'),
             refresh=0 if still else every)
 
+    def overview(self):
+        return overview.overview(self)
+
+    def overview_page(self, query):
+        """The town at a glance (transport/overview.py), read only."""
+        q, o = lambda t: e(str(t)), self.overview()
+        none = lambda what: f'<li class="quiet">— {what} —</li>'
+        fate = {'held at the door': 'suspended', 'revoked': 'refused', 'turned away': 'refused'}
+        arrivals = ''.join(H['arrival'].format(fate=fate.get(a['standing'], 'admitted'), standing=q(a['standing']), at=q(a['at']), name=q(a['name']),
+                                               came=q(a['came']), principal=q(a['principal'])) for a in o['arrivals']) or none('nobody arrived in the last day')
+        busiest = ''.join(H['busy'].format(turns=q(counted(b['turns'], 'turn')), name=q(b['name']), hour=q(b['lastHour']), refused=q(b['refused']),
+                                           last=q(b['last']), principal=q(b['principal'])) for b in o['busiest']) or none('no turns in the last day')
+        windows = (('the last hour, journaled', o['refusals']['lastHour']), ('the last day, journaled', o['refusals']['lastDay']),
+                   ("this clock hour, the host's count", o['refusals']['thisClockHour']))
+        refusals = ''.join(H['refused'].format(count=q(sum(v.values())), window=q(w), classes=q(', '.join(f'{k} {n}' for k, n in v.items()) or 'none'))
+                           for w, v in windows)
+        used = lambda b: f"{b['used'] or 0} of {b['quota']}" if b.get('quota') else f"{b['used'] or 0}, no cap"
+        b = o['budgets']
+        budgets = self.codes([f"hob's readings today {used(b['hob'])}", f"paints today {used(b['paints'])}",
+                              f"interpretations an hour {b['interpretations an hour'] or 'no cap'}",
+                              f"model spend, last day {b['model spend, last day']}", f"model spend, this month {b['model spend, this month']}"])
+        m = o['moderation']
+        state = self.codes([('slow on: ' if m['slow'] else 'slow off; ') + (f"{m['turnQuota']} turns a hand an hour" if m['turnQuota'] else 'no cap on a hand\'s hour'),
+                            counted(len(m['quiets']), 'quiet'), 'flagged: ' + (', '.join(m['flagged']) or 'none'),
+                            'held: ' + (', '.join(m['held']) or 'none')])
+        quiets = ''.join(H['quieted'].format(until=q(x['until']), name=q(x['name']), reading=q(x['reading']), entry=q(x['entry']), principal=q(x['principal']))
+                         for x in m['quiets']) or none('nobody is quieted')
+        acts = ''.join(H['act'].format(what=q(a['what']), at=q(a['at']), about=q(clip(str(a['about']), 120))) for a in o['acts']) or none('the hand did nothing in the last day')
+        feed = ''.join(H['posted'].format(fate='posted' if p['town'] else 'admitted', handle=q(p['handle']), created=q(p['created']), text=q(clip(p['text'], 280)))
+                       for p in o['feed']) or none('nothing in the feed')
+        return shell('overview', self.st.world, H['overview'].format(
+            world=q(self.st.world), height=q(o['height']), codes=self.codes(overview.summary(o)), arrivals=arrivals, busiest=busiest,
+            refusals=refusals, budgets=budgets, state=state, quiets=quiets, acts=acts, feed=feed, base=f'/hand/{q(self.st.world)}'))
+
     def measure_page(self, query):
         """The playtest's measures (docs/PLAYTEST-2.md §4) as transport/measure.py counts them from the journal."""
         q, m = lambda t: e(str(t)), measure.measures(self.st)
@@ -1201,7 +1293,7 @@ class Hand:
         form = lambda face, verb, spec, why: H['form'].format(base=base, face=face, verb=verb, why=why, inputs=''.join(
             f'<label>{n} <textarea name="{n}" rows="3"></textarea></label>' if k == 'json' or n == 'text' else f'<label>{n} <input name="{n}"></label>' for n, k in spec))
         slow = st.get('turnQuota') == self.st.config.slow_turns
-        mod = H['slow'].format(base=base, state='on' if slow else 'off', other='off' if slow else 'on', turns=e(str(self.st.config.slow_turns))) + \
+        mod = H['slow'].format(base=base, state='on' if slow else 'off', other='off' if slow else 'on', turns=e(str(self.st.config.slow_turns))) + H['vacate'].format(base=base) + \
             ''.join(form('mod', v, spec, 'reading') for v, (_, spec) in root.POWERS.items()) + form('mod', 'settings', root.MOD_SETTINGS, 'reading')
         return shell('root', self.st.world, H['root'].format(base=base, note=self.note(query), codes=codes, editor=editor, entries=entries,
                                                              newcomers=self.newcomers(st, base),
@@ -1331,7 +1423,9 @@ def parser(p, common):
                       ('--reply-to', dict(metavar='AT_URI', help='a Delve world: the thread to answer')), ('--intent', dict(help='casting twice under one intent is one turn')),
                       ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
             'morning': [('--day', dict(type=int, help='the clock day (default today)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))],
-            'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [],
+            'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [], 'overview': [],
+            'vacate': [('who', dict(nargs='?', help="a principal or handle; none: every revoked guest's and every quieted principal's places")),
+                       ('--reading', dict(required=True))],
             'invite': [('name', dict(nargs='?', help='the guest: [a-z][a-z0-9-]{0,31}, ending in a letter or digit, its handle on cards; without it the code is open and the guest registers its own name')),
                        ('--count', dict(type=int, metavar='N', help='mint N open codes at once, one per line')), ('--note', dict(default='', metavar='TEXT')),
                        ('--expires', dict(type=float, default=INVITE_DAYS, metavar='DAYS', help=f'the code may be accepted for DAYS (default {INVITE_DAYS})'))],
@@ -1372,6 +1466,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'status': h.status, 'search': lambda: h.search(a.slug), 'spend': lambda: h.spend(a.month),
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
+                'overview': h.overview, 'vacate': lambda: h.vacate(a.who, a.reading),
                 'speak': lambda: cli_speak(h, a), 'morning': lambda: h.morning(a.day, a.topic, a.reply_to), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
                 'root': lambda: cli_root(h, a), 'invite': lambda: cli_invite(h, a), 'invites': h.guests,
                 'revoke-invite': lambda: h.revoke_guest(a.name), 'limits': lambda: h.limits(a.reading), 'slow': lambda: h.slow(a.switch == 'on', a.reading),

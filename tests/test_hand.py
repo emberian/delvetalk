@@ -141,10 +141,10 @@ class HandCase(unittest.TestCase):
         threading.Thread(target=self.front.serve_forever, daemon=True).start()
         self.addCleanup(lambda: (self.front.shutdown(), self.front.server_close()))
 
-    def req(self, method, path, form=None, cookie=''):
+    def req(self, method, path, form=None, cookie='', headers=None):
         c = http.client.HTTPConnection('127.0.0.1', self.front.server_address[1])
         body = urllib.parse.urlencode(form) if form is not None else None
-        c.request(method, path, body, {'Cookie': cookie, 'Content-Type': 'application/x-www-form-urlencoded'})
+        c.request(method, path, body, {'Cookie': cookie, 'Content-Type': 'application/x-www-form-urlencoded', **(headers or {})})
         r = c.getresponse()
         return r.status, r.read().decode(), dict(r.getheaders())
 
@@ -166,6 +166,32 @@ class Hand(HandCase):
         self.assertEqual(self.poster.calls, [])
         self.assertIn('The worlds', self.get('/hand/')[1])  # the hand opens on every world serve holds
         self.assertEqual(self.get('/hand/nowhere/')[0], 404)  # a world serve does not hold
+
+    def test_behind_the_edge_the_token_comes_as_a_header_and_no_cookie_is_set(self):
+        """The anchor's Caddy asks the owner's password and sets X-Delvetalk-Hand-Token itself: the hand opens on it alone,
+        sets no cookie, and is never cached or framed; a wrong header is the tokenless 404."""
+        edge = {'X-Delvetalk-Hand-Token': TOKEN, 'Host': 'gsb.example'}
+        code, page, headers = self.req('GET', '/hand/', headers=edge)
+        self.assertEqual(code, 200)
+        self.assertIn('The worlds', page)
+        self.assertNotIn('Set-Cookie', headers)
+        self.assertEqual((headers['Cache-Control'], headers['X-Frame-Options']), ('no-store', 'DENY'))
+        self.assertEqual(self.req('GET', '/hand/?token=' + TOKEN, headers=edge)[0], 200)  # the header outranks the query: no redirect
+        self.assertEqual(self.req('GET', '/hand/', headers={'X-Delvetalk-Hand-Token': 'wrong'})[0], 404)
+        self.assertEqual(self.req('GET', '/hand/town/overview', headers=edge)[0], 200)
+
+    def test_a_form_another_site_posts_through_the_owners_password_is_refused(self):
+        """The browser sends the edge's password with any page's form: the hand writes only from its own pages."""
+        edge = {'X-Delvetalk-Hand-Token': TOKEN, 'Host': 'gsb.example'}
+        form = {'do': 'post', 'text': 'from elsewhere'}
+        for other in ({'Sec-Fetch-Site': 'cross-site', 'Origin': 'https://evil.example'}, {'Sec-Fetch-Site': 'same-site', 'Origin': 'https://www.gsb.example'},
+                      {'Origin': 'https://evil.example'}, {'Origin': 'null'}, {'Origin': 'null', 'Sec-Fetch-Site': 'cross-site'}):
+            self.assertEqual(self.req('POST', '/hand/town/draft/7-aaaa', form, headers={**edge, **other})[0], 403, other)
+        self.assertEqual(self.poster.calls, [])
+        mine = {**edge, 'Origin': 'null', 'Sec-Fetch-Site': 'same-origin'}  # the edge's no-referrer: a browser's own form
+        self.assertEqual(self.req('POST', '/hand/town/draft/7-aaaa', form, headers=mine)[0], 303)
+        self.assertEqual(self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'hold'}, headers={**edge, 'Origin': 'https://gsb.example', 'Sec-Fetch-Site': 'same-origin'})[0], 303)
+        self.assertEqual(len(self.poster.calls), 1)
 
     def test_post_calls_the_poster_once_with_the_edited_text_and_logs_it(self):
         code, _, headers = self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'post', 'text': 'edited words'}, f'dt_hand={TOKEN}')
@@ -191,7 +217,7 @@ class Register(HandCase):
     serves nothing else, a viewport for a phone, none of the words the town never says, and a plain-text view."""
 
     def test_every_page_is_the_hands_shell_with_its_stylesheet_and_a_phone_viewport(self):
-        for path in ('/hand/', '/hand/town/', '/hand/town/speak', '/hand/town/watch', '/hand/town/measure', '/hand/town/root/'):
+        for path in ('/hand/', '/hand/town/', '/hand/town/speak', '/hand/town/watch', '/hand/town/measure', '/hand/town/root/', '/hand/town/overview'):
             code, page, _ = self.get(path)
             self.assertEqual(code, 200, path)
             self.assertTrue(page.startswith('<!doctype html>'), path)
@@ -1162,7 +1188,10 @@ class Portal(RouteCase):
                    'retry', 'reply', 'log', 'spend', 'modlog', 'find', 'speak', 'morning', 'plan', 'watch', 'worlds',
                    'invite', 'invites', 'revoke-invite', 'welcome', 'root', *root.POWERS, 'settings',
                    'limits',  # an open town's root page, "Newcomers" (tests/test_newcomers.py)
-                   'slow', 'held', 'let-in', 'turn-away', 'flag', 'unflag'}  # the root page's slow, the worlds page's door (tests/test_moderation.py)
+                   'slow', 'held', 'let-in', 'turn-away', 'flag', 'unflag',  # the root page's slow, the worlds page's door (tests/test_moderation.py)
+                   'overview', 'vacate'}  # the overview page (read only); the root page's vacate (tests/test_moderation.py Gone)
+        self.assertIn('/hand/town/vacate', pages['root/'].actions)
+        self.assertIn('/hand/town/overview', pages[''].links)
         self.assertEqual(set(verbs), covered | {'serve'})  # starts a listener; cannot run inside its own page
 
     def test_console_forwards_inbox_filters_and_all_outbox_without_hiding_finished_drafts(self):

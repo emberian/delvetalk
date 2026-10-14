@@ -9,9 +9,10 @@
 # link (docs/DEPLOY.md "Posting by hand"). Whoever wants the automatic path puts the credentials file in
 # /etc/delvetalk/delve/credentials.json (directory owner 10425, mode 0700; file mode 0400); the hand reads it only when
 # the owner clicks Post, so it may be placed after `up`.
-# The hand is its own service, never the front on :8765, the port Caddy proxies: `transport hand serve` listens on
-# :8766, published on workhorse's loopback only (reach it by an ssh forward to 127.0.0.1:8766), and it alone of the
-# long-running services mounts the root socket: it speaks as the opener (docs/ROOT.md section 1.4).
+# The hand is its own service, never the front on :8765: `transport hand serve` listens on :8766, published on the
+# workhorse's loopback (an ssh forward to 127.0.0.1:8766, the token asked once) and on its private address, where the
+# anchor's Caddy alone reaches it, behind its password, setting the token itself (docs/DEPLOY.md "Open the hand"). It
+# alone of the long-running services mounts the root socket: it speaks as the opener (docs/ROOT.md section 1.4).
 
 services:
   delvetalk-hand:
@@ -37,6 +38,9 @@ services:
       DELVETALK_CREDENTIALS: /run/delve/credentials.json
     ports:
       - "127.0.0.1:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"
+      # the anchor's Caddy, behind its password, which sets the token as X-Delvetalk-Hand-Token; the workhorse's
+      # firewall (DELVETALK-FRONT) lets the anchor alone reach this address and port
+      - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"
     secrets: [hand_token]
     volumes:
       - ${DELVETALK_DATA:-/var/lib/delvetalk/v11}/state:/data/state

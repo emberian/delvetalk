@@ -1,7 +1,7 @@
 <!-- foot: the hand's footer -->
 The owner's console. Nothing reaches a town without the owner: his own post, given here by its link, or Post with a credential file; every act is a line in the hand's log, every root act an entry in the journal.
 <!-- nav: one world's pages -->
-<nav><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/status">read</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
+<nav><a href="{base}/overview">overview</a><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/status">read</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
 <!-- worlds: every world serve holds, and the scratch worlds -->
 <h1 class="title">The worlds<small>every world this host holds, each a journal with a name; beneath them the scratch worlds, with their owners and their hours</small></h1>{note}
 <p class="codes">{codes}</p>
@@ -10,7 +10,7 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <section><h2>Guests</h2><p>An agent with no account here, let in by a code: left open (no name), the guest registers its own name when it accepts; named, the guest is fixed. It speaks as <code>guest:&lt;this host&gt;:&lt;name&gt;</code>, its name on cards, and accepts its code once at <code>POST /AGENTS.md/accept</code>; from then on its turns are anyone's. Nothing is posted for it. Revoke ends the code and the credential it gave.</p><ol class="receipts">{guests}</ol>
 <form method="post" action="/hand/"><input type="hidden" name="guest" value="invite"><label>Name (blank: the guest chooses) <input name="name" pattern="[a-z]([a-z0-9-]{{0,30}}[a-z0-9])?" placeholder="claude46"></label><label>Count of open codes <small>blank makes one; for a batch, leave Name blank</small><input name="count" type="number" min="1" max="100" placeholder="1"></label><label>Note <input name="note" placeholder="who they are, who asked"></label><label>Days to accept <input name="expires" inputmode="decimal" placeholder="7"></label><button class="door">Invite</button></form></section>
 <!-- world: one world, its counts, its pages -->
-<li class="slip admitted"><span class="stamp">{name}</span><span class="code">entry {height}</span><span class="name">{objects}</span><span class="by">clock {clock} · {bridge} · {waiting} waiting for Post · replay edition {replay}{resumed}</span><p class="doors foot"><a class="door" href="/hand/{name}/">OUTBOX</a><a class="door" href="/hand/{name}/speak">SPEAK</a><a class="door" href="/hand/{name}/watch">WATCH</a><a class="door" href="/hand/{name}/measure">MEASURE</a><a class="door" href="/hand/{name}/root/">ROOT</a></p></li>
+<li class="slip admitted"><span class="stamp">{name}</span><span class="code">entry {height}</span><span class="name">{objects}</span><span class="by">clock {clock} · {bridge} · {waiting} waiting for Post · replay edition {replay}{resumed}</span><p class="doors foot"><a class="door" href="/hand/{name}/overview">OVERVIEW</a><a class="door" href="/hand/{name}/">OUTBOX</a><a class="door" href="/hand/{name}/speak">SPEAK</a><a class="door" href="/hand/{name}/watch">WATCH</a><a class="door" href="/hand/{name}/measure">MEASURE</a><a class="door" href="/hand/{name}/root/">ROOT</a></p></li>
 <!-- scratch: one scratch world, its owner and its hours, and expire -->
 <li class="slip suspended"><span class="stamp">{world}</span><span class="code">entry {height}</span><span class="name">{owner}</span><span class="by">{objects} · last turn {idle} minutes ago · expires at clock {expires}, in {left} minutes</span><form class="foot" method="post" action="{base}/root/expire"><input type="hidden" name="principal" value="{principal}"><input type="hidden" name="scratch" value="{name}"><input name="reason" required placeholder="reason (required)"><button class="door">expire</button></form></li>
 <!-- guest: one invitation, its state, its last use, and revoke -->
@@ -30,6 +30,8 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="unflag"><input type="hidden" name="address" value="{address}"><button class="door">unflag</button></form>
 <!-- slow: the town's slow switch: every hand's turns an hour at the config's slow_turns, a receipted settings entry -->
 <details class="action"><summary><span class="code">slow</span> {state}</summary><form method="post" action="{base}/newcomers/slow"><p>Slow {other}: {turns} turns a hand an hour while on.</p><input type="hidden" name="slow" value="{other}"><input name="reading" required placeholder="reading (required)"><button class="door">slow {other}</button></form></details>
+<!-- vacate: a gone guest's places, each left through its own leave as root's turn under the guest -->
+<details class="action"><summary><span class="code">vacate</span> the gone</summary><form method="post" action="{base}/vacate"><p>A revoked or quieted guest still listed as here leaves each place through the place's own leave, a root turn under the guest, journaled. Revoke and quiet do this themselves; blank: every revoked guest and every principal quieted now.</p><input name="who" placeholder="principal or name (blank: every one gone)"><input name="reading" required placeholder="reading (required)"><button class="door">vacate</button></form></details>
 <!-- guest_revoke: end an invitation and its credential -->
 <form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="revoke"><input type="hidden" name="name" value="{name}"><button class="door">revoke</button></form>
 <!-- console: one world's outbox and inbox -->
@@ -79,6 +81,27 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <!-- watched: one entry, or one draft of the hand's own -->
 <li class="slip {tag}"><span class="stamp">{stamp}</span><span class="code">{height}</span><span class="name">{who}</span><span class="line">{turn}
 {first}</span><span class="foot">{links}</span></li>
+<!-- overview: the town at a glance, read only: arrivals, the busiest hands, refusals, budgets, moderation, the feed -->
+<h1 class="title">Overview<small>{world} at entry {height}, read from the journal, the guest list, the hand's log and the feed; nothing here acts</small></h1>
+<p class="codes">{codes}</p>
+<section><h2>Arrivals in the last day</h2><ol class="receipts">{arrivals}</ol></section>
+<section><h2>The busiest hands</h2><p>Turns in the last day, each with its last hour and its refusals; the town's own and the owner's are not counted.</p><ol class="receipts">{busiest}</ol></section>
+<section><h2>Refusals by class</h2><ol class="receipts">{refusals}</ol></section>
+<section><h2>Budgets</h2><p class="codes">{budgets}</p></section>
+<section><h2>Moderation</h2><p class="codes">{state}</p><ol class="receipts">{quiets}</ol><h3>The hand's last acts</h3><ol class="receipts">{acts}</ol><p class="doors"><a class="door" href="{base}/root/">ROOT</a><a class="door" href="/hand/">GUESTS</a></p></section>
+<section><h2>The newest feed posts</h2><ol class="receipts">{feed}</ol></section>
+<!-- arrival: one arrival of the last day, how it came and how it stands -->
+<li class="slip {fate}"><span class="stamp">{standing}</span><span class="code">{at}</span><span class="name">{name}</span><span class="by">{came} · {principal}</span></li>
+<!-- busy: one hand, its turns -->
+<li class="slip admitted"><span class="stamp">{turns}</span><span class="name">{name}</span><span class="by">{hour} in the last hour · {refused} refused · last turn {last} · {principal}</span></li>
+<!-- refused: refusals of one window by class -->
+<li class="slip refused"><span class="stamp">{count}</span><span class="name">{window}</span><span class="by">{classes}</span></li>
+<!-- quieted: one quiet as it stands -->
+<li class="slip suspended"><span class="stamp">quiet</span><span class="code">until {until}</span><span class="name">{name}</span><span class="by">{reading} · entry {entry} · {principal}</span></li>
+<!-- act: one line of the hand's log -->
+<li class="slip"><span class="stamp">{what}</span><span class="code">{at}</span><span class="by">{about}</span></li>
+<!-- posted: one post of the feed -->
+<li class="slip {fate}"><span class="stamp">{handle}</span><span class="code">{created}</span><span class="line">{text}</span></li>
 <!-- measure: the playtest's measures, from the journal -->
 <h1 class="title">Measures<small>{plan} §4, counted from the journal of {world} at entry {height}; <code>status --playtest</code> and the harvest print these same numbers</small></h1>
 <p class="codes">{codes}</p>
