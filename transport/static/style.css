@@ -1,5 +1,5 @@
 /* DelveTalk's one stylesheet (docs/WEB.md): the front, the hand (which inlines it) and the site (site/front.css links it).
-   One column, phone first. A place speaks in the body face; the exact card is monospace, folded beneath; everything that
+   One column, phone first; from 68rem a page uses the width its body's class names ("A wide screen", at the end). A place speaks in the body face; the exact card is monospace, folded beneath; everything that
    is bookkeeping (receipts, law, source) waits in a disclosure. Quiet by default: one primary action a page.
    The palette is the token blocks below and nothing else; tests/test_theme.py checks every text-on-surface pair in both
    for WCAG AA. A receipt's fate is a word and an icon in the markup; colour only repeats it. */
@@ -14,7 +14,7 @@
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
   --sans: ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --measure: 36rem;
+  --measure: 36rem; --frame: 80rem; --side: 23rem;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme=light]) {
@@ -49,7 +49,7 @@ header nav a:hover, header .who a:hover { color: var(--violet); text-decoration:
 header .who { margin-left: auto; color: var(--muted); font: .85rem var(--sans); }
 .mark { color: var(--ink); text-decoration: none; font-size: .95rem; letter-spacing: .14em; text-transform: uppercase; }
 main { padding-block: 1.25rem 3rem; }
-body.wide header, body.wide main, body.wide footer { max-width: calc(58rem + 32px); }
+body.wide header, body.wide main, body.wide footer { max-width: calc(58rem + 32px); }  /* the home page and the catalogue, between a phone and a desktop */
 footer { padding-block: 1rem 2rem; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--rule); }
 footer p { margin: .35rem 0; }
 footer .links { display: flex; flex-wrap: wrap; gap: .1rem 1rem; font-family: var(--sans); font-size: .8rem; }
@@ -157,8 +157,8 @@ button.quiet-button:hover { box-shadow: none; }
   background: linear-gradient(170deg, var(--lamp), var(--leaf) 65%); box-shadow: 0 22px 48px -32px var(--shade); }
 .today .paint { font-size: 1.4rem; margin-top: .4rem; }
 .onward { margin: .25rem 0; font-size: .95rem; }
-.town { display: grid; gap: 1.5rem 2.5rem; }
-@media (min-width: 46rem) { .town { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); } }
+div.town { display: grid; gap: 1.5rem 2.5rem; }  /* div: a town's post on the feed is `.post.town`, never a grid */
+@media (min-width: 46rem) { div.town { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); } }
 .block { min-width: 0; }
 ul.rows { list-style: none; margin: 0; padding: 0; }
 ul.rows li { padding: .4rem 0; border-bottom: 1px dotted var(--rule); }
@@ -330,3 +330,54 @@ blockquote.under { margin: 0 0 .25rem; padding: .4rem .75rem; border-left: 2px s
 .view .s-water { stroke: var(--v-water); } .view .s-shallows { stroke: var(--v-shallows); } .view .s-sand { stroke: var(--v-sand); } .view .s-snow { stroke: var(--v-snow); }
 .view .s-cave { stroke: var(--v-cave); } .view .s-village { stroke: var(--v-village); } .view .s-castle { stroke: var(--v-castle); } .view .s-keep { stroke: var(--v-keep); }
 .view .s-road { stroke: var(--v-road); }
+
+/* ---- A wide screen (docs/WEB.md "A desktop"): from 68rem the frame widens and a page lays out in columns by its body's
+   class. Nothing above this block changes, so a phone reads every page exactly as before. `wide`: the frame only (the
+   catalogue). `place`: the place at a comfortable measure, its view the whole column, what is around it and what is
+   happening elsewhere beside it. `home`: the way in beside today, then the town in three columns. `feed`: the threads
+   beside the box. `surface`: the door map's text beside its drawing; a day's paint beside its exact text. `hand`: the
+   owner's console, the frame. */
+@media (min-width: 68rem) {
+  body:is(.wide, .place, .feed, .surface, .hand) :is(header, main, footer) { max-width: calc(var(--frame) + 4rem); padding-inline: 2rem; }
+
+  body.place main { display: grid; grid-template-columns: minmax(0, 1fr) var(--side); grid-template-areas: "col side" "foot side";
+    grid-template-rows: auto 1fr; column-gap: clamp(1.5rem, 3vw, 3rem); align-items: start; }
+  body.place .col { grid-area: col; min-width: 0; }
+  body.place .col-foot { grid-area: foot; min-width: 0; }
+  body.place .col .paint { max-width: 34em; }
+  body.place .col :is(form.say, .suggest, .wants, .ring, .spoken) { max-width: 46rem; }
+  body.place .view :is(svg.v-board, svg.v-drawing) { max-width: 100%; max-height: 72vh; }
+  body.place .side { grid-area: side; min-width: 0; display: flex; flex-direction: column; gap: 2rem; padding: .35rem 0 0 2rem;
+    border-left: 1px solid var(--rule); }
+  .side .around { display: flex; flex-direction: column; margin: 0; padding: 0; border: 0; }
+  .side .around .here { display: contents; }
+  .side .present { order: 1; } .side .things { order: 2; }
+  .side figure.local { order: 3; margin-bottom: 1.75rem; }
+  .side .around h2.eyebrow { order: 4; } .side ol.lines { order: 5; }
+  .side .elsewhere[hidden] { display: flex; flex-direction: column; gap: 2rem; }
+  .side ul.rows li { font-size: .95rem; }
+
+  body.home main { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-areas: "hero today" "town town" "shelf shelf";
+    column-gap: 3.5rem; align-items: start; }
+  body.home .hero { grid-area: hero; }
+  body.home main:not(:has(> .today)) .hero { grid-column: 1 / -1; }
+  body.home .today { grid-area: today; margin: .4rem 0 2.5rem; }
+  body.home div.town { grid-area: town; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  body.home .shelf { grid-area: shelf; }
+
+  body.feed main { display: grid; grid-template-columns: minmax(0, 1fr) 24rem; grid-template-areas: "intro box" "threads box" "more box";
+    grid-template-rows: auto auto 1fr; column-gap: 3.5rem; align-items: start; }
+  body.feed .intro { grid-area: intro; } body.feed .intro .lede { max-width: 40rem; }
+  body.feed .composer { grid-area: box; position: sticky; top: 1.25rem; padding-top: 1.6rem; }
+  body.feed .composer form.say { margin-top: 0; }
+  body.feed .composer textarea { min-height: 9rem; }
+  body.feed .threads { grid-area: threads; margin-top: .5rem; }
+  body.feed main > p { grid-area: more; }
+  body.feed article.post .said { max-width: 46rem; }
+
+  body.surface main:has(> figure.map) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 3rem; align-items: start; }
+  body.surface main > h1 { grid-column: 1 / -1; }
+  body.surface figure.map { margin: .25rem 0 0; position: sticky; top: 1.25rem; }
+  body.surface .scene:has(> .paint) { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: 2.5rem; align-items: start; }
+  body.surface .scene:has(> .paint) > pre.card { margin-top: 0; }
+}

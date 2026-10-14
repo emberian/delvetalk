@@ -1575,7 +1575,7 @@ class Handler(BaseHTTPRequestHandler):
         self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered, paint=here['paint'], wants=here['wants'],
                                   view=here['view'], ways=self.ways(host, did, name), entries=self.history(host, name, did, pages.LATELY),
                                   said=say, told=told, did=did, town=self.server.town(), spent=here.get('spent'),
-                                  drawn=self.server.shown(host, did, name)))
+                                  drawn=self.server.shown(host, did, name), others=self.elsewhere(host, did, name)))
 
     def html(self, code, body, headers=()):
         if not self.server.hand and pages.POST_FORM.search(body):
@@ -1681,7 +1681,17 @@ class Handler(BaseHTTPRequestHandler):
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
                                  self.ways(host, principal, name) if here['card'] is not None else (), seen, here['wants'], brief, here['paint'], told,
-                                 town=self.server.town(), spent=here.get('spent'), drawn=self.server.shown(host, principal, name, seen)))
+                                 town=self.server.town(), spent=here.get('spent'), drawn=self.server.shown(host, principal, name, seen),
+                                 others=self.elsewhere(host, principal, name) if not brief else ((), ())))
+
+    ELSEWHERE = 4  # rows of each kind beside a place
+
+    def elsewhere(self, host, reader, name):
+        """Beside a place on a wide screen: what wants a hand in the rest of the town (world-wanting, as the home page
+        reads it) and the residents' newest feed posts, as /feed shows them."""
+        wanting = host.send({'op': 'world-wanting', 'principal': reader or PUBLIC})
+        rows = [w for w in wanting.get('rows') or [] if isinstance(w, dict) and w.get('object') != name] if wanting.get('status') == 'wanting' else []
+        return rows[:self.ELSEWHERE], self.feed_shown(self.server.feed.newest(self.ELSEWHERE))
 
     SURFACE_FIELDS = ('page', 'day', 'from', 'to')
     TITLES = {'chronicle': "the town's history", 'map': 'the door map'}
