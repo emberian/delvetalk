@@ -260,9 +260,17 @@ class Bridging(BridgeCase):
         self.assertEqual((d['preview'], d['object']), (True, 'bell/1'), d)
         self.assertTrue(d['text'].startswith('preview, nothing done'), d['text'])
 
+    def test_the_host_refuses_a_post_naming_no_object_and_journals_nothing(self):
+        """Refuted by a thrown error (which the transport asks again at every poll) or by an entry for it."""
+        from transport.host import CLOCK
+        before = self.host.send({'op': 'world-status', 'principal': CLOCK})['height']
+        got = self.host.send({'op': 'world-posted', 'principal': CLOCK, 'uri': f'at://{DID}/town.delve.feed.post/p9', 'cid': 'c', 'object': 'try', 'intent': 'feed-9'})
+        self.assertEqual((got['status'], got['class']), ('refused', 'unknownObject'), got)
+        self.assertEqual(self.host.send({'op': 'world-status', 'principal': CLOCK})['height'], before)
+
     def test_a_registration_the_host_refuses_is_final_and_one_it_never_answered_is_retried(self):
         """Refuted by a registration asked again at every poll after the host refused it (gsb's `error op=world-posted`
-        254 times), or by a host that timed out treated as a refusal."""
+        254 times), or by a host error or timeout treated as a refusal."""
         from transport import post as posting
         answers = []
 
@@ -271,8 +279,9 @@ class Bridging(BridgeCase):
                 answers.append(req['op'])
                 return reply[0]
         uri = f'at://{DID}/town.delve.feed.post/p1'
-        for name, first, final in (('refused', {'status': 'error', 'message': 'unknown object try'}, True),
-                                   ('unavailable', {'status': 'error', 'class': 'hostUnavailable', 'message': 'down'}, False)):
+        for name, first, final in (('refused', {'status': 'refused', 'class': 'unknownObject', 'message': 'unknown object try'}, True),
+                                   ('unavailable', {'status': 'error', 'class': 'hostUnavailable', 'message': 'down'}, False),
+                                   ('error', {'status': 'error', 'message': 'busy'}, False)):
             with self.subTest(name):
                 answers.clear()
                 reply = [first]

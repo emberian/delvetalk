@@ -84,8 +84,7 @@ def record_posted(host, result, obj, slot=None, target=None, intent=None):
         req['slot'] = slot
     if target is not None:
         req['page'], req['section'] = target
-    got = host.send(req)
-    return {**got, 'final': True} if got.get('status') == 'error' and not got.get('class') else got
+    return host.send(req)
 
 
 def build_request(text, reply=None, facets=None):
@@ -243,10 +242,9 @@ def summarize(d):
 
 
 def registered(one):
-    """Whether a sent part's registration is settled: recorded, or refused by the host (`final`), which asking again
-    never changes; a host that did not answer (a `class` of the transport's: timeout, unavailable) is asked again."""
-    got = one.get('recorded') or {}
-    return got.get('status') in ('posted', 'recorded', 'reserved') or bool(got.get('final'))
+    """Whether a sent part's registration is settled: recorded, or refused by the host (`refused`: a post naming no
+    object, which asking again never changes); an error is asked again."""
+    return (one.get('recorded') or {}).get('status') in ('posted', 'recorded', 'reserved', 'refused')
 
 
 def register_part(d, one, host):

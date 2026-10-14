@@ -924,7 +924,7 @@ def command(st, a, out):
     """`bridge`: the world's row names delve.town, an owner's Zulip channel, or the local feed alone;
     one step with `--once`, else a step every `poll` seconds."""
     host, row = st.host(), st.bridge()
-    if a.hear_again:
+    if getattr(a, 'hear_again', None):
         try:
             out.write(canonical({'queued': hear_again(st, host, delve_observer(st, None), a.hear_again, a.now)}) + '\n')
         finally:

@@ -4935,7 +4935,10 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
     throw s!"uri must be an at:// or zulip:// URI, not {(uri.splitOn "://").head!}://"
   if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
     throw s!"posts are confirmed only by {w.clockPrincipal}"
-  unless w.objects.contains object do throw s!"unknown object {object}"
+  -- A post naming no object is refused, not failed: asking again cannot change it, and the transport stops asking
+  -- (gsb's `delvetalk try` preview drafted under the word `try`, asked at every bridge poll, 2026-10-14).
+  unless w.objects.contains object do
+    return (w, Json.mkObj [("status", toJson "refused"), ("class", toJson "unknownObject"), ("message", toJson s!"unknown object {object}")])
   let fields := [("tag", toJson "posted"), ("uri", toJson uri), ("cid", toJson cid), ("object", toJson object)] ++
     (slot.map fun s => [("slot", s)]).getD [] ++
     (if page.isEmpty then [] else [("page", toJson page), ("section", toJson part)]) ++

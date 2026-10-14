@@ -22,8 +22,8 @@ GSB, OBEND = 'https://gsb.fg-goose.online', 'https://obend.fg-goose.online'
 # check body (the guide's field kinds, direct turns and scratch check, the kinds, spells, bend, check and object pages), lane/mfauthor's
 # object page, whose coin jar has the receive a spell reaches it by, and lane/mfweb's Intents section (a refusal's `spent`): a change to
 # either is a change to gsb.
-GSB_GUIDE = 'RERECORD'
-GSB_SHELF = 'RERECORD'
+GSB_GUIDE = '86d544a52128ed413efdfcad26db140dbc53b7270121aab0aa1b3c8fd356fc4c'
+GSB_SHELF = '9b11bb1a13b2944dcae4b220a5c4ab79c4721cca05b4a8cbbe9d00fd2a6477f5'
 DELVE_WORDS = ('delve.town', 'livedelvetalk', 'summon', 'mirror', 'by post', 'posting by hand', 'posts it by hand', 'request record', 'postQuota',
                'posts an hour', '/challenge', '/verify', 'Claim your handle', '#gsb')
 

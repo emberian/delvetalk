@@ -1181,17 +1181,21 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
 
 def repaired(host, opener):
     """Things made before a field of theirs came to name an object (edition 19: `haunts`, `tide`), repaired by the town
-    on a carried town: `kinds repair`, once a refresh (Kind's `repair`: each kind with an object field, then each of its
-    things that holds a phrase there, is sent RECORD's `repair`, its own turn). A phrase the town can name one place by is
-    set to it; one it cannot is marked `stranded`, told once to its maker and listed on the hand's requests. One row."""
+    on a carried town: `kinds repair` (Kind's `repair`: each kind with an object field, then each of its things that
+    holds a phrase there, is sent RECORD's `repair`, its own turn). A phrase the town can name one place by is set to it;
+    one it cannot is marked `stranded`, told once to its maker and listed on the hand's requests. Tried first
+    (`world-try`, nothing journaled): turned only when a kind would send a repair or the try left sends unforeseen, so a
+    town with nothing stranded is `current` and its refresh writes nothing. One row."""
     if standing(host, opener, 'kinds') is None:
         return []
-    version = standing(host, opener, 'kinds')[0]
-    height = host.send({'op': 'world-status', 'principal': opener}).get('height', 0)
-    reply = host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'repair', 'identity': f'refresh-kinds-repair-{version}',
-                       'argument': rec()})
-    if reply.get('status') == 'admitted' and (reply.get('receipt') or {}).get('height', height + 1) <= height:
-        return [{'object': 'kinds', 'slot': 'repair', 'status': 'current'}]  # the host's first receipt: asked at this version already
+    request = {'principal': opener, 'object': 'kinds', 'method': 'repair', 'argument': rec(),
+               'identity': f"refresh-kinds-repair-{standing(host, opener, 'kinds')[0]}"}
+    tried = host.send({**request, 'op': 'world-try'})
+    kinds = [d for d in tried.get('delivered') or [] if str(d.get('object', '')).startswith('kind/')]
+    sent = sum(int((d.get('result') or {}).get('value') or 0) for d in kinds)
+    if tried.get('status') == 'admitted' and not sent and not (tried.get('unresolved') or {}).get('pending'):
+        return [{'object': 'kinds', 'slot': 'repair', 'status': 'current'}]
+    reply = host.send({**request, 'op': 'world-turn'})
     said = ' '.join(o.get('text', '').strip() for o in reply.get('offers') or [])
     return [{'object': 'kinds', 'slot': 'repair', **done(reply), 'reading': said or 'repaired'}]
 

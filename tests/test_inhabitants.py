@@ -723,7 +723,7 @@ class Stranded(test_scenarios.Arc):
         self.assertEqual(self.var(porter, "haunts"), "station")
         version = self.town.send(op="world-object", principal=OPENER, object=porter)["record"]["version"]
         again = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
-        self.assertEqual([r["status"] for r in again if r.get("slot") == "repair"], ["current"])
+        self.assertEqual([r["status"] for r in again if r.get("slot") == "repair"], ["current"])  # tried: nothing stranded, nothing journaled
         self.deliver()
         self.assertEqual(self.town.send(op="world-object", principal=OPENER, object=porter)["record"]["version"], version)
 
