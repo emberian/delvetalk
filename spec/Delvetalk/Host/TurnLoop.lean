@@ -4589,9 +4589,11 @@ def indentSpell (spell : String) : String :=
   String.join (((spell.trimAsciiEnd.toString).splitOn "\n").map fun l => s!"    {l}\n")
 
 /-- The fields of the forms offered that hob's needs name as a word (`colour`, or `which colour?`), each
-    once, in the forms' order: only a field's own name is ever said, never the model's words. -/
+    once, in the forms' order: only a field's own name is ever said, never the model's words. A need past one short
+    line (`Limits.askLine`) names none: its words are prose, where `line`, `to` and `on` are words, not fields (gsb
+    10-13 #4652-#4654: a plain porch sentence, a long question back, and eight spells to fill for `line, to, on`). -/
 def neededFields (needs : List String) (forms : List Spell.Form) : List String :=
-  let said := needs.flatMap fun n => ((n.split fun c => !(c.isAlphanum || c == '_' || c == '-')).toList.map (·.toString))
+  let said := (needs.filter (·.length ≤ Limits.askLine)).flatMap fun n => ((n.split fun c => !(c.isAlphanum || c == '_' || c == '-')).toList.map (·.toString))
   (forms.flatMap fun f => f.fields.map (·.name)).eraseDups.filter said.contains
 
 /-- The card `id` as `reader` reads it now, as text (`world-card`'s); none when it renders none. -/

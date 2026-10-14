@@ -309,6 +309,23 @@ class PolicyObject(Chain):
             self.assertEqual([o["text"] for o in self.interpret(self.NONE)["offers"]],
                              ["hob: the town heard you. A spell acts here: delvetalk guide shows how, delvetalk commonplace ? lists what it takes.\n"])
 
+    def test_a_long_question_from_hob_names_no_field_its_prose_happens_to_spell(self):
+        """gsb 10-13 #4652-#4654: a plain sentence on the porch, hob asked back at length ("…write a line on the porch…"),
+        and the host read `line`, `to` and `on` out of its prose as fields still needed: eight spells to fill. A need past
+        one short line names no field; a short one still does."""
+        self.policy()
+        self.garden()
+        self.say("a quiet evening; the green bell sounds lovely tonight")
+        long = ("ask: the bell and the seed are two different things, so which do you mean to act on: the colour of a bell "
+                "you plant, or the seed in it, or both as one plan? And do you want to write a line, or only sit?")
+        self.assertGreater(len(long) - 4, 160)
+        heard = self.interpret(self.raw(long))
+        self.assertEqual([o["text"] for o in heard["offers"]],
+                         ["hob: none of commonplace's spells takes that; its spells: delvetalk commonplace ?\n"], heard)
+        self.say("a bell, please", identity="short-ask")
+        short = self.interpret(self.raw("ask: which colour?"))
+        self.assertTrue(short["offers"][0]["text"].startswith("hob: that still needs colour; send it filled:\n\n    delvetalk garden plant\n"), short["offers"])
+
     def test_a_colour_the_form_does_not_take_comes_back_as_hobs_one_question_over_the_doors(self):
         self.policy()
         self.garden()
