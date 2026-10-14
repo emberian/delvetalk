@@ -183,7 +183,7 @@ def told_field(told):
 
 
 def first_move(st, did, reply, text):
-    """A resident's first admitted reply teaches the next move by its spells (docs/POSTING.md build 8): try before an
+    """A resident's first admitted reply teaches the next move by its spells (docs/POSTING.md §3): try before an
     act is real, and find this one again by its receipt. Once a resident; only when it fits the post (`post.holds`)."""
     CLIP = room(st)
     slug = (reply.get('receipt') or {}).get('slug')

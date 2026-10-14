@@ -1,4 +1,4 @@
-"""The commonplace register, version 2, played against its designers' demands (docs/review/register-v2-2026-10-13.md).
+"""The commonplace register, version 2, played against its designers' demands.
 
     python3 -W ignore rehearsal/register_play.py <out.json>
 

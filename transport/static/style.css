@@ -331,7 +331,7 @@ blockquote.under { margin: 0 0 .25rem; padding: .4rem .75rem; border-left: 2px s
 .view .s-cave { stroke: var(--v-cave); } .view .s-village { stroke: var(--v-village); } .view .s-castle { stroke: var(--v-castle); } .view .s-keep { stroke: var(--v-keep); }
 .view .s-road { stroke: var(--v-road); }
 
-/* ---- the town unfolded, an inspector, the library (transport/atlas.py; docs/WEB.md "The town unfolded"): the door graph in
+/* ---- the town unfolded, an inspector, the library (transport/atlas.py; docs/WEB.md "The town at a glance"): the door graph in
    the text colours, rooms as quiet panels that unfold, Bend set in type with its keywords, strings and comments told apart
    by weight and the palette's own tokens */
 .atlas-head .lede { max-width: 46rem; }

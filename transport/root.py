@@ -1,4 +1,4 @@
-"""The hand's root console and its moderation verbs (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126): one table, read by
+"""The hand's root console and its moderation verbs (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF §5 "Root and moderation"): one table, read by
 the CLI (`hand root <verb>`, `hand <power>`) and the web face (`/hand/<world>/root/`), each write one request on the root
 socket under the opener, each carrying a reason (root) or a reading (moderation); the journal is the record, and root's
 journal browser reads it whole.

@@ -1,4 +1,4 @@
-"""`delvetalk-obend serve` as a child process of a script or a test (HOST-HANDOFF 5.125): started over a state
+"""`delvetalk-obend serve` as a child process of a script or a test (HOST-HANDOFF §5 "Serve"): started over a state
 directory, waited for until both sockets listen, stopped by its own handle. Production runs serve as compose's
 `delvetalk-host` service instead; this is for capture-examples, the bench, the rehearsal and tests/host.py.
 
