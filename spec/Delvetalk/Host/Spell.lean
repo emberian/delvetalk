@@ -267,6 +267,21 @@ def blockOpener (line : T) : Option T :=
   let colon := brk line [':']
   if colon < line.length && looksLikeField line then blockValue (trimStart (line.drop (colon + 1))) else none
 
+/-- A field's value that opens a code fence (`spween: ```spween`): its tag, if it does. -/
+def fenceValue (value : T) : Option T :=
+  let v := trimEnd (trimStart value)
+  if v.take 3 == lit "```" && !(v.drop 3).any (· == '`') then some (v.drop 3) else none
+
+/-- A field's value that begins `<<` and opens no block (`spween: <<=== start`, obend #1295): the opener as written. -/
+def falseOpener (value : T) : Option T :=
+  let v := trimEnd (trimStart value)
+  -- A word after `<<` that is no delimiter (`<<end`, one past 32) stays the value as written; a scene's first line
+  -- (`<<=== start`) or any other non-word opens nothing and says so.
+  if v.take 2 == lit "<<" && (blockValue v).isNone && (v.drop 2).any (fun c => !(c.isAlphanum || c == '_')) then some v else none
+
+def falseOpenerReason (name : String) (opener : T) : String :=
+  s!"The block {str opener} for {name} opens nothing: a block opens with << and one word of capitals, digits or _ ({name}: <<END), its lines under it, and that word alone on its last line."
+
 /-- The spell line's last inline field when its value opens a block (`delvetalk kind/room make / name: jar / spween:
     <<END`): the fields before it, its name and the delimiter. The block's lines follow the spell line, as they follow a
     field line that opens one. -/
@@ -348,7 +363,23 @@ partial def binding (line rest : T) : Fields2 :=
   else if colon == 0 || name == line || !looksLikeField line then .stray [] rest
   else match blockOpener line with
     | some delimiter => block (str (foldT name)) delimiter rest []
-    | none => consed ⟨str (foldT name), str (trimStart (line.drop (colon + 1)))⟩ (fieldLines rest)
+    | none =>
+      let value := trimStart (line.drop (colon + 1))
+      match fenceValue value, falseOpener value with
+      | some tag, _ => fenced (str (foldT name)) tag rest []
+      | none, some opener => .bad (falseOpenerReason (str (foldT name)) opener)
+      | none, none => consed ⟨str (foldT name), str value⟩ (fieldLines rest)
+
+/-- A field whose value opens a code fence (`spween: ```spween`, kestrel's jar at obend #1299): the lines under it up
+    to a line that is ``` are its value, as a `<<END` block's are. -/
+partial def fenced (name : String) (tag rest : T) (lines : List T) : Fields2 :=
+  if rest.isEmpty then
+    .bad s!"The block ```{str tag} for {name} needs a last line that is exactly ```."
+  else
+    let line := rest.take (brk rest ['\n'])
+    let after := rest.drop (brk rest ['\n'] + 1)
+    if trimEnd (trimStart line) == lit "```" then consed ⟨name, "\n".intercalate (lines.reverse.map str)⟩ (fieldLines after)
+    else fenced name tag after (line :: lines)
 
 partial def block (name : String) (delimiter rest : T) (lines : List T) : Fields2 :=
   if rest.isEmpty then
@@ -368,7 +399,12 @@ def headed (tail rest : T) : Fields2 :=
   match inline tail with
   | .found bs => match lastOpens bs with
     | some (before, name, delimiter) => sequenced before (block name delimiter rest [])
-    | none => sequenced bs (fieldLines rest)
+    | none => match bs.getLast? with
+      | some b => match fenceValue b.value.toList, falseOpener b.value.toList with
+        | some tag, _ => if b.name.isEmpty then sequenced bs (fieldLines rest) else sequenced bs.dropLast (fenced b.name tag rest [])
+        | none, some opener => if b.name.isEmpty then sequenced bs (fieldLines rest) else .bad (falseOpenerReason b.name opener)
+        | none, none => sequenced bs (fieldLines rest)
+      | none => sequenced bs (fieldLines rest)
   | other => other
 
 /-- The delimiter of the block a spell line opens with its last inline field, if it does. -/
@@ -769,6 +805,10 @@ def spelled (form : Form) (b : Binding) : Binding :=
 def bind (form : Form) (bs : List Binding) : List Binding :=
   boundByType form.fields (rebound (bs.map (spelled form)) form)
 
+/-- A name a field could have: one word of letters, digits, `_` and `-`. -/
+def fieldWord (name : String) : Bool :=
+  !name.isEmpty && name.all fun c => c.isAlphanum || c == '_' || c == '-'
+
 def clauseOfReason (reason : String) : Clause :=
   if reason.startsWith "The block <<" then .unclosedBlock else .noAction
 
@@ -797,12 +837,16 @@ def fit (parsed : Parsed) (form : Form) : Fit :=
         let known := fun (b : Binding) => form.fields.any (·.name == b.name)
         let bindings := bound.takeWhile known
         let stray := bound.drop bindings.length
+        -- A stray one-word name before a spell that still needs a field is that field misnamed (`say / line:` to a
+        -- verb that takes `text`, obend #1116): refused by name, never read as the spell missing it.
         match stray.head? with
         | some b =>
-            if stray.any known then
-              .refused .unknownField
+            let unknown := fun (_ : Unit) => Fit.refused .unknownField
                 s!"{b.name} is not a field of {form.card} {form.action}; its fields are {", ".intercalate (form.fields.map (·.name))}."
-            else proposed form bindings
+            if stray.any known then unknown ()
+            else match proposed form bindings with
+              | .unclear _ => if fieldWord b.name then unknown () else proposed form bindings
+              | fit => fit
         | none => proposed form bindings
 
 /-! ## Forms -/
@@ -954,6 +998,9 @@ private def plant : Form :=
 #guard parse "delvetalk w c / a: 1 / b: <<B\nx\nB\nc: 2" == .spell "w" "c" [⟨"a", "1"⟩, ⟨"b", "x"⟩, ⟨"c", "2"⟩]
 #guard parse "delvetalk w c / b: <<B\nx\n" == .notASpell "The block <<B for b needs a last line that is exactly B." true
 #guard unwrap "<<END\n=== start\nHoney.\nEND\n" == "=== start\nHoney."
+#guard parse "delvetalk room/1 rescene\nspween: ```spween\n=== start\nHoney.\n```" == .spell "room/1" "rescene" [⟨"spween", "=== start\nHoney."⟩]
+#guard parse "delvetalk room/1 rescene / spween: ```spween\n=== start\nHoney.\n```" == .spell "room/1" "rescene" [⟨"spween", "=== start\nHoney."⟩]
+#guard parse "delvetalk room/1 rescene\nspween: <<=== start\nHoney.\nEND" == .notASpell "The block <<=== start for spween opens nothing: a block opens with << and one word of capitals, digits or _ (spween: <<END), its lines under it, and that word alone on its last line." true
 #guard unwrap "```spween\n=== start\nHoney.\n```" == "=== start\nHoney."
 #guard unwrap "```\n lead\n\n```\n" == " lead\n"
 #guard unwrap "<<END\n```spween\nHoney.\n```\nEND" == "```spween\nHoney.\n```"

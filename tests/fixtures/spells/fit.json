@@ -924,7 +924,7 @@
     }
    ]
   },
-  "expected": "unclear colour|seed|",
+  "expected": "refused smell is not a field of garden-1 plant; its fields are colour, seed.",
   "parsed": "spell garden-1 plant smell=sweet;"
  },
  {

@@ -127,17 +127,17 @@ class Inhabitants(test_scenarios.Arc):
 
     def test_a_hand_making_inhabitants_places_within_its_own_share(self):
         """Acting as itself mints no hand: a resident's inhabitants place their rules within the resident's share of a
-        thing (four), so three regulars made by one hand leave the third inactive, saying why; the town's own are the
-        tide owner's and take no share of the others'."""
-        for n in range(3):
+        thing (eight on the town's tide), so five regulars made by one hand leave the fifth inactive, saying why; the
+        town's own are the tide owner's and take no share of the others'."""
+        for n in range(5):
             self.admitted(KIM, "kind/regular", "delvetalk kind/regular make / name: a regular / haunts: porch / tide: tide / hour: %d" % (5 + n))
         self.deliver()
         made = sorted({r["owner"] for r in self.rules("tide") if r["owner"].startswith("@regular/")})
-        self.assertEqual(len([r for r in self.rules("tide") if r["owner"].startswith("@regular/")]), 4, made)
-        third = self.card(self.say(KIM, "regular/3", ""))
+        self.assertEqual(len([r for r in self.rules("tide") if r["owner"].startswith("@regular/")]), 8, made)
+        third = self.card(self.say(KIM, "regular/5", ""))
         self.assertIn("Inactive: its rule on tide was refused", third)
         self.assertIn("placedPerHand", third)
-        self.assertIn("Its maker arms it again: delvetalk regular/3 arm", third)
+        self.assertIn("Its maker arms it again: delvetalk regular/5 arm", third)
 
     def test_a_legacy_phrase_haunt_has_no_walk_spell_and_its_owner_can_repair_it(self):
         """Refuted by the stored haunt `wherever a word was just finished` becoming a walk spell,
@@ -456,22 +456,22 @@ class Inhabitants(test_scenarios.Arc):
     def test_the_tide_is_the_towns_and_holds_every_hands_share_past_the_others_pool(self):
         """The live review of 2026-10-14, H1: obend's tide held 15 rules in four hours, six of them three residents'
         hourly rules, and the others' pool of 24 would have refused every resident (and the refresh's inhabitants) within
-        a day. On a thing the opener owns each hand brings its own four: seven hands place 28 (past 24), the town's
-        inhabitants count as the tide owner's and are armed again after, and the fifth of one hand is refused by its own
+        a day. On a thing the opener owns each hand brings its own eight: seven hands place 56 (past 24), the town's
+        inhabitants count as the tide owner's and are armed again after, and the ninth of one hand is refused by its own
         share, never by a full tide. Refuted by a resident's rule on the tide refused `placedByOthers`."""
         hands = ["did:plc:tidehand%016d" % n for n in range(7)]
         for n, did in enumerate(hands):
             self.town.send(op="world-arrive", principal="transport", did=did, handle="tide%d.delve.town" % n)
-            for k in range(4):
+            for k in range(8):  # placedPerHandOnTownThing
                 self.admitted(did, "tide", "delvetalk tide rule / name: h%dr%d / when: request.method == \"tick\" and new.ticks %% 24 == %d / then: delvetalk me note / text: h%d" % (n, k, k, n))
         others = [r for r in self.rules("tide") if r["owner"] in hands]
-        self.assertEqual(len(others), 28)
+        self.assertEqual(len(others), 56)
         town = [r for r in self.rules("tide") if r["owner"].startswith("@station/")]
         self.assertGreaterEqual(len(town), 4)
         self.admitted(OPENER, REGULAR, "delvetalk %s arm" % REGULAR)
         self.deliver()
         self.assertEqual(len([r for r in self.rules("tide") if r["owner"] == "@" + REGULAR]), 2)
-        fifth = self.say(hands[0], "tide", "delvetalk tide rule / name: h0r4 / when: request.method == \"tick\" / then: delvetalk me note / text: h0")
+        fifth = self.say(hands[0], "tide", "delvetalk tide rule / name: h0r8 / when: request.method == \"tick\" / then: delvetalk me note / text: h0")
         self.assertEqual((fifth["status"], fifth["receipt"]["outcome"]["class"]), ("refused", "capacity"), fifth)
         self.assertIn("placedPerHand", fifth["receipt"]["outcome"]["reason"])
         self.assertEqual(self.town.send(op="bounds")["host"]["placedOnTownThing"], 512)

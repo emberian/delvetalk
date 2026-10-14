@@ -704,11 +704,22 @@ def drainingBounds : List String := ["pendingInterpretationsPerObject", "pending
 def standingBound (m obj : String) : String :=
   match m with
   | "placedPerHand" => s!"placedPerHand: you hold {Limits.placedPerHand} rules, wants or verbs on {obj}, a hand's most; take one of yours off it (unrule, unwant or ungrow) to place another. Waiting frees nothing."
+  | "placedPerHandOnTownThing" => s!"placedPerHand: you hold {Limits.placedPerHandOnTownThing} rules, wants or verbs on {obj}, a hand's most on the town's things; take one of yours off it (unrule, unwant or ungrow) to place another. Waiting frees nothing."
   | "placedByOthers" | "verbsByOthers" => s!"{m}: the other hands' lines on {obj} fill their share; its owner holds the rest. Waiting frees nothing."
   | "rulesPerObject" | "wantsPerObject" | "verbsPerObject" | "placedOnTownThing" =>
     s!"{m}: {obj} carries as many as it holds; one comes off before another goes on. Waiting frees nothing."
   | "maxObjects" => "maxObjects: the town holds as many things as it keeps; nothing new is made until one is retired. Waiting frees nothing."
   | _ => s!"the host's {m} is at its bound; waiting frees nothing."
+
+/-- The word `delvetalk` named as a card (an HTTP client's `world/delvetalk/receive`, obend #2113–#2120, or a
+    spell `delvetalk delvetalk …`): it begins a spell and is no card, so the refusal says how a card is named. -/
+def spellWordReason (card : String) : Option String :=
+  let folded := Spell.fold card
+  if folded == "delvetalk" then
+    some "delvetalk begins a spell; it is no card. Name the card: POST /world/<card>/receive with the spell's text (delvetalk <card> <verb>, its fields on the lines after), or the spell delvetalk <card> <verb> in a reply."
+  else if folded.startsWith "delvetalk/" then
+    some s!"delvetalk begins a spell; it is no card. The card is {(card.drop 10).toString}: POST /world/{(card.drop 10).toString}/receive with the spell's text, or the spell delvetalk {(card.drop 10).toString} <verb>."
+  else none
 
 /-- A refusal's `reason` as the town reads it (docs/VOICE.md, "The host's refusals"), from what the
     refusal names: the class, the object, the limit or resource, the clause. Classes whose reason the
@@ -741,7 +752,7 @@ def Refusal.voiced (r : Refusal) : Refusal :=
         else if m.startsWith "argument does not conform" || m.isEmpty then some s!"not what {method} takes; {pointer}"
         else some s!"{m}; {pointer}"
       | none => some s!"not what {method} takes; {pointer}"
-    | "unknownObject" => some s!"no card {obj} that you may see; the commonplace lists the doors."
+    | "unknownObject" => some ((spellWordReason obj).getD s!"no card {obj} that you may see; the commonplace lists the doors.")
     | "programRefused" =>
       let head := s!"the package was refused at {r.clause.getD "compile"}; the workshop's check shows where"
       -- The compiler's or the migration's diagnostic follows: the proposer sees the cause.
@@ -1846,7 +1857,7 @@ def Built.shape (b : Built) : Json × Bool × Bool :=
 def compileMigration (w : World) (inputs : Json) (name : String) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty)
     (reads : Delvetalk.Theory.ObjectiveBendTypes.Ty → DataBounds → Bool)
     (wrong : String) : Except (String × String) Compiled := do
-  unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw ("migration", "invalid migration name")
+  unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw ("migration", s!"migration names a def in your source, def <name>(old: OldState) -> State; \"{(name.take 40).toString}\" is no name. Leave migration out when the State keeps its shape.")
   let resolved ← (resolveInputs w (inputs.setObjVal! "entry" (toJson name))).mapError (("compile", ·))
   -- A migration the package does not define is said by name, not by the compiler's entry search.
   let (art, mty, _) ← (Package.compileKeepingLaws resolved).mapError fun e =>
@@ -3342,8 +3353,8 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
     let checkShare (placers : List String) (byOthers : Nat) (limit : String) : Except Refusal Unit := do
       let placer := hand p.principal
       unless placer == ownerOf o.state || openerActs w placer do
-        if (placers.filter (hand · == placer)).length ≥ Limits.placedPerHand then
-          throw { cls := "capacity", object := some id, reason := some "placedPerHand" }
+        if (placers.filter (hand · == placer)).length ≥ (if townThing then Limits.placedPerHandOnTownThing else Limits.placedPerHand) then
+          throw { cls := "capacity", object := some id, reason := some (if townThing then "placedPerHandOnTownThing" else "placedPerHand") }
         if !townThing && (placers.filter (hand · != ownerOf o.state)).length ≥ byOthers then
           throw { cls := "capacity", object := some id, reason := some limit }
     for x in p.placements.filter (·.object == id) do
