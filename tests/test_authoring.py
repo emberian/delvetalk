@@ -170,7 +170,7 @@ class Authoring(unittest.TestCase):
             ("form hum:\ndef hum(state: State, context: Abi.Context) -> Activity<Super.Done>:\n  Super.inscribe(state, \"hum\", \"x\", context)\n",
              "Super.Done; Super (Record) declares no type Done; its types: "),
             ("def warm() -> Nat:\n  let e = Plans.Edit.set({value: \"warm\"})\n  1n\n",
-             "cannot infer the type argument D of Plans.Edit.set (line 18) from its arguments or the type its position expects; write Plans.Edit::<String, {}>.set(...); in a write the field names them: let written(_) = write {field: set value}")]
+             "cannot infer the type argument D of Plans.Edit.set (line 17) from its arguments or the type its position expects; write Plans.Edit::<String, {}>.set(...); in a write the field names them: let written(_) = write {field: set value}")]
         for body, said in cases:
             r = self.admitted(YUE, "workshop", "delvetalk workshop check\nover: kind/record\n```obend\n%s```\n" % body)
             self.assertIn(said, told(r))
@@ -263,8 +263,8 @@ class Authoring(unittest.TestCase):
         # A body over a kind with a mistake: the checker's line, and where the body's own lines start.
         r = self.admitted(YUE, "workshop", "delvetalk workshop draft / name: counter2 / over: kind/record\n```obend\n%s```\n"
                           % COUNTER.replace("context.handle", "context.hand"))
-        self.assertIn("Layer1:19:", told(r))
-        self.assertIn("Lines 1 to 16 are the header the workshop wrote; your first line is line 17.", told(r))
+        self.assertIn("Layer1:18:", told(r))
+        self.assertIn("Lines 1 to 15 are the header the workshop wrote; your first line is line 16.", told(r))
         # The bare counter of §1: it compiles, and nothing could ever cast a spell on it.
         r = self.say(YUE, "workshop", "delvetalk workshop draft / name: bare\n```obend\n%s```\n" % BARE)
         self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "noReceive"), r)
@@ -490,7 +490,7 @@ class Authoring(unittest.TestCase):
         # A body that does not compile names its line past what the workshop wrote.
         bad = told(self.admitted(YUE, "pot/1", "delvetalk pot/1 grow / name: spill / takes: nothing\nbody: <<BEND\nSuper.inscribe(state, \"spill\", nowhere, context)\nBEND"))
         self.assertIn("Checked: 1 problem.", bad)
-        self.assertIn("Lines 1 to 18 are what the workshop wrote around your body; its first line is line 19.", bad)
+        self.assertIn("Lines 1 to 17 are what the workshop wrote around your body; its first line is line 18.", bad)
         # On another's thing: held for its owner, who lays it.
         held = told(self.admitted(KES, "pot/1", "delvetalk pot/1 grow / name: pour / takes: nothing\nbody: <<BEND\nSuper.inscribe(state, \"pour\", \"poured\", context)\nBEND"))
         n = held.split("is held as #")[1].split(" ")[0]

@@ -452,7 +452,7 @@ want NAME "reading": EXPR asks SPELL      poses while it holds, judged at read a
 
 ```
 EXPR  ::= EXPR implies|or|and EXPR | not EXPR | ( EXPR ) | ATOM
-ATOM  ::= REF == TERM | REF <= TERM | REF + TERM <= TERM | TERM in [INT, …] | TERM in new.F | TERM in new.F.COL
+ATOM  ::= TERM OP TERM (OP: == != < <= > >=) | TERM in [INT, …] | TERM in new.F | TERM in new.F.COL
         | TERM in "OBJECT".F.COL | TERM in old.F.COL | monotone(F) | writeOnce(F) | appendOnly(F)
         | unchanged(F) | insertOnly(F) | changed(TERM) | changed(new.F.COL) by TERM | under "OBJECT" | "OBJECT" wants NAME
 TERM  ::= REF | INT | "TEXT" | TERM + TERM | TERM % INT

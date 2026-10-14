@@ -817,9 +817,9 @@ def first_line_rule(host, opener, prefix='genesis'):
     """FIRST_LINE on the commonplace, placed by the opener where it lacks it (genesis, `prefix` 'genesis'; a carried
     town's refresh, 'refresh'); -> made rows. Stops (Stopped) at a refusal."""
     name, reading, when, then, number = FIRST_LINE
-    rules = host.send({'op': 'world-rules', 'principal': opener, 'object': 'commonplace'}).get('rows') or []
-    if any(r.get('name') == name for r in rules):
-        return []
+    got = host.send({'op': 'world-rules', 'principal': opener, 'object': 'commonplace'})
+    if got.get('status') != 'rules' or any(r.get('name') == name for r in got.get('rows') or []):
+        return []  # no commonplace to keep, or the rule stands
     made = said(host, opener, 'commonplace', 'rule', [('name', name), ('reading', reading), ('when', when), ('then', then), ('number', number)],
                 f'{prefix}-commonplace-rule-{name}')
     turned(f'commonplace rule {name}', made['reply'])
@@ -1142,12 +1142,12 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
 
 def first_lined(host, opener):
     """The commonplace's FIRST_LINE rule on a carried town (`first_line_rule` under `refresh-*` identities): placed once,
-    `current` after (the opener may take it off); a refusal is named and fails the refresh."""
+    nothing said after (the opener may take it off); a refusal is named and fails the refresh."""
     try:
         made = first_line_rule(host, opener, 'refresh')
     except Stopped as e:
         return [{'object': 'commonplace', 'slot': 'firstline', 'status': 'refused', 'reading': str(e)}]
-    return [{'object': 'commonplace', 'slot': 'firstline', 'status': 'refreshed' if made else 'current', **({'reading': 'placed'} if made else {})}]
+    return [{'object': 'commonplace', 'slot': 'firstline', 'status': 'refreshed', 'reading': 'placed'}] if made else []
 
 
 def placed_playthings(host, opener, config=None):

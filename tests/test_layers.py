@@ -129,7 +129,7 @@ class Layers(unittest.TestCase):
         self.assertIn("refused (layer-override): Retyped.render", d["message"])
         self.assertEqual((d["module"], d["span"]["line"]), ("Retyped", 6))
         self.assertTrue(d["found"].endswith("-> String"), d)
-        self.assertIn("signature of Bell.render", d["hint"])
+        self.assertIn("write def render(state: State, context: Abi.Context) -> Document.Document", d["hint"])  # as Bell writes it
         late = "edition ObjectiveBend 1\nlayer over ./Base.obend\ndef greet(n: Nat) -> String:\n  \"x\"\n"
         reply = self.h.send({"op": "check-package", "entry": "greet",
                              "modules": [{"name": "Base", "source": BASE}, {"name": "Top", "source": late}]})

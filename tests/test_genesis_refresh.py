@@ -36,6 +36,8 @@ class RefreshHost:
             return {'status': 'object', 'record': {k: v for k, v in held.items() if k != 'state'}} if held else {'status': 'unknown'}
         if op == 'world-view':
             return {'status': 'viewed', 'state': record(**held['state'])} if held else {'status': 'unknown'}
+        if op == 'world-rules':
+            return {'status': 'rules', 'object': obj, 'rows': held.get('rules', [])} if held else {'status': 'unknown'}
         identity = request['identity']
         if identity == self.fail:
             self.fail = None
@@ -97,6 +99,8 @@ class RefreshHost:
             elif action == 'door':
                 fields = dict(line.split(': ', 1) for line in text.splitlines()[1:])
                 held['state']['cites']['items'].append(genesis.door(fields['label'], fields['to'], []))
+            elif action == 'rule':  # the commonplace's first-line rule (genesis FIRST_LINE), placed once
+                held.setdefault('rules', []).append({'name': dict(line.split(': ', 1) for line in text.splitlines()[1:])['name']})
             elif action not in ('drop', 'grow', 'want'):
                 raise AssertionError(request)
         else:

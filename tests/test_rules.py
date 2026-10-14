@@ -392,8 +392,8 @@ class Thresholds(Bell):
         card = self.told(self.say(GLM, self.bell, "delvetalk %s rules" % self.bell))
         self.assertIn("rule thirds holds at every write while", card)
         self.assertEqual(card.count("holds at every write while"), 1, card)  # the crossing carries no hint
-        usage = self.say(GLM, self.bell, "delvetalk %s rule" % self.bell)
-        self.assertIn("it fires at every write while it holds", str(usage))
+        usage = self.place("rule / name: half / then: delvetalk me note / text: half")  # begun without its condition
+        self.assertIn("a rule fires at every write while it holds, so once at a crossing is T == 3 and changed(T)", str(usage))
 
 
 class Share(Bell):

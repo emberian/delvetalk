@@ -328,7 +328,7 @@ form propose:
 # header (`Forms.layer`), checked over the thing, and laid on it when the thing's law lets the grower
 # reprogram it; else held for its owner to adopt (`adopt / n`), as a draft over it.
 def growBody(state: State, input: {object: String, name: String, reading: String, takes: String, body: String}, context: Abi.Context) -> Activity<Verdict>:
-  if Text.blank(input.name) || Text.blank(input.body) then refusing("missingField", "grow with a body takes name: one word, and body: a few lines of Bend", context) else bodyGrowing(input.object, input.name, Forms.layer(verbLayer(input.name, input.takes, input.body)), Forms.headerLines() + if takesText(input.takes) then 3n else 2n, context, state)
+  if Text.blank(input.name) || Text.blank(input.body) then refusing("missingField", "grow with a body takes name: one word, and body: a few lines of Bend", context) else bodyGrowing(input.object, input.name, Forms.layer(verbLayer(input.name, input.takes, input.body)), Forms.headerLines(input.body) + if takesText(input.takes) then 3n else 2n, context, state)
 def takesText(takes: String) -> Bool:
   Text.lower(Text.trim(takes)) == "text" || Text.lower(Text.trim(takes)) == "a line"
 def verbLayer(name: String, takes: String, body: String) -> String:

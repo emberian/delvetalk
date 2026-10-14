@@ -1461,7 +1461,7 @@ def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : 
   kindAdmitsBy o (admitFacts w o principal id) kind verb
 
 /-- `rule`'s and `want`'s fields as the usage prints them: the spell last, since its own fields follow it. -/
-def ruleLine (target : String := "") : String := "name: <a name>\n" ++ target ++ "when: <a condition: it fires at every write while it holds; once at a crossing is T == 3 and changed(T)>\nthen: <a spell, holes {new.F} and {request.subject}>"
+def ruleLine (target : String := "") : String := "name: <a name>\n" ++ target ++ "when: <a condition>\nthen: <a spell, holes {new.F} and {request.subject}>"
 
 def wantLine (target : String := "") : String := s!"name: <a name>\n{target}when: <a condition on the thing as it stands>\nasks: <the spell that answers it>"
 def forThingsLine : String := "for: <things, or leave it out for the kind itself>\n"
@@ -1845,7 +1845,8 @@ def placementsOf (o : Object) (id action : String) (value spell : String → Opt
     let want := action == "want"
     let key := if want then "asks" else "then"
     let name ← need "name" s!"a name new to {id}"
-    let cond ← need "when" "a condition"
+    let cond ← need "when" (if want then "a condition" else
+      "a condition; a rule fires at every write while it holds, so once at a crossing is T == 3 and changed(T)")
     let some given := (spell key).filter (!·.isEmpty) | throw ("missingField", s!"{action} takes {key}: the spell, last.")
     let reading := ((value "reading").map fun r => " " ++ Delvetalk.Compiler.ObjectiveBendLaw.quoteReading r).getD ""
     let line := s!"{action} {name}{reading}: {cond} {key} {given}"
@@ -4274,15 +4275,15 @@ def runPlanTurn (w : World) (req : TurnRequest) (acts : List String) : Except St
 
 /-- One table for a card's actions (playtest 5: `delvetalk register sign` ran, `POST …/register/sign` answered
     `noMethod`): a direct turn naming an action the card offers as a spell but not as a method of its table (a grown
-    verb, a host spell or read) is that spell, cast through `receive` from its fields as a typed spell is, so a spell
+    verb, a placing or a host read) is that spell, cast through `receive` from its fields as a typed spell is, so a spell
     and its action route reach the same act. A field with no spell form leaves the turn as it was asked. -/
 def spellOfAction (w : World) (req : TurnRequest) : TurnRequest :=
   if req.method == "receive" then req else
   match w.objects[namedCard w req.principal req.object]? with
   | none => req
   | some o =>
-    let spelled := o.verbs.any (·.name == req.method) || hostSpells.contains req.method || hostReads.contains req.method
-    if o.offers req.method || !spelled then req else
+    let spelled := o.verbs.any (·.name == req.method) || placingSpells.contains req.method || hostReads.contains req.method
+    if o.offers req.method || !o.offers "receive" || !spelled then req else
     match proposalSpell req.object req.method req.argument with
     | "" => req
     | spell => { req with method := "receive", argument := .record [("text", .label spell), ("post", .label "")] }

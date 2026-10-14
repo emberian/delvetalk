@@ -531,7 +531,7 @@ REFUSED = [
     (HEAD + "import ./List.obend as Lists\nimport ./Plan.obend as P\nimport ./Outer.obend as Outer\nrecord State:\n  items: Outer.Items\n",
      "keep", REL_LIB, False, ({"name": "Inner", "source": HEAD + "record Item:\n  n: Nat\n"},
                               {"name": "Outer", "source": HEAD + "import ./List.obend as Lists\nimport ./Inner.obend as Inner\ntype Items = Lists.List<Inner.Item>\n"}),
-     ["refused (derived-edits): State.items holds items of a type from a module Package does not import"]),
+     ["refused (derived-edits): the State's fields hold types from modules Package does not import: State.items (Inner); add import ./Inner.obend as Inner"]),
     (HEAD + "import ./Abi.obend as Abi\nrecord State:\n  count: Nat\n"
      "def bump(state: State, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {count: add 1n}\n  0n\n", "bump", ("Abi",), False, (),
      ["this module needs 2 library imports it does not name; add them: import ./Plan.obend as Plans; import ./World.obend as World"]),
@@ -600,7 +600,7 @@ class Sugar(unittest.TestCase):
     def test_each_derived_refusal_names_its_source_line(self):
         # `compile` does not localize (check-package's `localize` recompiles each function alone to
         # find a spanless refusal): a span here is the generics pass's own (KERNEL-HANDOFF §16 item 9).
-        tags = ("refused (fixed): note", "refused (form-kind)", "refused (form-input): form", "refused (derived-edits): State.",
+        tags = ("refused (fixed): note", "refused (form-kind)", "refused (form-input): form", "refused (derived-edits): the State's fields",
                 "refused (derived-forms): forms()")
         seen = set()
         for source, entry, library, world, extra, words in REFUSED:
@@ -620,7 +620,7 @@ class Sugar(unittest.TestCase):
                 if "declares PlantInput" in words[0]:
                     self.assertIn("record PlantInput", line)
                 if "State.items" in words[0]:
-                    self.assertIn("items: Outer.Items", line)
+                    self.assertIn("items: Outer.Items", line)  # the first field it names
                 if "derived-forms" in words[0]:
                     self.assertIn("def forms()", line)
                 seen.add(words[0][:24])

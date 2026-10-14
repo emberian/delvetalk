@@ -232,7 +232,8 @@ def admitted(state: State, line: Line, context: Abi.Context) -> Activity<Card.Re
   let written(_) = write {admitted: insert {n: line.n, at: context.height}, pending: retract {n: line.n}, keeperHandle: set context.handle}
   Card.tell(Card.Replied.done({action: "admit"}), Document.text("#{natText(line.n)} admitted: {line.text}\n"))
 # decline {number}: the keeper's alone; the line stays as written (lines are only added), no longer waiting and
-# never admitted, shown [not admitted] (the hand's requests page offers it beside admit).
+# never admitted, shown [not admitted] (the hand's requests page offers it beside admit). A body offers it as a form
+# (the commonplace's); the record's own card does not, so a kept card's usage is no longer.
 def decline(state: State, input: {number: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
   if state.keeper == "" || context.principal != state.keeper then refused({clause: "notKeeper", reading: keeperReading(state, context)}, context) else declining(state, input.number, context)
 def declining(state: State, number: Nat, context: Abi.Context) -> Activity<Card.Replied>:
@@ -416,12 +417,10 @@ def forecastWritten(line: String) -> Activity<Bool>:
   let written(_) = write {weather: set textTake(line, 120n)}
   true
 def methods() -> Lists.List<String>:
-  Text.words("~made ~forecast ~act ~cited")
+  Text.words("~made ~forecast ~act ~cited ~decline")
 form write:
   text: text 1..280
 form admit:
-  number: natural 1..1000000000
-form decline:
   number: natural 1..1000000000
 form lines:
   from: natural 1..1000000000
@@ -433,7 +432,7 @@ form undoor:
   label: text 1..32
 # What the host offers a reader (HOST-HANDOFF 103): admit to the keeper, doors to the owner.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit decline") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words("")))
+  Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words("")))
 # Words take the record's card by default (Card.answer); prose it leaves silent is hob's.
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))

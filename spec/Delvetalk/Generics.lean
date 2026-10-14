@@ -1332,6 +1332,12 @@ def editFields : List Expr → List String
   | [.extend _ fields _] | [.record fields _] => fields.map (·.1)
   | _ => []
 
+/-- The fields a write over `keep()` names (`write {...}`, `world.write(extend(keep(), {...}))`): a State's edits by
+name, unlike a record `world.write` takes whole (a cell's `{field, before, after}`). -/
+def keptFields : List Expr → List String
+  | [.extend _ fields _] => fields.map (·.1)
+  | _ => []
+
 mutual
 def writtenFields : Expr → List String
   | .call c args _ => (if isWorldWrite c then editFields args else []) ++ writtenFields c ++ writtenList args
@@ -1352,6 +1358,26 @@ def writtenList : List Expr → List String
 end
 
 mutual
+/-- `writtenFields` of the writes over `keep()` alone (`keptFields`). -/
+def keptWritten : Expr → List String
+  | .call c args _ => (if isWorldWrite c then keptFields args else []) ++ keptWritten c ++ keptList args
+  | .record fs _ => keptFieldList fs
+  | .extend i fs _ => keptWritten i ++ keptFieldList fs
+  | .member t _ _ | .specialize t _ _ | .dataOf _ t _ | .worldCall _ _ _ t _ => keptWritten t
+  | .compose specs _ => keptList specs
+  | .fix a b _ | .binary _ a b _ | .letE _ _ a b _ => keptWritten a ++ keptWritten b
+  | .lambda _ _ b _ | .extensionValue _ _ b _ => keptWritten b
+  | .ite c t f _ => keptWritten c ++ keptWritten t ++ keptWritten f
+  | _ => []
+def keptFieldList : List (String × Expr) → List String
+  | [] => []
+  | (_, v) :: rest => keptWritten v ++ keptFieldList rest
+def keptList : List Expr → List String
+  | [] => []
+  | e :: rest => keptWritten e ++ keptList rest
+end
+
+mutual
 def bodyWritten : Body → List String
   | .expr e _ => writtenFields e
   | .cases sc branches _ => writtenFields sc ++ branchesWritten branches
@@ -1364,6 +1390,22 @@ end
 def declWritten : Decl → List String
   | .function _ _ b _ | .extension _ _ _ b _ _ => bodyWritten b
   | .spec sp => sp.methods.flatMap (bodyWritten ·.body)
+  | _ => []
+
+mutual
+def bodyKept : Body → List String
+  | .expr e _ => keptWritten e
+  | .cases sc branches _ => keptWritten sc ++ branchesKept branches
+  | .letB _ _ v b _ => keptWritten v ++ bodyKept b
+def branchesKept : List (ObjectiveBendSurface.Pattern × Body × Span) → List String
+  | [] => []
+  | (_, b, _) :: rest => bodyKept b ++ branchesKept rest
+end
+
+/-- The State fields a declaration's writes over `keep()` name. -/
+def declKept : Decl → List String
+  | .function _ _ b _ | .extension _ _ _ b _ _ => bodyKept b
+  | .spec sp => sp.methods.flatMap (bodyKept ·.body)
   | _ => []
 
 /-- The State a module's writes edit: its own, or in a layer that declares none, the State of
@@ -1395,7 +1437,7 @@ def checkFixed (index : Nat) : M Unit := do
   let some source := (← get).sources[index]? | return
   let some (fields, home, _) ← effectiveStateFields (← get).sources.size index | return
   let names := fields.map (·.name)
-  let unknown := source.ast.decls.flatMap fun d => (declWritten d).filter (!names.contains ·) |>.map (·, d.span)
+  let unknown := source.ast.decls.flatMap fun d => (declKept d).filter (!names.contains ·) |>.map (·, d.span)
   if let some (_, at_) := unknown.head? then
     let owner := (((← get).sources[home]?).map (·.module.name)).getD source.module.name
     let layered := if home == index then "" else

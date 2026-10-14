@@ -1271,9 +1271,11 @@ class Hand:
         if verb not in self.REQUEST_VERBS.get(kind, ()):
             raise HandError(f'{kind or "a request"} takes {" or ".join(self.REQUEST_VERBS.get(kind, ("line", "proposal")))}, not {verb}')
         n = int(n)
-        card, spell = (obj, f'delvetalk {obj} {verb}\nnumber: {n}') if kind == 'line' else ('workshop', f'delvetalk workshop {verb}\nn: {n}')
+        card, field = (obj, 'number') if kind == 'line' else ('workshop', 'n')
         intent = f'hand:request:{kind}:{verb}:{obj}:{n}'
-        reply = self.receive(card, spell, intent)
+        # The method itself, as the town: a kept record's `decline` is a method no card offers as a spell (~decline).
+        reply = self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': verb, 'identity': intent,
+                                'argument': typed({field: n})})
         receipt = reply.get('receipt') or {}
         if not receipt:
             raise HandError(f"{verb} {obj} #{n}: {reply.get('message') or reply.get('status')}")
