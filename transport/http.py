@@ -41,6 +41,7 @@ CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 PROCEDURES = {f'online.fg-goose.gsb.{name}': name for name in ('act', 'try', 'plan')}
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
 REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to send a request; bytes of a reply; JSON nesting of a body
+HAND_TOKEN_HEADER = 'X-Delvetalk-Hand-Token'  # the hand's secret as the anchor's Caddy sets it, behind its password (docs/DEPLOY.md "Open the hand")
 WORKERS = 48  # requests served at once (the container allows 64 tasks); one more is told `busy`
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'receipt', False): 'intent', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
@@ -728,6 +729,22 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def hand_write(self):
+        """A form posted to the hand comes from the hand's own page. Behind the edge the browser holds a password it sends
+        to any page's form, so a write another site starts (Sec-Fetch-Site `cross-site` or `same-site`, or an Origin not
+        this listener's Host; `Origin: null` only with `same-origin`, as under the edge's no-referrer) is refused."""
+        site, origin = self.headers.get('Sec-Fetch-Site'), self.headers.get('Origin')
+        host = (self.headers.get('Host') or '').lower()
+        try:
+            named = urllib.parse.urlsplit(origin).netloc.lower() if origin not in (None, 'null') else None
+        except ValueError:
+            named = None
+        ours = origin is None or (origin == 'null' and site == 'same-origin') or (bool(host) and named == host)
+        if site not in (None, 'same-origin', 'none') or not ours:
+            self.fail('denied', "the hand takes forms from its own pages")
+            return False
+        return True
+
     def csrf_token(self):
         binding = getattr(self, 'browser_nonce', self.cookie('dt_browser'))
         return hmac.digest(self.server.csrf_secret, binding.encode(), 'sha256').hex()
@@ -766,11 +783,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.hand:  # the owner's console, on its own loopback listener and nothing else there; never in the catalogue
             if path.split('/')[1:2] != ['hand']:
                 return self.fail('unknownRoute', f'no route at {path}')
+            if method == 'POST' and not self.hand_write():
+                return
             form = self.body() if method == 'POST' else None
             if method == 'POST' and form is None:
                 return
-            code, body, headers = self.server.hand.handle(method, self.path, self.headers.get('Cookie') or '', form)
-            return self.html(code, body, headers)
+            code, body, headers = self.server.hand.handle(method, self.path, self.headers.get('Cookie') or '', form,
+                                                          given=self.headers.get(HAND_TOKEN_HEADER) or '')
+            return self.html(code, body, [*headers, ('Cache-Control', 'no-store'), ('X-Frame-Options', 'DENY'),
+                                          ('Content-Security-Policy', "frame-ancestors 'none'")])
         if path.split('/')[1:2] == ['oauth']:
             return oauth.route(self, method, path)
         name, p = resolve(method, path)

@@ -200,16 +200,34 @@ connection per thread, so production runs path (b).
   `gsb.fg-goose.online`, and the old `delvetalk.fg-goose.online` route, both proxy to `10.10.1.10:8765` until the town
   has moved; then the old one goes. The installed config is `/etc/caddy/Caddyfile` on the anchor (native Caddy, no
   checkout there; dregg-infra's `edge/anchor/Caddyfile` is its source and had drifted from it on 2026-10-10). Install as
-  that file's header says: write `Caddyfile.new`, `caddy validate`, `mv`, `systemctl reload caddy`. Both names answer
-  `respond @hand 404` for `path /hand /hand/*`, a belt only: the port Caddy proxies never serves the owner's console,
-  which has its own listener on workhorse's loopback (below). Both cap bodies at 262144 bytes (since 2026-10-10); the
-  deployed front's own `MAX_BODY` is still 65536 and refuses above that. The gsb route as installed:
+  that file's header says: write `Caddyfile.new`, `caddy validate`, `mv`, `systemctl reload caddy`. The gsb name (and
+  obend's) serves `/hand` and `/hand/*` behind the anchor's password since 2026-10-14 ("Open the hand", Behind the
+  anchor's password): `basic_auth` from `/etc/caddy/secrets/delvetalk-hand.users`, then the hand on the workhorse's private
+  address with its token set by Caddy from `/etc/caddy/secrets/<project>-hand.token`; a client's own
+  `X-Delvetalk-Hand-Token` is stripped on every path. The old `delvetalk.fg-goose.online` name still answers `respond
+  @hand 404`. Both cap bodies at 262144 bytes (since 2026-10-10); the deployed front's own `MAX_BODY` is still 65536
+  and refuses above that. The gsb route as installed (`render delvetalk`'s `Caddyfile.site`; the installed block adds
+  two comment lines):
 
       gsb.fg-goose.online {
       	import baseline_headers
       	encode zstd gzip
+      	request_header -X-Delvetalk-Hand-Token
       	@hand path /hand /hand/*
-      	respond @hand 404
+      	handle @hand {
+      		basic_auth {
+      			import /etc/caddy/secrets/delvetalk-hand.users
+      		}
+      		header Cache-Control "no-store"
+      		reverse_proxy 10.10.1.10:8766 {
+      			header_up -Authorization
+      			header_up X-Delvetalk-Hand-Token {file./etc/caddy/secrets/delvetalk-hand.token}
+      			transport http {
+      				dial_timeout 3s
+      				response_header_timeout 60s
+      			}
+      		}
+      	}
       	request_body {
       		max_size 262144
       	}

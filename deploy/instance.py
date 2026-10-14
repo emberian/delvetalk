@@ -23,6 +23,8 @@ INSTANCES = Path(__file__).resolve().parent / 'instances.toml'
 LIVE = 'delvetalk'  # the live town's name: its paths are the ones it has always had
 PRIVATE_IP = '10.10.1.10'  # the workhorse on the private net, which the anchor's Caddy reaches
 BACKUP_PULL = 'root@2.28.141.27'  # the workhorse as hbox's pull names it (DEPLOY "Durability and backups")
+CADDY_SECRETS = '/etc/caddy/secrets'  # on the anchor, root:caddy 0750: the hand's password hashes and each hand's token (DEPLOY "Open the hand")
+HAND_USERS = f'{CADDY_SECRETS}/delvetalk-hand.users'  # `ember <bcrypt>` lines, one for every instance's hand
 
 
 @dataclasses.dataclass(frozen=True)
@@ -172,16 +174,36 @@ RandomizedDelaySec=2m
 WantedBy=timers.target
 '''}
 
+    @property
+    def hand_token_at_edge(self):
+        """The anchor's copy of the hand's token, which Caddy sets on each request it lets through to the hand."""
+        return f'{CADDY_SECRETS}/{self.project}-hand.token'
+
     def caddy(self):
         """The instance's site block for the anchor's Caddy (dregg-infra edge/anchor/Caddyfile; the installed one is
-        /etc/caddy/Caddyfile there): TLS for its host, the hand's paths answered 404 (the hand has its own listener on
-        the workhorse's loopback), bodies capped at the front's MAX_BODY, everything else to its front's port."""
+        /etc/caddy/Caddyfile there): TLS for its host; the hand's paths behind the password (HAND_USERS), proxied to the
+        hand on the workhorse's private address with the token set from the anchor's file (no client's own token, no
+        Authorization passed on, never cached); bodies capped at the front's MAX_BODY; everything else to its front."""
         firehose = f'\treverse_proxy /xrpc/com.atproto.sync.subscribeRepos {PRIVATE_IP}:{self.firehose_port}\n' if self.firehose else ''
         return f'''{self.host} {{
 \timport baseline_headers
 \tencode zstd gzip
+\trequest_header -X-Delvetalk-Hand-Token
 \t@hand path /hand /hand/*
-\trespond @hand 404
+\thandle @hand {{
+\t\tbasic_auth {{
+\t\t\timport {HAND_USERS}
+\t\t}}
+\t\theader Cache-Control "no-store"
+\t\treverse_proxy {PRIVATE_IP}:{self.hand_port} {{
+\t\t\theader_up -Authorization
+\t\t\theader_up X-Delvetalk-Hand-Token {{file.{self.hand_token_at_edge}}}
+\t\t\ttransport http {{
+\t\t\t\tdial_timeout 3s
+\t\t\t\tresponse_header_timeout 60s
+\t\t\t}}
+\t\t}}
+\t}}
 \trequest_body {{
 \t\tmax_size 262144
 \t}}
