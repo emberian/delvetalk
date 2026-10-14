@@ -109,8 +109,9 @@ class Table(Chain):
             ".+.......+.\n"
             "...........\n"
             "-...+-+...-\n"
-            "-.+..-+...-\n"))
-        self.assertTrue(card.endswith("-.+..-+...-\n"), card)    # row 10: the attractor moved from x=4 to x=2
+            "-.+..-+...-\n"
+            "\nReply with a spell:\n\n    delvetalk table resolve\n"))  # the spells the host offers this reader, as `?` lists them
+        self.assertIn("\n-.+..-+...-\n\nReply", card)    # row 10: the attractor moved from x=4 to x=2
         self.assertIn("\n-.+..-+...-\n-...+-+...-\n", card)      # row 0 likewise
         self.assertEqual(self.reason(self.turn("north", "next", principal=NORTH)), "Only the table moves the round.")
         # nextRound took the State first, so a turn naming it moved the round past `next`'s check.

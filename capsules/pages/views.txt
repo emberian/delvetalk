@@ -1,0 +1,7 @@
+hob: a view is what a card shows that is worked out from its state, never written; the host, not I.
+DECLARE  name each view in views(): def views() -> Lists.List<String>: Text.words("view banked")
+SHAPE  a view is def NAME(state: State, context: Abi.Context) -> T: pure (no Activity, no write), both arguments, T any closed data. A def of one argument is a helper, not a view.
+DRAWN  the view named `view` returning View.View is drawn live at /live/<id>: text, stacks, buttons, grids, hexes, a bar (docs/VIEWS.md). A button's act is one of the card's own spells.
+READ  another card reads it: world.viewDerived::<T>({object: {world: context.world, object: "jar/1"}, view: "banked"}) answers derived {version, value}, denied {} or refused {clause}. T must be the view's type.
+LAWS  a rule or want reads a card's fields directly ("jar/1".coins >= 5); a view is for what fields do not hold.
+Next: delvetalk library read / page: object

@@ -109,9 +109,27 @@ sum Verdict:
 def no(clause: String, reading: String) -> Verdict:
   Verdict.no({clause: clause, reading: reading})
 def enterVerdict(context: Abi.Context, state: State) -> Verdict:
+  if lapsed(state, context) then met(context, state) else enterNow(context, state)
+def enterNow(context: Abi.Context, state: State) -> Verdict:
   match here(context, state):
     case some(_): no("alreadyHere", "Already here.")
     case none(_): if Relations.count(state.presence) >= Super.presenceMax() then no("roomFull", "{natText(Super.presenceMax())} are already here.") else met(context, state)
+# Presence lapses with the room's quiet (obend: ultimo92 "Here" in room/7 from 04:40 to 12:58, #1335 to #2122). A
+# presence row keeps no time of its own, and the room's `tended` is the clock of its last attention: an entry, a
+# choice, a word said aloud. A room untended for `quietMinutes` shows whoever it held as last here, not here; the
+# next entry takes their rows off in its own journaled write, so the record says who left with the entry that found
+# the room empty, and a replay derives the same. Never by a timer: nothing is written while nobody comes.
+def quietMinutes() -> Nat:
+  360n
+def lapsed(state: State, context: Abi.Context) -> Bool:
+  Relations.count(state.presence) > 0n && state.tended + quietMinutes() <= context.clock
+def lapsing(rows: Lists.List<Presence>) -> Activity<Indexed>:
+  match rows:
+    case nil(_): Indexed.indexed({})
+    case cons(c): lapsingOne(c.head.who, c.tail)
+def lapsingOne(who: String, rest: Lists.List<Presence>) -> Activity<Indexed>:
+  let written(_) = write {presence: retract {who: who}}
+  lapsing(rest)
 def met(context: Abi.Context, state: State) -> Verdict:
   match Scenes.failing(entryGuard(state), readerVars(context.principal, state)):
     case some(c): no("unmet", "The room requires {Scenes.clauseText(c.value)}.")
@@ -271,9 +289,12 @@ def done(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Done>
 def performed(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Done>:
   match verdict:
     case no(n): roomRefused(n, context)
-    case enter(e): entering(e.at, extend(state, {presence: Relations.insert(state.presence, {who: context.principal, handle: context.handle, at: e.at, draw: turnDraw(context)}, Rows.presenceKey)}), context)
-    case move(m): moving(m.me, m.choice, m.chose, m.vars, extend(state, {presence: Relations.upsert(state.presence, {who: m.me.who, handle: m.me.handle, at: m.choice.to, draw: turnDraw(context)}, Rows.presenceKey), vars: m.after, mine: ownAfter(state.mine, m.me.who, m.own), chose: m.chose}), context)
+    case enter(e): if lapsed(state, context) then quietEntry(e.at, state, context) else entering(e.at, extend(state, {presence: Relations.insert(state.presence, {who: context.principal, handle: context.handle, at: e.at, draw: turnDraw(context)}, Rows.presenceKey), tended: context.clock}), context)
+    case move(m): moving(m.me, m.choice, m.chose, m.vars, extend(state, {presence: Relations.upsert(state.presence, {who: m.me.who, handle: m.me.handle, at: m.choice.to, draw: turnDraw(context)}, Rows.presenceKey), vars: m.after, mine: ownAfter(state.mine, m.me.who, m.own), chose: m.chose, tended: context.clock}), context)
     case leave(l): departing(l.me, l.chose, l.vars, extend(state, {presence: Relations.retract(state.presence, {who: l.me.who}, Rows.presenceKey), vars: l.after, mine: ownAfter(state.mine, l.me.who, l.own), chose: if l.chose == "" then state.chose else l.chose}), context, state)
+def quietEntry(at: String, state: State, context: Abi.Context) -> Activity<Done>:
+  match lapsing(Relations.rows(state.presence)):
+    case indexed(_): entering(at, extend(state, {presence: Relations.insert(Relations.empty(), {who: context.principal, handle: context.handle, at: at, draw: turnDraw(context)}, Rows.presenceKey), tended: context.clock}), context)
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at, draw: turnDraw(context)}, tended: set context.clock}
   match indexPresence(context):
@@ -300,7 +321,7 @@ def awayLines(state: State, since: Nat, changes: Lists.List<World.Change>, conte
 def clip(text: String) -> String:
   if textLength(text) > 100n then "{textTake(text, 99n)}…" else text
 def moving(me: Presence, c: Choice, chose: String, vars: Lists.List<Edit>, after: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: upsert {who: me.who, handle: me.handle, at: c.to, draw: turnDraw(context)}, chose: set chose}
+  let written(_) = write {presence: upsert {who: me.who, handle: me.handle, at: c.to, draw: turnDraw(context)}, chose: set chose, tended: set context.clock}
   varied(vars, Done.moved({to: c.to}), c.text, after, context)
 # The variables' edits in order, then the reader is shown what taking the choice said (its `text`, "" for none) and the
 # room as the turn leaves it.
@@ -503,7 +524,9 @@ def say(state: State, input: SayInput, context: Abi.Context) -> Activity<Done>:
 def emote(state: State, input: EmoteInput, context: Abi.Context) -> Activity<Done>:
   if isHere(context, state) then aloud("emote", input.line, "* {speaker(context)} {input.line}\n", state, context) else hushed("emote", context)
 def aloud(verb: String, text: String, line: String, state: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}, next: add 1n}
+  if Text.blank(text) then roomRefused({clause: "empty", reading: "A line needs words; this {verb} has none, so nothing was said"}, context) else spokenAloud(verb, text, line, state, context)
+def spokenAloud(verb: String, text: String, line: String, state: State, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}, next: add 1n, tended: set context.clock}
   spoken(Relations.rows(state.presence), line)
 def whisper(state: State, input: WhisperInput, context: Abi.Context) -> Activity<Done>:
   if isHere(context, state) == false then hushed("whisper", context) else whispered(Lists.find(Relations.rows(state.presence), fn(p: Presence) -> Bool: p.who == input.to || p.handle == input.to), input.to, "{speaker(context)} whispers: {input.line}\n", context)
@@ -631,9 +654,9 @@ def unclaimedLine(open: Lists.List<Plans.Reference>) -> String:
 def idsOf(things: Lists.List<Plans.Reference>) -> String:
   textTake(textJoin(Lists.map(things, fn(t: Plans.Reference) -> String: t.object), ", "), 400n)
 def presentLine(state: State, context: Abi.Context) -> String:
-  if Relations.count(state.presence) == 0n then "" else "Here: {textJoin(Lists.map(Lists.take(Relations.rows(state.presence), 8n), fn(p: Presence) -> String: Card.shown(p.who, p.handle, context)), \", \")}{if Relations.count(state.presence) > 8n then \" and {natText(Relations.count(state.presence) - 8n)} more\" else \"\"}\n"
+  if Relations.count(state.presence) == 0n then "" else "{if lapsed(state, context) then \"Last here, before it went quiet {natText((context.clock - state.tended) / 60n)} hours ago\" else \"Here\"}: {textJoin(Lists.map(Lists.take(Relations.rows(state.presence), 8n), fn(p: Presence) -> String: Card.shown(p.who, p.handle, context)), \", \")}{if Relations.count(state.presence) > 8n then \" and {natText(Relations.count(state.presence) - 8n)} more\" else \"\"}\n"
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
-  let count = "{title(state)} ({natText(Relations.count(state.presence))} here)"
+  let count = "{title(state)} ({natText(if lapsed(state, context) then 0n else Relations.count(state.presence))} here)"
   let around = "{presentLine(state, context)}{lyingLine(state)}{if state.tone == \"\" then \"\" else Super.chimed(state, id)}"
   match here(context, state):
     case some(p): Document.text("{count}{passageText(p.value.at, state, context)}Say: delvetalk {id} say / line: <text>. Leave: delvetalk {id} leave.\n{around}")

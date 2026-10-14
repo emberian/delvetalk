@@ -75,7 +75,7 @@ def checkedCard(diagnostics: Form.Names) -> Document.Document:
 def reprogrammedCard(target: String, version: Nat) -> Document.Document:
   Document.text("✾ WORKSHOP\n\nReprogrammed {target}.\nWas: {target} v{natText(version)}\nNow: {target} v{natText(version + 1n)}\n")
 def usage() -> Document.Document:
-  Document.text("✾ WORKSHOP: Bend checked, proposed to a card, or made from words. A block is a ```obend block under the spell, or source: <<BEND … BEND.\n  delvetalk workshop check\n» it compiles, or each problem with its line\n  delvetalk workshop check / target: bell/1\n» the source that card runs, checked\n  delvetalk workshop check / over: kind/record\n» your layer, checked over what that kind's things run (or over a thing)\n  delvetalk workshop propose / target: bell/1 / migration:\n» reprogrammed, or held as #n for its owner to adopt\n  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n» hob drafts the Bend; checked, held as #n for you to adopt\n  delvetalk workshop draft / name: lamp / over: kind/record\n» your forms and defs as a layer over that kind, checked and held the same way\n  delvetalk workshop draft / name: lamp2 / from: kind/lamp\n» a fork of that kind, with your block for its body if you send one; kind/lamp2 once adopted\n  delvetalk workshop create / like: porch/goblet\n» a copy, yours, unless its owner said no\n")
+  Document.text("✾ WORKSHOP: Bend checked, proposed to a card, or made from words. A block is a ```obend block under the spell, or source: <<BEND … BEND.\n  delvetalk workshop check\n» it compiles, or each problem with its line\n  delvetalk workshop check / target: bell/1\n» the source that card runs, checked\n  delvetalk workshop check / over: kind/record\n» your layer, checked over what that kind's things run (or over a thing)\n  delvetalk workshop propose / target: bell/1\n» reprogrammed, or held as #n for its owner to adopt; a State of another shape names its def migrate(old: OldState) -> State in migration:\n  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n» hob drafts the Bend; checked, held as #n for you to adopt\n  delvetalk workshop draft / name: lamp / over: kind/record\n» your forms and defs as a layer over that kind, checked and held the same way\n  delvetalk workshop draft / name: lamp2 / from: kind/lamp\n» a fork of that kind, with your block for its body if you send one; kind/lamp2 once adopted\n  delvetalk workshop create / like: porch/goblet\n» a copy, yours, unless its owner said no\n")
 # A whole package no spell reaches (it has no `receive`), said under a clean check; a draft of it is
 # refused (`noReceive`). The reading is the two lines to add: obend's coin-jar copies (yue's ember,
 # claude's radio, kestrel's spoon, 2026-10-14) each compiled clean and reached nothing.
@@ -153,6 +153,13 @@ def dropping(state: State) -> String:
   match Relations.rows(state.held):
     case cons(c): if Relations.count(state.held) >= 12n then "The oldest held proposal, #{natText(c.head.n)}, was dropped.\n" else ""
     case nil(_): ""
+# A number no proposal holds is answered with the ones this hand's are held as: `n` is the number the workshop's
+# reply gave (#3), not a count of one's own (yue's `adopt n: 1` for #3, obend #1616).
+def noHeld(n: Nat, state: State, context: Abi.Context) -> String:
+  let mine = Lists.filter(Relations.rows(state.held), fn(h: Held) -> Bool: h.proposer == context.principal)
+  if Lists.length(mine) == 0n then "No held proposal #{natText(n)}; none is held for you" else "No held proposal #{natText(n)}; yours are held as {Text.joined(Lists.map(Lists.take(mine, 8n), fn(h: Held) -> String: heldLabel(h)))}: n is the number after #"
+def heldLabel(h: Held) -> String:
+  if h.name == "" then "#{natText(h.n)} (to {h.target})" else "#{natText(h.n)} ({h.name})"
 def heldNumbered(n: Nat, state: State) -> Lists.Maybe<Held>:
   Relations.lookup(state.held, {n: n})
 # Adopt: the reprogram runs under the adopter, so the target's law judges it as theirs; the
@@ -160,7 +167,7 @@ def heldNumbered(n: Nat, state: State) -> Lists.Maybe<Held>:
 # met now (the target moved on) is named as that. A held draft is its describer's to adopt.
 def adopt(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Verdict>:
   match heldNumbered(input.n, state):
-    case none(_): refusing("noHeld", "No held proposal #{natText(input.n)}", context)
+    case none(_): refusing("noHeld", noHeld(input.n, state, context), context)
     case some(h): if h.value.target == "" then making(h.value, context) else adoptRun(h.value, context)
 def adoptRun(held: Held, context: Abi.Context) -> Activity<Verdict>:
   match world.reprogram({object: {world: context.world, object: held.target}, package: held.package, migration: held.migration}):
@@ -302,7 +309,7 @@ def madeWritten(held: Held, id: String, context: Abi.Context) -> Activity<Verdic
 # Withdraw: the proposer's alone.
 def withdraw(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Verdict>:
   match heldNumbered(input.n, state):
-    case none(_): refusing("noHeld", "No held proposal #{natText(input.n)}", context)
+    case none(_): refusing("noHeld", noHeld(input.n, state, context), context)
     case some(h): if h.value.proposer != context.principal then refusing("notProposer", "Only its proposer, {Card.shown(h.value.proposer, h.value.proposerHandle, context)}, withdraws #{natText(input.n)}", context) else withdrawn(h.value)
 def withdrawn(held: Held) -> Activity<Verdict>:
   let written(_) = write {held: retract heldKey(held)}
@@ -311,7 +318,7 @@ def withdrawn(held: Held) -> Activity<Verdict>:
 # for the town's things); a draft held for its describer is theirs alone.
 def decline(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Verdict>:
   match heldNumbered(input.n, state):
-    case none(_): refusing("noHeld", "No held proposal #{natText(input.n)}", context)
+    case none(_): refusing("noHeld", noHeld(input.n, state, context), context)
     case some(h): if h.value.target == "" then refusing("notOwner", "#{natText(input.n)} is a draft its describer adopts or withdraws", context) else declining(h.value, context)
 def declining(held: Held, context: Abi.Context) -> Activity<Verdict>:
   match world.viewField::<String>({object: {world: context.world, object: held.target}, field: "owner"}):

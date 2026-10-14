@@ -182,9 +182,13 @@ def write(state: State, input: {text: String}, context: Abi.Context) -> Activity
 # A grown verb used on the record (the host runs `act` for a row of its verb table): a gesture,
 # one line tagged with the verb, and the record tended.
 def act(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:
-  inscribe(state, input.verb, input.text, context)
-# A hand's line is heard by the record's maker when the hand is another's (`heard`).
+  inscribe(state, input.verb, if Text.blank(input.text) then input.verb else input.text, context)
+# A hand's line is heard by the record's maker when the hand is another's (`heard`). A line has words: a blank one
+# is refused by name, whatever writes it (a write, a body's verb, a rule's cast; obend #491 #1116), and a gesture
+# that takes none is its verb (`act`).
 def inscribe(state: State, verb: String, text: String, context: Abi.Context) -> Activity<Nat>:
+  if Text.blank(text) then Card.refusing(0n, {clause: "empty", reading: "A line needs words; this {verb} has none, so nothing was written"}, context) else inscribeWords(state, verb, text, context)
+def inscribeWords(state: State, verb: String, text: String, context: Abi.Context) -> Activity<Nat>:
   let line = {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}
   let written(_) = write {lines: insert line, next: add 1n, tended: set context.clock}
   waits(state, line, context)
@@ -474,8 +478,18 @@ def soundOf(id: String, rest: Lists.List<String>, got: Lists.List<Harmony.Ratio>
   match world.viewField::<Lists.List<Rows.Field>>({object: {world: context.world, object: id}, field: "fields"}):
     case viewed(v): sounding(rest, Lists.concat(Harmony.tones(fieldIn(v.state, "colour")), got), context)
     case _: sounding(rest, got, context)
+# A chime with no bell is refused by name; one a rule or another thing casts (`context.caller`) is told to the rule's
+# hand once, with what a rule meaning only a sound casts instead, and is quiet after (obend: the diner's refill, the
+# regular's phone and the motel's vacancy flicker refused `silent` at every entry and tick, #1120 to #1968).
 def rung(state: State, tones: Lists.List<Harmony.Ratio>, context: Abi.Context) -> Activity<Nat>:
-  if Lists.length(tones) == 0n then Card.refusing(0n, {clause: "silent", reading: "No bell here rings: none lies here or behind its doors"}, context) else ringsNow(state, Harmony.chordText(tones), Harmony.oddLimit(tones), Harmony.proportion(tones), context)
+  if Lists.length(tones) == 0n then unsounded(state, context) else ringsNow(state, Harmony.chordText(tones), Harmony.oddLimit(tones), Harmony.proportion(tones), context)
+def unsounded(state: State, context: Abi.Context) -> Activity<Nat>:
+  if context.caller == "" && context.sender == "" then Card.refusing(0n, silence(context), context) else if marked(state, "silent") then 0n else silentOnce(context)
+def silentOnce(context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {marks: insert {name: "silent", who: context.principal, handle: context.handle, at: context.height}}
+  Card.tellTo(0n, context.principal, Document.text("refused silent: {silence(context).reading}. Told once: a rule's chime here is quiet from now.\n"))
+def silence(context: Abi.Context) -> Card.Refusal:
+  {clause: "silent", reading: "No bell here rings: chime rings together the bells lying here or behind its doors, and none does; a sound of the place's own is a verb grown on it (delvetalk {context.object} grow / name: ring / reading: <the sound> / takes: nothing), which a rule casts"}
 def ringsNow(state: State, tone: String, limit: Nat, proportion: String, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {tone: set tone, oddLimit: set limit}
   inscribe(extend(state, {tone: tone, oddLimit: limit}), "chime", "rang its bells together: {proportion}, odd limit {natText(limit)}", context)
@@ -633,7 +647,7 @@ def moreLine(from: Nat, left: Nat, id: String) -> Document.Document:
 def status(state: State, n: Nat) -> String:
   if state.keeper == "" then "" else if isAdmitted(state, n) then "[admitted] " else if Relations.has(state.pending, {n: n}) then "[pending] " else "[not admitted] "
 def entry(state: State, context: Abi.Context, line: Line) -> Document.Document:
-  Document.text("#{natText(line.n)} {status(state, line.n)}{Card.shown(line.author, line.handle, context)}{Card.mine(line.author, context)}: {line.text}\n")
+  Document.text("#{natText(line.n)} {status(state, line.n)}{Card.shown(line.author, line.handle, context)}{Card.mine(line.author, context)}: {if Text.blank(line.text) then line.verb else line.text}\n")
 # The head: the record's own first line, who keeps it, and the spell that writes in it.
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let title = if state.head == "" then "A RECORD" else state.head
