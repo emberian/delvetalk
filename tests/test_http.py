@@ -1431,7 +1431,8 @@ class GuestDoor(InTown):
 
     def test_what_goes_wrong_at_the_door_is_said_in_plain_words_and_keeps_what_was_typed(self):
         code = self.front.identity.invite(None, 'open')['code']
-        for form, words in (({'code': code}, 'lets you choose your name'), ({'code': code, 'name': 'Robin!'}, 'starts with a lowercase letter'),
+        for form, words in (({'code': code}, 'lets you choose your name'), ({'code': code, 'name': 'Robin!'}, '“Robin!” cannot be one. “robin” is in the box instead'),
+                            ({'code': code, 'name': '42!'}, 'starts with a lowercase letter'),
                             ({'code': 'dt_invite_' + 'x' * 32, 'name': 'wren'}, 'does not match any invitation'),
                             ({'credential': 'dt_agent_' + 'x' * 43}, 'does not open anything'), ({}, 'Type the code')):
             s, _, page = self.door(form)
