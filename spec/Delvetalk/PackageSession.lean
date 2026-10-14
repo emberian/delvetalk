@@ -225,6 +225,15 @@ structure Session where
   cache : Cache := {}
   world : Host.Session := none
 
+/-- What a REPL `entry` that is no definition's name is for (obend 2026-10-14: yue's `1n + 2n`, kestrel's whole
+    `delvetalk try` spell were answered `invalid method name` and `method must be 1..128 bytes`). -/
+def replEntryMisfit (entry : String) : String :=
+  if entry.startsWith "delvetalk" then
+    "entry names a definition of source, and this is a spell: a spell is cast with POST …/world/<object>/receive {intent, spell}"
+  else
+    "entry names a definition of source (a name, like repl), and this is an expression: send it as source, " ++
+    "edition ObjectiveBend 1 / def repl() -> Nat: / " ++ ((entry.take 80).toString) ++ " (each on its own line), with entry: repl"
+
 /-- `world-repl {principal, identity, entry, source?, object?, argument?, arguments?, limits?}`: the REPL of a
     scratch world (docs/FEDERATION.md §3), against its state. `source` (one module) is compiled over the world's
     library: an entry that is not an Activity runs on `arguments` and answers its value, journaling nothing; an
@@ -237,6 +246,8 @@ def repl (session : Session) (request : Json) (foreign : Host.Foreign) : IO (Ses
   let some o := session.world | return (session, .error "no world is open; send world-open first")
   let (some principal, some identity, some entry) := (text "principal", text "identity", text "entry")
     | return (session, .error "a REPL step names its principal, identity and entry")
+  unless Delvetalk.Compiler.ObjectiveBendParse.isIdent entry.toList do
+    return (session, .error (replEntryMisfit entry))
   let object := (text "object").getD "repl"
   let step := fun (session : Session) (fields : List (String × Json)) => do
     let (world, r) ← Host.stepWorld session.world (Json.mkObj (fields ++ [("principal", toJson principal), ("object", toJson object)])) foreign
@@ -255,6 +266,11 @@ def repl (session : Session) (request : Json) (foreign : Host.Foreign) : IO (Ses
   | .ok compiled =>
     if (Host.computationParts compiled.entry.type).isNone then
       return (session, Package.executeEntry compiled.entry ((request.getObjVal? "arguments").toOption.getD (Json.arr #[])) (Package.getLimits request))
+    -- obend 2026-10-14: yue's Activity entries with no State were answered "Main defines no initial … try entry: repl".
+    if o.world.objects[object]?.isNone && (source.splitOn "def initial(").length < 2 then
+      return (session, .error (s!"{entry} is an Activity: it runs as a method of the object {object}, made from this source's " ++
+        "initial(), which it does not define; add record State and def initial() -> State (the coin jar's are two lines each: " ++
+        s!"delvetalk library read / page: object), or make {entry} pure (no Activity) and it runs alone"))
     let defined ← match o.world.objects[object]? with
       | none => step session [("op", toJson "world-create"), ("identity", toJson s!"{identity}/defined"), ("source", toJson source),
           ("entry", toJson "initial"), ("seed", Json.mkObj [("tag", toJson "record"), ("fields", Json.arr #[])])]

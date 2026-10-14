@@ -7,6 +7,7 @@ Evidence for FOUNDATION §7 (layer: transport).
 import html
 import json
 import re
+import unittest
 import urllib.parse
 from html.parser import HTMLParser
 
@@ -292,3 +293,38 @@ class Pages(FrontCase):
         self.assertIn('preview, nothing done', page)
         self.assertRegex(page, r'<a class="say" href="/play/garden\?say=if%3A[^"]*">Do it</a>')
         self.assertEqual(self.root.send({'op': 'world-status'})['height'], before)
+
+
+    def test_the_access_log_says_what_each_play_was(self):
+        """obend 10-14: gem-scanner's two plays were 200 and left no entry, and the log could not say why: a try and a read
+        journal nothing. Each play's line names it."""
+        import time
+        from pathlib import Path
+        from transport.http import AccessLog
+        log = Path(self.tmp.name) / 'access.log'
+        self.front.access = AccessLog(log, 'town')
+        self.page('/play/garden', method='POST', form={'text': 'delvetalk garden plant\ncolour: amber\nseed: only a try', 'try': '1'})
+        self.page('/play/garden', method='POST', form={'text': 'delvetalk garden ?'})
+        self.page('/play/garden', method='POST', form={'text': 'delvetalk garden plant\ncolour: amber\nseed: a fern'})
+        for _ in range(100):
+            plays = [l.split() for l in log.read_text().splitlines() if ' POST /play/' in l] if log.exists() else []
+            if len(plays) == 3:
+                break
+            time.sleep(0.02)
+        self.assertEqual([l[-1] for l in plays], ['turn=tried', 'turn=read', 'turn=admitted'], plays)
+
+class HobsWrite(unittest.TestCase):
+    """What the play page makes of hob's answer to words typed on the commonplace (tests/test_policy.py
+    `test_words_typed_on_the_commonplace_that_hob_reads_as_nothing_come_back_as_its_write`): hob's line beside the card,
+    and the filled write one suggestion away, as the host gave it."""
+
+    def test_the_filled_write_is_a_suggestion_and_hobs_line_is_said(self):
+        from transport import pages
+        offer = ("hob: the town heard you. Spells act here (delvetalk guide shows how); to leave your words on the commonplace "
+                 "as a line, send:\n\n    delvetalk commonplace write\n    text: Dreggs to the moon <b>\n")
+        markup, spells = pages.reply([('admitted', 'admitted')], [offer])
+        self.assertEqual([s for _, s in spells], ['delvetalk commonplace write\ntext: Dreggs to the moon <b>'])
+        self.assertIn('to leave your words on the commonplace as a line', markup)
+        self.assertNotIn('<b>', markup)  # the visitor's words are escaped where they are shown
+        page = pages.play('commonplace', 'ultimo92', 'commonplace', None, answer=markup, offered=spells)
+        self.assertIn('/play/commonplace?say=delvetalk%20commonplace%20write%0Atext%3A%20Dreggs%20to%20the%20moon%20%3Cb%3E', page)

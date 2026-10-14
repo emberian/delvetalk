@@ -759,6 +759,27 @@ class Render(unittest.TestCase):
         self.assertIn(got['key'], [i['key'] for i in self.attend()])
         self.assertEqual(self.render('garden/bell/1')['status'], 'pending')
 
+    def test_a_cached_read_shows_a_paint_already_made_and_queues_none(self):
+        """obend 10-14 09:05: a crawl of 119 anonymous pages after a carry (every paint to make again) queued a paint a page.
+        A read that asks for none (`cached`, an anonymous page's) is the exact card, `uncached`, until a reader who may
+        queue one has; then the same paint, and the version after it again none."""
+        keys = lambda: {i['key'] for i in self.attend()}
+        before = keys()
+        cached = lambda: self.town.send(op='world-render', principal='anonymous', object='garden/bell/1', cached=True)
+        got = cached()
+        self.assertEqual((got['status'], got['reason']), ('exact', 'uncached'), got)
+        self.assertEqual(keys(), before)  # nothing queued by it
+        first = self.render('garden/bell/1')
+        self.assertEqual(cached()['status'], 'pending')  # queued by a reader: the cached read waits on it as any read
+        listed = self.town.send(op='world-renders')['pending']
+        interpret.paint(self.town.client, self.model([GOOD] * len(listed)))
+        got = cached()
+        self.assertEqual((got['status'], got['text'], got['key']), ('painted', GOOD, first['key']), got)
+        Strokes.say.__func__(type(self), KIM, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: a fourth', 'rain4')
+        before = keys()
+        self.assertEqual(cached()['reason'], 'uncached')
+        self.assertEqual(keys(), before)
+
     def test_a_paint_naming_what_the_strokes_do_not_hold_is_shown_exact_and_not_asked_again(self):
         self.attend()
         got = self.render('anthology')

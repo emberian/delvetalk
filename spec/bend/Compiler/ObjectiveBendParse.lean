@@ -380,6 +380,19 @@ def ExprEnv.found (env : ExprEnv) (i : Nat) : String :=
 /-- The ops of `write {field: op value}`. -/
 def writeOps : List String := ["add", "set", "append", "remove", "amend", "removeItem", "insert", "upsert", "retract"]
 
+/-- What to write for a field whose op is not one (obend 2026-10-14, yue's ember): a value with no op
+(`shade: 3n`) is set; there is no `sub`, so a number lowers by setting it; `keep` is every field not named. -/
+def notOpHint (field op : String) : String :=
+  if op == "keep" then "; a field the write does not name is kept as it is"
+  else if ["sub", "subtract", "minus", "dec", "decrement", "take"].contains op then
+    "; there is no " ++ op ++ ": a number lowers by set, write {" ++ field ++ ": set state." ++ field ++ " - 1n}"
+  else if op.any (fun c => c.isDigit) || op.startsWith "\"" then "; write {" ++ field ++ ": set " ++ op ++ "}"
+  else "; write {" ++ field ++ ": set VALUE}"
+
+#guard notOpHint "shade" "sub" == "; there is no sub: a number lowers by set, write {shade: set state.shade - 1n}"
+#guard notOpHint "shade" "3n" == "; write {shade: set 3n}"
+#guard notOpHint "shade" "Plans" == "; write {shade: set VALUE}"
+
 /-- A name written straight against `<` (`Plans.Edit<Nat, D>`): type arguments, which an expression writes `::<…>`. -/
 def typeArgumentsBare (text : List Char) : Bool :=
   (text.zip (text.drop 1)).any fun (a, b) => b == '<' && (a.isAlphanum || a == '_')
@@ -577,8 +590,7 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
         let field := tokenText name
         -- The op is judged before its value is read: `write {f: Plans.Edit.set(v)}` is told the ops, not the token after `Plans`.
         unless writeOps.contains (tokenText op) do
-          throw ("Error: write {field: op value} takes " ++ ", ".intercalate writeOps ++ ", not " ++ tokenText op ++
-            (if tokenText op == "keep" then "; a field the write does not name is kept as it is" else "; write {" ++ field ++ ": set VALUE}"))
+          throw ("Error: write {field: op value} takes " ++ ", ".intercalate writeOps ++ ", not " ++ tokenText op ++ notOpHint field (tokenText op))
         let (value, _) ← parseExpr env fuel 0
         if tokenText op == "remove" || tokenText op == "amend" then
           if let .record [("index", _)] _ := value then
@@ -734,6 +746,9 @@ def expression (text : List Char) (start line : Nat) (column : Nat := 0) : Excep
   let ((expr, _), cursor) ← (parseExpr env (text.length + tokens.size + 1) 0).run 0
   if cursor != tokens.size then
     throw (s!"Error: the expression is complete before its end, {env.found cursor}; one expression a line, or join them with an operator" ++
+      (match expr with
+        | .var "keep" _ => "; keep() is the write that changes nothing and takes no fields: to change one, let written(_) = write {field: set VALUE}"
+        | _ => "") ++
       (if typeArgumentsBare text then "; type arguments in an expression are written NAME::<T, U>, as Plans.Edit::<Nat, {}>.set(...)" else ""))
   return expr
 
@@ -1105,7 +1120,9 @@ def declarations (lines : Array Line) :
     let i ← get
     let some line := lines[i]? | break
     set (i + 1)
-    if line.indent != 0 then fail line "unexpected indentation"
+    -- obend 2026-10-14, kestrel's spoon: a second expression line under a def whose body was already whole.
+    if line.indent != 0 then fail line ("unexpected indentation: line " ++ toString line.number ++ " is indented where a declaration " ++
+      "begins, so what is above it ended a line before: a def's body is one expression, and lines before it are let x = …")
     if line.text == "edition ObjectiveBend 1".toList then continue
     if startsWith line.text "layer " then
       if i != 0 then fail line "`layer over ./NAME.obend` is the module's first line"

@@ -126,7 +126,8 @@ def wanted(host, reader, obj):
 def place(host, reader, obj, sleep=time.sleep, paint=True):
     """A thing as `reader` reads it, the one rendering the web's pages, a reply's draft and the mirror share:
     {status: place, object, version, view, card, paint, wants, doors}; `card` None when the card is refused
-    (the view still stands), `paint` None when none is verified (or `paint` is False: no model is waited for).
+    (the view still stands), `paint` None when none is verified (or `paint` is False: no model is waited for; `'cached'`:
+    only a paint already made or queued is shown, and none is asked for).
     A thing the reader may not view: {status, object} as `world-view` answers it."""
     reader = reader or PUBLIC
     view = host.send({'op': 'world-view', 'principal': reader, 'object': obj})
@@ -135,7 +136,7 @@ def place(host, reader, obj, sleep=time.sleep, paint=True):
                 'wants': [], 'doors': []}
     card = host.send({'op': 'world-card', 'principal': reader, 'object': obj})
     shown = card.get('status') == 'card'
-    told = painted(host, reader, obj, sleep) if shown and paint else {}
+    told = painted(host, reader, obj, sleep, cached=paint == 'cached' or None) if shown and paint else {}
     return {'status': 'place', 'object': obj, 'version': view.get('version'), 'view': view, 'cardReply': card,
             'card': card.get('text') if shown else None, 'paint': told.get('text'),
             # the town's paints for the day are spent (`paintQuota`): the exact card stands, and the page says why

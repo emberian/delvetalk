@@ -242,7 +242,9 @@ def summarize(d):
 
 
 def registered(one):
-    return (one.get('recorded') or {}).get('status') in ('posted', 'recorded', 'reserved')
+    """Whether a sent part's registration is settled: recorded, or refused by the host (`refused`: a post naming no
+    object, which asking again never changes); an error is asked again."""
+    return (one.get('recorded') or {}).get('status') in ('posted', 'recorded', 'reserved', 'refused')
 
 
 def register_part(d, one, host):

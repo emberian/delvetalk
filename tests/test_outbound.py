@@ -50,8 +50,9 @@ class Posts(Reflection):
         self.reopen()  # the index is rebuilt by replay
         self.assertEqual(addressed(self.host, URI)["slot"], SLOT)
 
-    def test_a_post_for_an_unknown_object_or_a_non_at_uri_is_a_request_error(self):
-        self.assertEqual(posted(self.host, principal="transport", uri=URI, cid="c", object="ghost")["status"], "error")
+    def test_a_post_for_an_unknown_object_is_refused_and_a_non_at_uri_is_a_request_error(self):
+        ghost = posted(self.host, principal="transport", uri=URI, cid="c", object="ghost")  # refused: asking again never changes it
+        self.assertEqual((ghost["status"], ghost["class"]), ("refused", "unknownObject"), ghost)
         refused = self.posted(uri="https://example.com")
         self.assertEqual(refused, {"status": "error", "message": "uri must be an at:// or zulip:// URI, not https://"})
 

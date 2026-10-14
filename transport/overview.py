@@ -6,13 +6,15 @@ hand (`Hand.requests`: lines pending on the records it keeps, proposals held for
 Read only. Its sources are the journal (a turn's wall time is the world's clock at it: the bridge advances the clock to
 unix minutes, so an entry is placed by the `advanced` entry before it), the identity store (how each guest came in and
 how it stands), the hand's log (who the owner let in or turned away), the feed's store, and `world-status` (the host's
-own counts: this clock hour's refusals, hob's readings and the paints of the clock day). The journal is read once whole
-and then only its new entries; the rows older than a day are let go, the quiets kept.
+own counts: this clock hour's refusals, hob's readings and the paints of the clock day). The journals of its carried chain
+are read once whole (`ancestors`), the world's own then only its new entries; the rows older than a day are let go, the
+quiets kept.
 """
 import sqlite3
 import threading
 import time
 from collections import Counter
+from pathlib import Path
 
 from transport import automod, journal, model
 from transport.host import CLOCK
@@ -22,16 +24,42 @@ HOUR, DAY = 60, 1440  # clock minutes
 BUSIEST, FEED, ACTS, REQUESTS = 10, 10, 12, 12  # rows shown
 
 
+CHAIN = 32  # journals a carried chain is followed back through, at most
+
+
+def ancestors(path):
+    """The journals the world at `path` was carried from, oldest first: each carried genesis's `carriedFrom.world`, as
+    it is given (the host's `/towns/vN/state/town.journal`, which the hand mounts at the same path) or beside the journal,
+    while it is on this disk (transport/carry.py; the host's `Carry.givenMakings` follows it the same way)."""
+    out, at, seen = [], Path(path), set()
+    for _ in range(CHAIN):
+        links = journal.links(at)
+        if not links:
+            break
+        genesis = journal.read(at, links[:1])[0]
+        origin = (genesis.get('outcome') or {}).get('carriedFrom') if (genesis.get('outcome') or {}).get('tag') == 'carried' else None
+        world = origin.get('world') if isinstance(origin, dict) and isinstance(origin.get('world'), str) else None
+        found = next((p for p in (Path(world), at.parent / world) if p.exists()), None) if world else None
+        if found is None or found.resolve() in seen:
+            break
+        seen.add(found.resolve())
+        out.insert(0, found)
+        at = found
+    return out
+
+
 class Ledger:
-    """One journal's rows of the last day, kept across calls: (height, clock, principal, tag, class, direct), the
-    principals' handles as their arrivals named them, every arrival of the day, and the quiets as they stand."""
+    """A world's rows of the last day across its carried chain (`ancestors`: obend 10-14, the overview read only the
+    journal since the 09:00 carry and said nobody had arrived), kept across calls: (height, clock, principal, tag, class,
+    direct), the principals' handles as their arrivals named them, every arrival of the day, and the quiets as they
+    stand. An ancestor is read once, whole; the world's own journal, then only its new entries."""
 
     def __init__(self, path):
         self.path, self.lock = path, threading.Lock()
         self.reset()
 
     def reset(self):
-        self.first, self.height, self.clock = None, 0, 0
+        self.first, self.height, self.clock, self.chain = None, 0, 0, []
         self.rows, self.arrivals, self.names, self.quiets = [], [], {}, {}
 
     def read(self):
@@ -43,6 +71,11 @@ class Ledger:
             if self.first != links[0]['hash'] or links[-1]['height'] < self.height:  # a new journal (a carry): start again
                 self.reset()
                 self.first = links[0]['hash']
+                self.chain = ancestors(self.path)
+                for old in self.chain:
+                    for x in journal.entries(old):
+                        if x.get('height', 0) < links[0]['height']:  # the world's own journal from its genesis on
+                            self.take(x)
             fresh = [link for link in links if link['height'] > self.height]
             for n in range(0, len(fresh), 512):
                 for x in journal.read(self.path, fresh[n:n + 512]):
@@ -164,6 +197,7 @@ def overview(h):
     turn_quota = status.get('turnQuota')
     return {
         'world': st.world, 'height': status.get('height'), 'clock': now, 'at': clock_text(now), 'arrival': c.arrival,
+        'journals': [str(p) for p in led.chain] + [str(st.journal)],  # what the day was read from, oldest first
         'arrivals': arrivals,
         'busiest': busiest,
         'refusals': {'lastHour': refusals(hour), 'lastDay': refusals(day), 'thisClockHour': (status.get('hour') or {}).get('refused') or {}},

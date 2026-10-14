@@ -101,6 +101,7 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
          ('register', 'page', 'the town\'s questions: ask, add, dispute; the witness'),
          ('mending', 'page', 'something broken: report it, confide it, read the answer'),
          ('spween', 'page', "a room's scene: passages, choices, guards and casts, one whole"),
+         ('views', 'page', 'what a card shows worked out from its state: views(), a view def, viewDerived'),
          ('station', 'page', 'an example scene: the all-night station at the edge of the town'),
          ('bell', 'walk', 'make a bell, rain on it, rule on it, hear it ring'),
          ('check', 'walk', 'check Bend, draft a thing, adopt it, hold another\'s proposal'),
@@ -1013,6 +1014,17 @@ def texts(opener):
     return out
 
 
+def placed_texts(host, opener):
+    """{(object, `.law`): genesis's text today} of the kinds a town is given beside genesis's own (the station's, the
+    parlour's, the playthings') that run RECORD (`of: record`), for those the town has: a refresh gives them the text the
+    image ships (kind/inhabitant's rule on `repair` and its want `stranded`) as it gives KINDS theirs. A kind of a kind
+    (`of: kind/inhabitant`) keeps its text as its making laid it, which is not the file's (the stack's), so it is left
+    to a reshape of its own; one the town lacks is not made here."""
+    have = set(existing(host, opener))
+    return {('kind/' + name, '.law'): f.get('text', '') for kinds in (STATION_KINDS, PARLOUR_KINDS, PLAY_KINDS)
+            for name, f in kinds.items() if f.get('of') == 'record' and 'kind/' + name in have}
+
+
 def ancestry(path):
     """The journal at `path` and, through each carried genesis's `carriedFrom.world`, the journals it was carried from,
     oldest first, as far as each is on this disk (a relative `world` is read beside the journal, then as given)."""
@@ -1094,7 +1106,7 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
     digest differs from the shipped wings. -> [{object, slot, status, reading?, reply?}] in genesis's
     order: `refreshed`, `current` (genesis's text already), `left` (the reading says why), `absent`, or the host's
     status for a turn not admitted."""
-    gave, today, out = given(journals, opener), texts(opener), rebased(host, opener)
+    gave, today, out = given(journals, opener), texts(opener) | placed_texts(host, opener), rebased(host, opener)
     for obj in dict.fromkeys(o for o, _ in today):
         now = standing(host, opener, obj)
         if now is None and obj.startswith('kind/'):  # a kind genesis makes now and the town never had: made
@@ -1150,6 +1162,7 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
     out += placed_register(host, opener)
     out += placed_mending(host, opener)
     out += first_lined(host, opener)
+    out += repaired(host, opener)
     out += placed_playthings(host, opener, config)
     whole, installed = True, False
     if station and station_complete(host, opener):
@@ -1175,6 +1188,27 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
             except Stopped as e:
                 out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
     return out
+
+
+def repaired(host, opener):
+    """Things made before a field of theirs came to name an object (edition 19: `haunts`, `tide`), repaired by the town
+    on a carried town: `kinds repair` (Kind's `repair`: each kind with an object field, then each of its things that
+    holds a phrase there, is sent RECORD's `repair`, its own turn). A phrase the town can name one place by is set to it;
+    one it cannot is marked `stranded`, told once to its maker and listed on the hand's requests. Tried first
+    (`world-try`, nothing journaled): turned only when a kind would send a repair or the try left sends unforeseen, so a
+    town with nothing stranded is `current` and its refresh writes nothing. One row."""
+    if standing(host, opener, 'kinds') is None:
+        return []
+    request = {'principal': opener, 'object': 'kinds', 'method': 'repair', 'argument': rec(),
+               'identity': f"refresh-kinds-repair-{standing(host, opener, 'kinds')[0]}"}
+    tried = host.send({**request, 'op': 'world-try'})
+    kinds = [d for d in tried.get('delivered') or [] if str(d.get('object', '')).startswith('kind/')]
+    sent = sum(int((d.get('result') or {}).get('value') or 0) for d in kinds)
+    if tried.get('status') == 'admitted' and not sent and not (tried.get('unresolved') or {}).get('pending'):
+        return [{'object': 'kinds', 'slot': 'repair', 'status': 'current'}]
+    reply = host.send({**request, 'op': 'world-turn'})
+    said = ' '.join(o.get('text', '').strip() for o in reply.get('offers') or [])
+    return [{'object': 'kinds', 'slot': 'repair', **done(reply), 'reading': said or 'repaired'}]
 
 
 def first_lined(host, opener):

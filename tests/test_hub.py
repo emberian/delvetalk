@@ -262,16 +262,59 @@ class Hub(test_chain.Chain):
         self.assertEqual([o["text"].split(",")[0] for o in r["receipt"]["offers"]], ["Planted", "Planted"], r)
         self.assertEqual([self.seed_of(b) for b in self.children()], [("a fern", "silver"), ("a moss", "amber")])
 
-    def test_a_direct_replys_none_is_silence_every_time(self):
-        """The play page: words typed to the commonplace itself (no post). Every such reply reaches
-        hob (one attempt); its none is silence, whenever it is said and by whomever."""
+    def test_a_direct_replys_none_is_its_write_offered_every_time(self):
+        """The play page: words typed to the commonplace itself (no post). Every such reply reaches hob (one attempt); its
+        none is never silence (obend 10-14: "Dreggs to the moon" and "ciao" met it): the words come back as the
+        commonplace's write, filled, whenever they are said and by whomever."""
         self.policy()
         self.commonplace()
         direct = lambda text: self.turn("commonplace", "receive", record(text=label(text), post=label("")), principal=KIMI, reach="direct")
         for text in ("hello there", "what a lovely evening", "thank you all", "see you tomorrow"):
             self.assertEqual(direct(text)["status"], "suspended")
-            self.silent(self.interpret("none"))
+            resumed = self.interpret("none")
+            self.assertEqual(resumed["receipt"]["outcome"], {"tag": "admitted", "writes": []}, resumed)
+            [offer] = resumed["receipt"]["offers"]
+            self.assertTrue(offer["text"].endswith(f"\n\n    delvetalk commonplace write\n    text: {text}\n"), offer)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+
+
+class Chatter(Hub):
+    """Chatter is never a write (the Zulip playtests: a resident's prose taken for a submission). Words with no spell,
+    by a post (`mention`) or the API and the play page (`direct`), that hob reads as nothing write nothing; the write the
+    commonplace offers back is an offer: nothing is written until it is sent, and quoting it sends nothing; prose around
+    a spell is not the spell's: only the spell's own value is written."""
+
+    def lines(self):
+        return [field(r, "text")["value"] for r in rows(field(self.state("commonplace"), "lines"))]
+
+    def words(self, text, reach, uri):
+        return self.turn("commonplace", "receive", record(text=label(text), post=label(uri)), principal=KIMI, reach=reach)
+
+    def test_chatter_writes_nothing_and_an_offered_write_waits_to_be_sent(self):
+        self.policy()
+        self.commonplace()
+        garden, lines = self.state("garden"), self.lines()
+        chatter = "the garden forgets; the gardeners don't. a seed of a thought, in silver"
+        for n, reach in enumerate(("mention", "direct")):
+            self.assertEqual(self.words(chatter, reach, f"at://x/post/c{n}")["status"], "suspended")
+            resumed = self.interpret("none")
+            self.assertEqual(resumed["receipt"]["outcome"], {"tag": "admitted", "writes": []}, resumed)
+        offer = resumed["receipt"]["offers"][0]["text"]
+        self.assertIn("    delvetalk commonplace write\n    text: " + chatter, offer)
+        self.assertEqual((self.lines(), self.state("garden")), (lines, garden))  # offered, not written
+        quoted = self.words("you offered me this:\n" + offer, "direct", "at://x/post/q")
+        if quoted["status"] == "suspended":
+            quoted = self.interpret("none")
+        self.assertEqual(quoted["receipt"]["outcome"]["writes"], [], quoted)  # a quoted offer casts nothing
+        self.assertEqual(self.lines(), lines)
+        sent = self.words("delvetalk commonplace write\ntext: " + chatter, "direct", "at://x/post/s")
+        self.assertEqual(sent["status"], "admitted", sent)
+        self.assertEqual(self.lines(), lines + [chatter])  # sent, it is written
+        around = self.words("what a night.\n\ndelvetalk commonplace write\ntext: a line of mine\n\nanyway, see you all, and the seed: silver",
+                            "direct", "at://x/post/a")
+        self.assertEqual(around["status"], "admitted", around)
+        self.assertEqual(self.lines(), lines + [chatter, "a line of mine"])  # the spell's value alone
+        self.assertEqual(self.state("garden"), garden)
 
 
 class CardsReadFieldLines(test_chain.Chain):

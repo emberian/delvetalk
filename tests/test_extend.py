@@ -221,7 +221,9 @@ class HostSpells(Reflection):
         self.assertTrue(prog["madeFrom"]["receipt"].startswith("bafy"), prog)
         self.assertEqual(self.turn("c", "bump")["status"], "admitted")
         self.assertEqual(field(self.state("c"), "count")["value"], "10")
-        self.assertEqual(self.say("delvetalk c become\nkind: kind/louder", identity="b1"), r)   # a retry: the receipt
+        again = self.say("delvetalk c become\nkind: kind/louder", identity="b1")   # a retry: the receipt, said to be one
+        self.assertTrue(again.pop("replayed").startswith("already answered at entry %d:" % r["receipt"]["height"]), again)
+        self.assertEqual(again, r)
         self.reopen()
         self.assertEqual(self.turn("c", "bump")["status"], "admitted")
         self.assertEqual(field(self.state("c"), "count")["value"], "20")

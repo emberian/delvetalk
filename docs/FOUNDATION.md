@@ -606,6 +606,9 @@ the set adds no line, pending admission or tending. The `methods` law keeps vari
 changeable only by spells, never proposals. A legacy haunt with another shape reads
 "haunts nowhere you can walk to yet" and supplies no walk spell until repaired.
 A legacy tide reads "keeps hours by no tide you can reach yet" and supplies no tide spell until repaired.
+The town or the owner repairs such a field (RECORD's `repair`; every carry's refresh asks it of what the kinds made,
+docs/GENESIS.md): set to the one card its phrase names, else marked `stranded`, told once to its maker, and armed
+quietly after, its kind's want listing it for the town.
 `?`, `inspect`'s forms and a
 reader's controls list only the actions the law, judged on the state as it
 stands, and the card's own `actions(state, context)` leave that reader.
@@ -626,8 +629,13 @@ is refused `badSpell` with `clause` (`otherCard`, `noAction`, `unknownField`,
 `duplicateField`, `badValue`, `unclosedBlock`, `quotation`, and `fixed` for a `set` naming a
 fixed field), `reason` and `hint`, the spell with its blanks to resend, when no policy reads it. `delvetalk CARD ?` is the usage card, answered by the
 host; a view has no form and is never in it. `delvetalk CARD set` with one `field: value` line is a lens: the card's
-`lenses()` names the field and kind, and its `set` puts the value. A `text 0..N` field may be left out. A spell
-missing fields is answered with the spell and its blanks. A verb the card's forms lack is looked up in its grown
+`lenses()` names the field and kind, and its `set` puts the value. A field whose bound starts at 0 may be left out, in a
+spell and a direct turn alike (`lines` with no `from` is the newest page). A spell missing fields is answered first
+with "Nothing done: … still needs …", then the card and the spell with its blanks; a grown verb missing its text is
+refused `unclear`, and a one-word field the form lacks, before a missing one, is refused `unknownField` (`say / line:`
+to a verb that takes `text`). A field's value may be a code fence (`spween: ```spween` … ```) as a `<<END` block is;
+`<<` before anything but one word is refused `unclosedBlock`, saying what opens a block. A line is never blank: RECORD
+refuses a blank one by name, and a gesture that takes no words writes its verb. A verb the card's forms lack is looked up in its grown
 verbs (`act {verb, text}`), and a `noAction` names how it grows (`grow / name / reading`). The host's spells on every
 card: `?`, `rules`, `wants`, `verbs`, `rule`, `unrule`, `want`, `unwant`, `grow`, `ungrow`, `become`, `adopt`,
 `lend`, `set`. **Words are hob's** (HOST-HANDOFF 5.163): words that reached a card and run none of its spells go to
@@ -657,7 +665,8 @@ surface). Three kinds of thing (METAPHYSICS §5, §7): RECORD (`Record.obend`: l
 column, admissions, marks, doors, a scene, presence, things lying in it, tending), THING (`Thing.obend`: custody by
 offer and accept, copy, inspirit, a keeper, `lend`, a `circle`) and KIND (`Kind.obend`: a form, the text its things
 follow by `under` (laws, rules, wants), a head, a `voice`, a body; `make`, and the owner's `place`). BOND, ERRAND and
-FRONT are bodies over RECORD. Beside them: Avatar (its `inbox` holds rule notes, tide notes and mentions), Library,
+FRONT are bodies over RECORD. A room's presence lapses with its quiet: untended (no entry, choice or word aloud) for
+360 clock minutes it shows whom it held as last here, and the next entry takes their rows off in its own write. Beside them: Avatar (its `inbox` holds rule notes, tide notes and mentions), Library,
 Policy, Tide (it ticks itself every `gap` clock minutes; what happens at a tick is the rules on it), Workshop.
 Bodies, layers a kind lays on each record it makes (`world/bodies/`): bell, bond, cistern, commonplace, door,
 errand, front, garden, lantern, room, weather; they place their rules at `made`. Genesis (GENESIS.md) makes the
@@ -686,7 +695,8 @@ were read; a valid host reading starts its cast on current state, recording thos
 read behaviour revisions, and `resumes` names the original reading. `behaviour` advances for each placed or removed rule, want or
 verb and for each reprogram or amendment; any such edit on an offered card is relevant, including a rule for
 another verb, while an edit on an unoffered card is not. `resumeHeard` refuses an obsolete reading before any
-spell runs, as `staleRoot`, naming the card and its changed revision. A Bend `interpret` follows `resumeOne`'s
+spell runs, as `staleRoot`, naming the card and its changed revision; a revision only the reading's speaker moved since
+(they grew the verb, placed the rule: `Object.mover`, `moverFrom`) leaves it current. A Bend `interpret` follows `resumeOne`'s
 one re-run on a moved root, re-offering from current state. `interpretationSlot` keeps the turn's await numbering
 and binds only nonzero behaviour revisions: a behaviour edit renews the reading's slot, while ordinary state
 moves reuse its settled answer, so a batch settles without further model calls. `placedCid` commits to the counter beside the placed rows, and

@@ -224,6 +224,7 @@ def storeJson (w : World) : Except String Json := do
       ("version", toJson o.version), ("state", dataJson o.state), ("stateCid", toJson o.stateCid), ("read", o.read.json),
       ("maker", toJson o.maker), ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)] ++
       (if o.behaviour == 0 then [] else [("behaviour", toJson o.behaviour)]) ++
+      (if o.mover.isEmpty then [] else [("mover", toJson o.mover), ("moverFrom", toJson o.moverFrom)]) ++
       (if o.minted == 0 then [] else [("minted", toJson o.minted)]) ++
       (if o.packet.isEmpty then [] else [("packet", toJson o.packet)]) ++
       (if o.readings.isEmpty then [] else [("readings", Json.arr (o.readings.toArray.map fun (n, r) =>
@@ -404,6 +405,8 @@ def install (b : Json) (base : World) (naming : Naming := .cells) : Except Strin
         lawText := lawText
         version := version
         behaviour := (o.getObjValAs? Nat "behaviour").toOption.getD 0
+        mover := (o.getObjValAs? String "mover").toOption.getD ""
+        moverFrom := (o.getObjValAs? Nat "moverFrom").toOption.getD 0
         cells := Delvetalk.Turn.StateCells.of (cellDecls relations) state
         stateType := stateType
         bounds := bounds

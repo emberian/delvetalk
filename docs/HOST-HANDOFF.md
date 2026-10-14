@@ -247,7 +247,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (`inputOrigin.kind = "view"`, `command` the view) when it takes one, under the turn's remaining ticks,
    as a card renders (`derivedView`). Read authority and the root are `view`'s. Refusals: `noView` (not
    declared, or no such definition), `view` (fails, runs out, or its result type is not first-order data);
-   `denied` without read authority. `world-inspect` lists `views` when the package declares any. World.obend's
+   `denied` without read authority. A refusal's `reading` says what the target lacks: for `noView`, the views()
+   line to write and the views it does name (obend 2026-10-14, yue's gauge). `world-inspect` lists `views` when the package declares any. World.obend's
    `viewDerived<T>` line and `Derived<T>` sum are the contract. Test: `tests/test_view_derived.py`.
 
 47. **Past versions (host8).** Plan `viewAt {object, version}` answers `viewed {version, state}` with the state

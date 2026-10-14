@@ -82,6 +82,7 @@ sum Why:
   roomSilent: {}
   nowhere: {}
   notTold: {}
+  notTown: {}
 def refusal(w: Why) -> Card.Refusal:
   match w:
     case notMine(n): {clause: "notMine", reading: "Only {n.who} {n.doing}."}
@@ -92,6 +93,7 @@ def refusal(w: Why) -> Card.Refusal:
     case roomSilent(_): {clause: "roomSilent", reading: "The room did not answer."}
     case nowhere(_): {clause: "nowhere", reading: "Nowhere yet; go to a room first: delvetalk me go / to: <room>."}
     case notTold(_): {clause: "heard", reading: "Only a thing tells its maker what another hand did to it."}
+    case notTown(_): {clause: "notTown", reading: "Only the town tells an avatar the posts that mentioned it."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
 # A refusal, answered by name (Card.refusing), and nothing written.
@@ -115,6 +117,23 @@ def noted(note: Note) -> Activity<Done>:
 def mentioned(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = write {inbox: insert {from: context.principal, handle: context.handle, text: textTake(input.text, 280n), at: context.height, n: Relations.count(state.inbox), uri: input.post}}
   Card.Replied.silent({})
+# The posts elsewhere that mentioned its resident, told by the town (the bridge's notes of the hour, a turn of the
+# town's for each resident it heard of): each a note from the post's author under their handle, its `uri` the post,
+# the first 280 characters kept. Only the town tells them (`context.town`); anyone else's are refused, nothing written.
+record Mention:
+  from: String
+  handle: String
+  text: String
+  post: String
+def mentions(state: State, input: {notes: Lists.List<Mention>}, context: Abi.Context) -> Activity<Done>:
+  if context.town == "" || context.principal != context.town || context.caller != "" then told(Why.notTown({}), context) else telling(input.notes, Relations.count(state.inbox), context)
+def telling(notes: Lists.List<Mention>, n: Nat, context: Abi.Context) -> Activity<Done>:
+  match notes:
+    case nil(_): Done.done({})
+    case cons(c): tellingOne(c.head, c.tail, n, context)
+def tellingOne(note: Mention, rest: Lists.List<Mention>, n: Nat, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {inbox: insert {from: note.from, handle: note.handle, text: textTake(note.text, 280n), at: context.height, n: n, uri: note.post}}
+  telling(rest, n + 1n, context)
 # A thing tells its maker what another hand did to it, by a send run as that hand: a line written on a
 # record (a write, a rain, a pour, a grown verb), a grown verb used or an inspiriting on a THING, a door
 # a record hangs to it. Only a thing tells (the turn's sender), and only of a thing this avatar's
@@ -265,7 +284,7 @@ form seen:
 form since:
 # Things call hold and release; rooms index presence with locate.
 def methods() -> Lists.List<String>:
-  Text.words("hold release ~heard ~locate")
+  Text.words("hold release ~heard ~locate ~mentions")
 # Its principal's lenses: the handle the card shows (`delvetalk me set / handle: ...`), and whether
 # it hears what others do to the things they made (`delvetalk me set / hear: no`), and the language
 # its principal states (`delvetalk me set / tongue: ja`), one of the town's tongues, which it answers in.

@@ -235,7 +235,7 @@ class Laws(Register, unittest.TestCase):
         self.assertEqual((bare['status'], self.clause(bare)), ('refused', 'anchor'), bare)
         before = len(self.lines(self.reg))
         nothing = self.row(GEMINI, self.reg, 'voice', on=self.entry, evidence='testimony', text='no anchor field at all')
-        self.assertIn('Still needs anchor', self.told(nothing))
+        self.assertIn('Nothing done: voice still needs anchor, so nothing was written.', self.told(nothing))
         self.assertEqual(len(self.lines(self.reg)), before)
         short = self.row(GEMINI, self.reg, 'voice', on=self.entry, evidence='testimony', anchor='at://did:plc:short/town.delve.feed.post/x')
         self.assertEqual(self.clause(short), 'anchor', short)

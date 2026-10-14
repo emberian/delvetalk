@@ -46,6 +46,9 @@ services:
       - ${DELVETALK_DATA:-/var/lib/delvetalk/v11}/state:/data/state
       - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
       - ${DELVETALK_DELVE_DIR:-/etc/delvetalk/delve}:/run/delve:ro
+      # Every data directory, read only, at the path a carried genesis cites its ancestors by (compose.yml's host): the
+      # overview reads the day across the carry (transport/overview.py `ancestors`).
+      - ${DELVETALK_TOWNS:-/var/lib/delvetalk}:/towns:ro
     depends_on:
       delvetalk-host: { condition: service_healthy }
     healthcheck:

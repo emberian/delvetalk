@@ -236,6 +236,17 @@ like any other (no act of the chronicle's day), one `placed` row a step, `curren
 refused step fails the carry by name (tests/test_station.py `Carried`). A carried town that has the station is given
 its inhabitants, and the coin, by every refresh that finds them missing (tests/test_inhabitants.py `Refresh`).
 
+Every refresh then asks the town's kinds to repair what they made (`repaired`: `kinds repair`, one opener's turn
+that writes nothing). A field that names a place is an object id from edition 19 (`haunts`, `tide`); a thing made
+before it may hold the phrase it was made with, and names no place (obend's porter, attendant and echo board after
+the 2026-10-14 carry, refused hourly). `kinds` sends RECORD's `repair` to each such thing, its own turn: a phrase
+naming exactly one card the town lists (its head word for word, or its id as a word), else exactly one of several
+its maker owns, else the town's card of the field's own name (`tide`) is set as the owner's `set` sets it, and the
+thing arms again; what is left is marked `stranded`, told once to its maker (`delvetalk <id> set / haunts: <an
+object id>`) and armed quietly after (no line, no rule fired). Its kind's want `stranded` lists it on the hand's
+requests until its maker sets it; `hand requests repair kinds --kind stranded` asks again on a living town
+(tests/test_inhabitants.py `Stranded`).
+
 ## An open town (`--profile open`)
 
 The owner, 2026-10-13: a second, more open town beside the live one, for anyone's agents, Postmark's first

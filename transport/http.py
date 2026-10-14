@@ -23,7 +23,7 @@ from transport.atproto.sign import Key
 from transport.bridge import turn_line
 from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, TOWN, door_rows, handles, paged, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
-from transport.identity import SLUG, Identity, IdentityError, flagged
+from transport.identity import SLUG, Identity, IdentityError, flagged, suggested_name
 from transport.repo import Repo, Refusal, WRITES
 from transport.hosted import Accounts, MAX_CAR_BYTES, MAX_WRITE_BODY
 from transport.acts import INTENT_BYTES, judge_call, text
@@ -150,7 +150,10 @@ def argument(data):
 
 
 def arguments_of(items):
-    """A REPL's `arguments` as typed data: an element already `{tag, ...}` stays, plain JSON (21, "text", true, {..}) is `typed`."""
+    """A REPL's `arguments` as typed data: an element already `{tag, ...}` stays, plain JSON (21, "text", true, {..}) is `typed`;
+    one typed datum sent bare (yue's `{"tag": "natural", "value": "0"}`, obend 2026-10-14) is the list of it."""
+    if isinstance(items, dict) and 'tag' in items:
+        items = [items]
     return [i if isinstance(i, dict) and 'tag' in i else typed(i) for i in items] if isinstance(items, list) else items
 
 
@@ -163,7 +166,7 @@ def repl_misfit(kind, data):
         return 'a check needs source (the Bend text) or modules'
     if kind == 'repl' and 'entry' not in data:
         return 'a repl needs entry, the name of the def to run (and source, unless the object already holds it)'
-    if 'arguments' in data and not isinstance(data['arguments'], list):
+    if 'arguments' in data and not isinstance(data['arguments'], list) and not (isinstance(data['arguments'], dict) and 'tag' in data['arguments']):
         return 'arguments must be a list, one element per parameter of entry'
 
 
@@ -211,6 +214,7 @@ def turn_view(reply):
             **({'revealed': reply['revealed']} if reply.get('revealed') else {}),
             **({'waiting': reply['waiting']} if reply.get('waiting') else {}),  # hob reading the words: by when, behind how many
             **({'hint': reply.get('hint') or outcome['hint']} if reply.get('hint') or outcome.get('hint') else {}),  # a refusal's fix, as the host wrote it or says it
+            **{k: reply[k] for k in ('replayed', 'spent') if reply.get(k)},  # the intent's answer given again; a refusal binding its intent
             'offers': [o['text'] for o in reply.get('offers') or []],
             'receipt': {'slug': rc.get('slug'), 'height': rc.get('height')}}
 
@@ -241,7 +245,10 @@ DOOR_LINES = {'invitation_unknown': 'That code does not match any invitation. Ch
               'name_fixed': 'This invitation already has a name on it. Leave the name empty and press Come in.',
               'taken': 'Someone here already goes by that name. Choose another; your code still works.',
               'invalid_credential': 'That key does not open anything here. Check it was copied whole; it begins dt_agent_.',
+              'lost_key_open': 'Lost it? Ask for a new key above, under another name.',
               'empty': 'Type the code from your invitation, or your key if you have been here before.',
+              'empty_open': 'No invitation? Then ask for a key above: your name is in its box, so press Give me a key. An invitation\'s code goes in the box below it.',
+              'name_suggested': 'A name here is lowercase letters, digits and hyphens, so “{typed}” cannot be one. “{name}” is in the box instead: press the button again to take it, or change it.',
               'proof_invalid': 'The door did not know that page. Reload it and ask again.',
               'proof_expired': 'That page waited more than ten minutes. Reload it and ask again.',
               'proof_short': 'The page\'s work did not come out right. Reload it and ask again.',
@@ -256,9 +263,27 @@ ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever 
                 'name_fixed': 'that invitation already names its guest; send that name, or none',
                 'taken': 'that name is taken; the code is still unused, so choose another'}
 ARRIVE_DOOR = {'taken': 'Someone here already goes by that name. Choose another and ask again.'}  # where the open door's words differ
+
+
+def door_line(code, typed, lines=None):
+    """The door's line for a refusal and the name to put back in the box: a name the door cannot take comes back as the
+    nearest one it would (`suggested_name`), said in the line, so pressing again takes it (obend 10-14: a visitor left
+    after five names refused 400)."""
+    typed = typed if isinstance(typed, str) else ''
+    if code == 'invalid_guest_name' and (name := suggested_name(typed)):
+        return DOOR_LINES['name_suggested'].format(typed=typed[:64], name=name), name
+    return (lines or {}).get(code) or DOOR_LINES.get(code, code), typed
+
+
+def named_reason(code, typed):
+    """An agent's refusal fields: the reason, and for a name the door cannot take, the nearest it would."""
+    name = suggested_name(typed) if code == 'invalid_guest_name' else None
+    return {'reason': code, **({'suggested': name} if name else {})}
+
+
 HELD = "the door holds arrivals from your address for the town's owner: keep this key; it opens when you are let in"
 ARRIVE_LINES = {'invalid_guest_name': ACCEPT_LINES['invalid_guest_name'],
-                'proof_invalid': 'proof is {challenge, nonce}: a challenge GET /AGENTS.md/arrive gave this process, unchanged, and a nonce of 1 to 64 printable ASCII characters',
+                'proof_invalid': 'proof is {challenge, nonce}: a challenge GET /AGENTS.md/arrive gave, unchanged, and a nonce of 1 to 64 printable ASCII characters',
                 'proof_expired': 'that challenge is older than ten minutes; GET /AGENTS.md/arrive for another',
                 'proof_short': 'SHA-256 of `challenge:name:nonce` must begin with `bits` zero bits; the name is part of it, so a proof is for one name',
                 'proof_spent': 'that challenge has given its key already; GET /AGENTS.md/arrive for another',
@@ -366,7 +391,8 @@ def named(*parts):
 
 class AccessLog:
     """One line per request: time, method, path (no query), status, bytes sent, the principal's DID or `-`, the world.
-    A refusal (4xx, 5xx) appends `class=<label>`: the envelope's class, with the host's own stage, clause or class after a `:` when
+    A page's turn (`POST /play/...`) appends `turn=<label>`: what the host made of it (`admitted`, `refused`, `suspended`, each
+    turn's; `tried` for a try, `read` for an answer that is a read, `usage` or a reading spell, neither journaled). A refusal (4xx, 5xx) appends `class=<label>`: the envelope's class, with the host's own stage, clause or class after a `:` when
     the host refused; a service-auth refusal appends `auth=<fixed reason code>`. Never a credential, a body or a reason's words.
     Rotated by size: past `limit` bytes the file becomes `<name>.1` (the previous one is dropped)."""
     LIMIT = 16 * 1024 * 1024
@@ -374,9 +400,9 @@ class AccessLog:
     def __init__(self, path, world, limit=LIMIT):
         self.path, self.world, self.limit, self.lock = Path(path), world, limit, threading.Lock()
 
-    def write(self, when, method, path, status, sent, did, reason=None, refusal=None):
+    def write(self, when, method, path, status, sent, did, reason=None, refusal=None, fate=None):
         line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'} {self.world}" + \
-            (f" class={refusal}" if refusal else '') + (f" auth={reason}" if reason else '') + '\n'
+            (f" class={refusal}" if refusal else '') + (f" auth={reason}" if reason else '') + (f" turn={fate}" if fate else '') + '\n'
         with self.lock:
             try:
                 if self.path.exists() and self.path.stat().st_size + len(line) > self.limit:
@@ -422,7 +448,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.firehose = None
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
-        self.csrf_secret = secrets.token_bytes(32)
+        self.csrf_secret = identity and identity.csrf_secret  # kept with the door's key, so a restart voids no open form; the hand (no identity) binds none
         self.turn_lock = threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
@@ -691,13 +717,13 @@ class Handler(BaseHTTPRequestHandler):
         super().send_response(code, message)
 
     def handle_one_request(self):
-        self.status, self.did, self.head, self.auth_reason, self.refusal = 0, None, False, None, None
+        self.status, self.did, self.head, self.auth_reason, self.refusal, self.fate = 0, None, False, None, None, None
         self.wfile.sent = 0
         super().handle_one_request()
         if self.server.access and self.status:  # a request that never parsed has no status
             self.server.access.write(self.server.clock(), getattr(self, 'command', '-'), urllib.parse.urlsplit(self.path).path,
                                      self.status, self.wfile.sent, self.did, self.auth_reason,
-                                     (self.refusal or 'unclassed') if self.status >= 400 else None)
+                                     (self.refusal or 'unclassed') if self.status >= 400 else None, self.fate)
 
     def reply(self, code, body, ctype='application/json', headers=(), maximum=None):
         raw = body.encode('utf-8', 'backslashreplace') if isinstance(body, str) else body  # a lone surrogate the host echoed stays a JSON escape
@@ -793,7 +819,7 @@ class Handler(BaseHTTPRequestHandler):
         if depth(data) > MAX_DEPTH:
             return fail('badJson', f'the body nests deeper than {MAX_DEPTH}')
         token = data.pop('csrf', '') if form else None
-        if gated and not self.browser_write(token):
+        if gated and not self.browser_write(token, data):
             return None
         if xrpc:
             try:
@@ -844,7 +870,7 @@ class Handler(BaseHTTPRequestHandler):
         return [('Set-Cookie', f'{key}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={2592000 if value else 0}{secure}')
                 for key, value in cookies]
 
-    def browser_write(self, token=None):
+    def browser_write(self, token=None, data=None):
         origin = self.headers.get('Origin')
         if origin is None:
             try:
@@ -860,6 +886,12 @@ class Handler(BaseHTTPRequestHandler):
             self.fail('denied', 'browser writes require the exact town origin')
             return False
         if token is not None and (len(token) != 64 or not token.isascii() or not hmac.compare_digest(token, self.csrf_token())):
+            # From the town's own origin, a form drawn for this browser's earlier session (a sign-in rotates it): what it
+            # carried comes back, to send again with this session's token (obend 10-14: gabriel's first plays, 403).
+            if data is not None and self.browser() and not self.textual():
+                self.refusal = 'denied'
+                self.html(403, pages.resend(urllib.parse.urlsplit(self.path).path, data))
+                return False
             self.fail('denied', 'the form does not belong to this browser session; reload the page')
             return False
         return True
@@ -941,7 +973,11 @@ class Handler(BaseHTTPRequestHandler):
         if name is None:
             allow = [m for m in ('GET', 'POST') if (n := resolve(m, path)[0]) and self.server.serves(n)]
             if allow:
-                return self.fail('methodNotAllowed', f'{path} takes {" and ".join(allow)}', headers=[('Allow', ', '.join(allow + ['OPTIONS']))])
+                # What it takes, and for the door's own routes the page a person comes in at (obend 10-14: thirteen
+                # GETs of /AGENTS.md/accept, read as a page).
+                door = ' A person comes in at /enter.' if resolve('POST', path)[0] in ('accept', 'arrive') else ''
+                return self.fail('methodNotAllowed', f'{path} takes {" and ".join(allow)}', f'OPTIONS {path} says what it takes.{door}',
+                                 links={'enter': link('/enter')} if door else None, headers=[('Allow', ', '.join(allow + ['OPTIONS']))])
             return self.fail('unknownRoute', f'no route at {path}', ROUTE_HINT)
         if name == 'guide' and 'application/json' not in (self.headers.get('Accept') or ''):
             return self.reply(200, self.server.guide(), 'text/plain', [('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
@@ -965,7 +1001,8 @@ class Handler(BaseHTTPRequestHandler):
             key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
             wait = self.server.limited(key)
             if wait:
-                return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds', headers=[('Retry-After', str(wait))])
+                return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds', f'come back in {wait} second{"s" * (wait != 1)}',
+                                 headers=[('Retry-After', str(wait))])
         if name == 'home':
             return self.home()
         if name in ('door', 'comeIn', 'leave', 'signOut'):
@@ -1343,8 +1380,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(r.code, canonical(r.body))
         except IdentityError as err:
             if self.browser():
-                return self.html(400, self.enter_page(DOOR_LINES.get(err.code, err.code), code, name or ''))
-            return self.fail('identity', f'{err.code}: {ACCEPT_LINES[err.code]}', more={'reason': err.code})
+                note, name = door_line(err.code, name or '')
+                return self.html(400, self.enter_page(note, code, name))
+            return self.fail('identity', f'{err.code}: {ACCEPT_LINES[err.code]}', more=named_reason(err.code, name))
         self.server.record_handle(out['principal'], out['handle'])
         if self.browser():
             if door:
@@ -1377,19 +1415,26 @@ class Handler(BaseHTTPRequestHandler):
             return
         text = lambda k: data.get(k).strip() if isinstance(data.get(k), str) else ''
         code, chosen, key = text('code'), text('name'), text('credential')
+        # A key in the code's box, or a code in the key's, is read by its prefix as what it is (obend 10-14: three keys
+        # refused 401 in a row before a guest came in).
+        if code.startswith('dt_agent_') and not key:
+            code, key = '', code
+        elif key.startswith('dt_invite_') and not code:
+            code, key = key, ''
         if key:
             who = self.principal(key)
             if who is None:
-                return self.html(401, self.enter_page(DOOR_LINES['invalid_credential'])) if self.browser() else \
-                    self.fail('unauthenticated', DOOR_LINES['invalid_credential'])
+                line = DOOR_LINES['invalid_credential'] + (' ' + DOOR_LINES['lost_key_open'] if self.server.open else '')
+                return self.html(401, self.enter_page(line)) if self.browser() else self.fail('unauthenticated', line)
             if not self.browser():
                 return self.reply(200, canonical({'status': 'signedIn', 'handle': who['handle'], 'principal': who['did'],
                                                   '_links': {'self': link(self.path), 'me': link(PREFIX + '/me')}}), headers=self.login_cookie(key))
             return self.reply(303, '', 'text/plain', [('Location', '/play/'), *self.login_cookie(key)])
         if not code and self.server.open and isinstance(data.get('challenge'), str):  # no code: the open door's key, for its proof
             return self.arrived(chosen, {'challenge': text('challenge'), 'nonce': text('nonce')})
-        if not code and self.browser():
-            return self.html(400, self.enter_page(DOOR_LINES['empty'], code, chosen))
+        if not code and self.browser():  # an open town's newcomer with a name and no code is pointed at asking, the name kept there
+            empty = 'empty_open' if self.server.open and chosen else 'empty'
+            return self.html(400, self.enter_page(DOOR_LINES[empty], code, chosen))
         return self.accept(code, chosen or None, door=True)
 
     def enter_page(self, note='', code='', name=''):
@@ -1429,11 +1474,12 @@ class Handler(BaseHTTPRequestHandler):
         except IdentityError as err:
             retry = [('Retry-After', str(err.retry))] if err.retry else []
             if self.browser():
-                note = (ARRIVE_DOOR.get(err.code) or DOOR_LINES.get(err.code, err.code)).format(minutes=max(1, (err.retry or 60) // 60))
+                note, name = door_line(err.code, name, ARRIVE_DOOR)
+                note = note.format(minutes=max(1, (err.retry or 60) // 60)) if err.code == 'rate_limited' else note
                 return self.html(429 if err.code == 'rate_limited' else 400, self.enter_page(note, '', name), retry)
             if err.code == 'rate_limited':
                 return self.fail('rateLimited', ARRIVE_LINES[err.code], more={'reason': err.code}, headers=retry)
-            return self.fail('identity', f'{err.code}: {ARRIVE_LINES[err.code]}', more={'reason': err.code})
+            return self.fail('identity', f'{err.code}: {ARRIVE_LINES[err.code]}', more=named_reason(err.code, name))
         if out['status'] == 'held':  # the key is given and opens nothing until the owner lets the guest in; the host is told then
             if self.browser():
                 return self.html(202, pages.held(out['handle'], out['credential']))
@@ -1632,6 +1678,8 @@ class Handler(BaseHTTPRequestHandler):
                     text = 'delvetalk try\n' + '\n'.join('  ' + line for line in text.strip().split('\n'))
                 r = self.server.turn(host, did, name, 'receive', {'intent': intent, 'argument': typed({'text': text, 'post': ''})})
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
+            # What the access log says of this 200 (obend 10-14: two plays answered 200 left no entry, and nothing said why).
+            self.fate = 'tried' if r.get('tried') else 'read' if r.get('status') == 'usage' else named(*(str(t.get('status')) for t in turns))
             if r.get('tried'):  # a try journaled nothing: its preview is what came back, and doing it is one suggestion away
                 preview = bridge.preview_text(r, self.server.handles(pages.A_DID.findall(json.dumps(r))))
                 last = preview.rstrip('\n').rpartition('\n')[2]
@@ -1756,9 +1804,11 @@ class Handler(BaseHTTPRequestHandler):
         the reader sees it; logged in, a way to speak to it; its law, source and journal on demand."""
         who = who or self.principal(self.cookie())
         handle, principal, host = who and who['handle'], who and who['did'], self.server.host
-        here = place(host, principal, name, self.server.sleep)
+        # An anonymous reader is shown a paint already made and asks for none: a crawl of every page spends no model call
+        # (obend 10-14 09:05: 119 pages in 12 seconds, after a carry had left every paint to make again).
+        here = place(host, principal, name, self.server.sleep, paint=True if principal else 'cached')
         if here['status'] != 'place':
-            return self.html(404, pages.refusal(name, handle, here['view'], here['status']))
+            return self.html(403 if here['status'] == 'denied' else 404, pages.refusal(name, handle, here['view'], here['status']))
         seen = host.send({'op': 'world-inspect', 'principal': principal or PUBLIC, 'object': name})
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
@@ -1841,7 +1891,7 @@ class Handler(BaseHTTPRequestHandler):
         seen = host.send({'op': 'world-inspect', 'principal': reader, 'object': name, 'source': True})
         view = host.send({'op': 'world-view', 'principal': reader, 'object': name})
         if seen.get('status') != 'inspected' or view.get('status') != 'viewed':
-            return self.html(404, pages.refusal(name, who and who['handle'], view if view.get('status') != 'viewed' else seen, seen.get('status')))
+            return self.html(403 if 'denied' in (seen.get('status'), view.get('status')) else 404, pages.refusal(name, who and who['handle'], view if view.get('status') != 'viewed' else seen, seen.get('status')))
         stranger = host.send({'op': 'world-inspect', 'principal': PUBLIC, 'object': name}) if who else seen
         state = plain(view.get('state') or {})
         state = state if isinstance(state, dict) else {}
@@ -1874,7 +1924,7 @@ class Handler(BaseHTTPRequestHandler):
         self.html(200, atlas.inspector(name, who and who['handle'], view, seen, stranger=stranger, rules_=[r for r in rules.get('rows') or [] if isinstance(r, dict)],
                                        wants_=[r for r in wants.get('rows') or [] if isinstance(r, dict)], entries=self.history(host, name, reader if who else ''),
                                        kinds=kinds, did=who and who['did'], town=self.server.town(), components=components, body=body,
-                                       module_names=names, edit=edit))
+                                       module_names=names, edit=edit, shown=(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('bend') or [None])[0]))
 
     def library_pages(self, reader):
         v = self.server.host.send({'op': 'world-view', 'principal': reader, 'object': 'library'})

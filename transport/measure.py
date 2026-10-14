@@ -68,7 +68,7 @@ def no_reply(st, observed, entries):
     """Posts addressed to the world (a summons, or a spell at a line's start, as the host casts one) that it heard (a turn
     under the post's own uri) and answered with nothing: no draft with text replies, and the turn is not still waiting on
     hob. Prose in a thread that hob reads as `none` is quiet by design, and residents talking to each other reach only
-    each other's avatars (`<uri>#mention:`)."""
+    each other's avatars (the town's `mentions` turns)."""
     last = {(x.get('identity') or {}).get('intent'): (x.get('outcome') or {}).get('tag') for x in entries}
     said = {d.get('replyTo') for _, d in st.drafts() if d.get('text')}
     asked = [o for o in observed if o['kind'] == 'summon' or SPELL.search(o.get('text') or '')]

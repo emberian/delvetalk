@@ -7,8 +7,10 @@ What `observe.sqlite` keeps. A new observation is held whole until the bridge ha
     `chain` stub for CHAIN_DAYS, which is all `reach` needs of an ancestor (past that the host falls back to the root);
   - a post that reached a card, was turned or was answered is kept whole RETAIN_DAYS after it was written (the hand
     reads it, `reach` of its replies and the mention retry read it), then dropped to its hash;
-  - a post still awaiting an interpretation, a draft or a mention turn is kept whole until it is answered.
-Every author seen stays in `authors` (a mention resolves an @handle through it long after the author's posts are
+  - a post still awaiting an interpretation or a draft is kept whole until it is answered.
+A mention of an arrived resident is queued apart (`mentions`: the note itself, the post's URI, its author and their
+handle, its first characters) from the run that first reads the post until the town tells it (bridge.tell_mentions), so
+the post may be dropped first. Every author seen stays in `authors` (a mention resolves an @handle through it long after the author's posts are
 gone). Nothing else of a post is kept: not the record (`posts.body` only repeated the observation). Ages are measured on
 the town's own timeline (`timeline`).
 """
@@ -38,6 +40,8 @@ CREATE TABLE IF NOT EXISTS gone(h BLOB PRIMARY KEY) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS chain(uri TEXT PRIMARY KEY, author TEXT, reply_to TEXT, created REAL) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS authors(did TEXT PRIMARY KEY, handle TEXT, seen INTEGER) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS owed(uri TEXT PRIMARY KEY) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS mentions(seq INTEGER PRIMARY KEY AUTOINCREMENT, uri TEXT, did TEXT, author TEXT, handle TEXT, text TEXT,
+  queued REAL, UNIQUE(uri, did));
 CREATE TRIGGER IF NOT EXISTS observed_author AFTER INSERT ON observations
 WHEN json_extract(new.json,'$.author.did') IS NOT NULL BEGIN
   INSERT INTO authors(did,handle,seen) VALUES(json_extract(new.json,'$.author.did'), json_extract(new.json,'$.author.handle'), new.seq)
@@ -206,13 +210,13 @@ def stubs(st):
 
 
 def owed(st):
-    """The URIs of posts the host's reach answered `reached` whose mention turns are not all sent."""
+    """The URIs an edition-19 store owes mention turns for (`owed`: a reached post whose turn had no receipt), which the
+    bridge queues as notes once (`queue`, then `pay`)."""
     return {u for (u,) in read(st, 'SELECT uri FROM owed')}
 
 
 def owe(st, uri):
-    """Record that a reached post's mention turns are owed (of a store that exists: a bridge run on rows read elsewhere
-    sends them once)."""
+    """An edition-19 store's row: the reached post's mention turns are owed."""
     if st.observed.exists():
         db = connect(st)
         try:
@@ -222,13 +226,52 @@ def owe(st, uri):
 
 
 def pay(st, uri):
-    """The post's mention turns are all sent (or it has none to send)."""
+    """The legacy row is queued as notes."""
     if st.observed.exists():
         db = connect(st)
         try:
             db.execute('DELETE FROM owed WHERE uri=?', (uri,))
         finally:
             db.close()
+
+
+def queue(st, uri, author, handle, text, dids, at):
+    """Queue the post's note for each of `dids` (arrived residents it mentions), once a (post, resident), at `at`."""
+    db = connect(st)
+    try:
+        db.execute('BEGIN IMMEDIATE')
+        for did in dids:
+            db.execute('INSERT OR IGNORE INTO mentions(uri, did, author, handle, text, queued) VALUES(?,?,?,?,?,?)',
+                       (uri, did, author, handle, text, at))
+        db.execute('COMMIT')
+    finally:
+        db.close()
+
+
+def due(st, before):
+    """{did: [{seq, uri, author, handle, text}] in the order queued} of each resident whose oldest queued note was queued
+    at or before `before`."""
+    rows = read(st, 'SELECT seq, uri, did, author, handle, text FROM mentions WHERE did IN '
+                    '(SELECT did FROM mentions GROUP BY did HAVING MIN(queued) <= ?) ORDER BY seq', before)
+    out = {}
+    for seq, uri, did, author, handle, text in rows:
+        out.setdefault(did, []).append({'seq': seq, 'uri': uri, 'author': author, 'handle': handle, 'text': text})
+    return out
+
+
+def told(st, seqs):
+    """The notes `seqs` were told: -> the URIs none of whose notes wait any longer."""
+    db = connect(st)
+    try:
+        db.execute('BEGIN IMMEDIATE')
+        marks = ','.join('?' * len(seqs))
+        uris = [u for (u,) in db.execute(f'SELECT DISTINCT uri FROM mentions WHERE seq IN ({marks})', seqs)]
+        db.execute(f'DELETE FROM mentions WHERE seq IN ({marks})', seqs)
+        done = [u for u in uris if not db.execute('SELECT 1 FROM mentions WHERE uri=?', (u,)).fetchone()]
+        db.execute('COMMIT')
+        return done
+    finally:
+        db.close()
 
 
 def timeline(rows, now=None):
@@ -333,6 +376,25 @@ class Observer:
             self.db.execute('ROLLBACK')
             raise
         return True
+
+    def again(self, since, pages=64, limit=50):
+        """The observations of the town's feed created at or after `since` (ISO), paged back until a page reaches past it
+        or `pages` are read; nothing stored. For a deliberate replay of what the bridge already answered (`bridge
+        --hear-again`): a dropped post is only its hash here."""
+        at, cursor, out = instant(since), None, []
+        for _ in range(pages):
+            page = self.client.feed(limit, cursor)
+            got = []
+            for post in posts_of(page):
+                try:
+                    got.append(observation(post, self.summon))
+                except Failure:
+                    continue
+            out += [o for o in got if instant(o['createdAt']) >= at]
+            cursor = page.get('cursor')
+            if not cursor or not got or min(instant(o['createdAt']) for o in got) < at:
+                break
+        return out
 
     def poll(self, query='#gsb', pages=3, limit=50):
         """Page search then feed, stopping a source at its first page with nothing new; then the request records

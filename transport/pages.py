@@ -509,6 +509,17 @@ def enter(note='', code='', name='', arrive=None):
                                                          agents=' (or, with no code, <code>/AGENTS.md/arrive</code>)' if arrive else ''))
 
 
+def resend(action, fields):
+    """A browser form refused for an earlier session's token (transport/http.py `browser_write`): what it carried, to
+    send again with this session's (`html` adds it), a key never among it."""
+    kept = {k: v for k, v in fields.items() if k not in ('csrf', 'credential') and isinstance(v, str)}
+    said = kept.get('text') or kept.get('name') or ''
+    return page('send it again', None, T['resend'].format(
+        action=e(action), dropped=' Your key is not kept here: type it again.' if fields.get('credential') else '',
+        said=T['resend_said'].format(text=e(said)) if said else '',
+        fields=''.join(T['resend_field'].format(name=e(k), value=e(v)) for k, v in kept.items())))
+
+
 def welcome(handle, credential):
     """A guest just in: their key shown this once, and the way on."""
     return page('welcome', handle, T['welcome'].format(handle=e(handle), credential=e(credential), book=e(quote(handle, safe=''))))
@@ -573,8 +584,15 @@ def catalogue(api, who):
 def refusal(title, who, body, code_class=None):
     """An envelope (or a host refusal) as a page: its class, its words, its hint, its links."""
     hint = T['hint'].format(hint=e(str(body['hint']))) if body.get('hint') else ''
-    return page(title, who, T['refusal'].format(cls=e(str(code_class or body.get('class') or body.get('status'))), title=e(title),
-                                                message=e(str(body.get('message') or f"no object {title} that you may see")), hint=hint, links=doors_of(body.get('_links')) or T['link'].format(href='/', rel='the town')))
+    cls = str(code_class or body.get('class') or body.get('status'))
+    # A thing the host says is there and not this reader's to see is said to be private, the way to what holds it beside
+    # (obend 10-14: /inspect/mending/drawer, the mending basket's private drawer, read as "no object").
+    private = cls == 'denied' and not body.get('message')
+    up = title.rpartition('/')[0] if private and '/' in title else ''
+    message = body.get('message') or (T['private'].format(id=title) if private else f"no object {title} that you may see")
+    links = doors_of(body.get('_links')) or ''.join(T['link'].format(href=e(h), rel=e(r)) + ' ' for h, r in
+                                                    ((('/o/' + quote(up, safe='/'), up),) if up else ()) + (('/', 'the town'),)).strip()
+    return page(title, who, T['refusal'].format(cls=e(cls), title=e(title), message=e(str(message)), hint=hint, links=links))
 
 
 VOID = {'input', 'br', 'img', 'meta', 'link', 'hr', 'source', 'wbr', 'col', 'area', 'base'}

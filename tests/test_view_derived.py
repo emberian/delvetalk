@@ -45,6 +45,20 @@ def secret(state: State) -> String:
   state.words
 """)
 
+# yue's gauge (obend 2026-10-14, a lab2 fork): it read ember2's `banked`, a pure def no views() named, and heard a bare
+# refusal; the target's line to write was found an hour later in another card's source.
+READING = READER.replace("Data.of::<String>(r.clause)", "Data.of::<String>(r.reading)")
+EMBER = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+record State:
+  warmth: Nat
+  ash: Nat
+def initial() -> State:
+  {warmth: 3n, ash: 1n}
+def banked(state: State) -> Nat:
+  state.warmth + state.ash
+""")
+
 
 class ViewDerived(Reflection):
     def setUp(self):
@@ -68,6 +82,19 @@ class ViewDerived(Reflection):
         self.target("vault", read={"principals": ["ember"]})
         self.assertEqual(self.peek("vault", "doubled")["result"], label("denied"))
         self.assertEqual(self.peek("vault", "doubled", principal="ember")["result"], nat(6))
+
+    def test_a_view_no_views_names_is_refused_with_the_line_to_write(self):
+        """Refuted by the refusal's reading not naming the views() line for the view asked, or the views a target has."""
+        self.make("gauge", READING, record(note=label("")))
+        r = self.host.send(op="world-create", principal="ember", identity="mk-ember2", object="ember2", source=EMBER,
+                           entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
+        reading = self.turn("gauge", "peek", record(target=label("ember2"), view=label("banked")), principal="ann")["result"]["value"]
+        self.assertIn('ember2 declares no view banked; a view is a pure def that views() names: '
+                      'def views() -> Lists.List<String>: Text.words("banked")', reading)
+        self.target("counter")
+        reading = self.turn("gauge", "peek", record(target=label("counter"), view=label("secret")), principal="ann")["result"]["value"]
+        self.assertIn("counter declares no view secret (its views: doubled, greeting)", reading)
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,6 +22,7 @@ Evidence for FOUNDATION §10 (layer: scenarios).
 import re
 import unittest
 
+from tests.host import card_texts
 from tests.test_scenarios import Arc, GLM, KIM
 from tests.test_properties import OPENER
 
@@ -458,6 +459,30 @@ class Forged(Tide):
         self.assertEqual([t for t in self.texts(front) if "segment" in t], [])
         self.assertEqual(len(self.texts("garden/weather")), rains)
 
+
+class Watch(Reaction):
+    def inbox(self, who):
+        items = self.field(who, "inbox")["payload"]["fields"][0]["value"]["items"]
+        return [next(f["value"]["value"] for f in r["fields"] if f["name"] == "text") for r in items]
+
+    def test_a_hands_watch_on_anothers_bell_notes_it_at_the_count_and_reads_back_what_it_counted(self):
+        """Kestrel (gsb 10-11, the mending seed "the wake that never noted him"): `wake rows / object: garden/bell/2 /
+        field: lines / count: 2` counted four rains in the dark and never noted him, with nothing to read it back by.
+        Wakes are gone; a watch is a rule a hand places on another's thing, its spell a note to its own avatar. It
+        notes at the crossing and on every second rain, and `rules` reads back what it counts now."""
+        bell = self.plant(GLM)
+        self.place(KIM, bell, "two / when: count(new.lines) >= 2 and count(old.lines) <= 1 / then: delvetalk me note / text: two rains on the bell")
+        self.place(KIM, bell, "even / when: request.method == \"rain\" and count(new.lines) % 2 == 0 / then: delvetalk me note / text: an even rain")
+        rains = [self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: rain %d" % (bell, n))) for n in range(1, 5)]
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+        self.assertEqual(self.inbox(KIM), ["two rains on the bell", "an even rain", "an even rain"])
+        self.assertFired(rains[1], bell, "two", "delvetalk me note", beside=("even",))
+        self.assertEqual(self.fired(rains[2]), [])
+        read = self.say(KIM, bell, "delvetalk %s rules" % bell)
+        text = read.get("text") or "\n".join(card_texts(read))
+        self.assertIn("fired at entry %d" % rains[1]["receipt"]["height"], text)
+        self.assertIn("now: count(new.lines) = 4", text)
+        self.assertEqual(self.row(bell, "even")["now"], "now: count(new.lines) = 4")
 
 class Seventh(Reaction):
     def test_the_seventh_rain_rings_the_bell_and_grown_gestures_are_no_rain(self):

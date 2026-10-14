@@ -75,17 +75,36 @@ def bend(text, prefix='s', module=None):
     return ''.join(lines), outline
 
 
+def outline_of(text, prefix, at=''):
+    """A module's declarations as links to their lines (`at` the page they are drawn on, '' this one)."""
+    outline = [(m[1], m[2], n) for n, line in enumerate(text.rstrip('\n').split('\n'), 1) if (m := DECL.match(line)) and m[1] in DECLARES]
+    item = lambda k, name, n: A['outline_item'].format(href=e(f'{at}#{prefix}-L{n}'), kind=e(k), name=e(name))
+    defs = [x for x in outline if x[0] == 'def']
+    toc = ''.join(item(*x) for x in outline if x[0] in ('form', 'law', 'rule', 'want')) + \
+        (A['outline_defs'].format(n=len(defs), items=''.join(item(*x) for x in defs)) if defs else '')
+    return A['outline'].format(items=toc) if toc else ''
+
+
 def source_block(title, text, prefix, module, open_=True, note=''):
     """One module's source: its outline (declarations, each a link to its line) above it, folded or open."""
     if not text:
         return ''
-    markup, outline = bend(text, prefix, module)
-    item = lambda k, name, n: A['outline_item'].format(href=e(f'#{prefix}-L{n}'), kind=e(k), name=e(name))
-    defs = [x for x in outline if x[0] == 'def']
-    toc = ''.join(item(*x) for x in outline if x[0] in ('form', 'law', 'rule', 'want')) + \
-        (A['outline_defs'].format(n=len(defs), items=''.join(item(*x) for x in defs)) if defs else '')
+    markup, _ = bend(text, prefix, module)
     return A['source_block'].format(open=' open' if open_ else '', title=e(title), lines=len(text.rstrip('\n').split('\n')), note=note,
-                                    outline=A['outline'].format(items=toc) if toc else '', prefix=e(prefix), code=markup)
+                                    outline=outline_of(text, prefix), prefix=e(prefix), code=markup)
+
+
+NEAR = 20  # a layer differing from the entry module in at most this many lines is shown as those lines
+
+
+def near_diff(entry, text):
+    """The lines by which `text` differs from `entry`, as a diff, when they are few (`NEAR`); else None."""
+    import difflib
+    if not entry:
+        return None
+    lines = [l for l in difflib.unified_diff(entry.rstrip('\n').split('\n'), text.rstrip('\n').split('\n'), 'the entry module', 'this layer', lineterm='', n=0)]
+    changed = sum(1 for l in lines if l[:1] in '+-' and not l.startswith(('+++', '---')))
+    return ('\n'.join(lines), changed) if changed <= NEAR else None
 
 
 # ---- the door graph: the host's ways laid out in columns, a column a step from the commonplace
@@ -364,29 +383,43 @@ def workshop(obj, edit, signed_in):
 
 
 def inspector(obj, who, view, inspected, *, stranger=None, rules_=(), wants_=(), entries=(), kinds=(), did=None, town='',
-              components=(), body=None, module_names=(), edit=None):
+              components=(), body=None, module_names=(), edit=None, shown=None):
     """/inspect/<id>: everything the host can say of a thing, beside its Bend. `inspected` world-inspect for the reader
     (with source), `stranger` for a newcomer; `kinds` its kind chain; `components` its layers as madeFrom lists them
-    [(at, body)], `body` a kind's body as text; `module_names` the modules the town holds (for links)."""
+    [(at, body)], `body` a kind's body as text; `module_names` the modules the town holds (for links). The entry module is
+    set in type, and a layer or body beside it when `shown` names it (`?bend=layer0`, `body`); else its outline, or, when it is the
+    entry module's but for a few lines, those lines (obend 10-14: /inspect/room/14 was 429 KB, its 659 lines set in type
+    twice and once more in the workshop's box). `shown` 'none' sets nothing in type (a panel's fetch of its spells)."""
     s = state_of(view)
     names = set(module_names)
-    layers = {f'Layer{c[0]}': f'#src{c[0]}-L1' for c in components}
+    drawn = lambda key: key == shown or (key == 'entry' and shown != 'none')  # the entry always, so its anchors hold
+    page_of = lambda key: '' if drawn(key) else f'?bend={key}'
+    layers = {f'Layer{c[0]}': f'{page_of(f"layer{c[0]}")}#src{c[0]}-L1' for c in components}
     module = lambda name: layers.get(name) or (f'/lib/{quote(name)}' if name in names else None)
     source = inspected.get('source') or ''
     methods = {m.get('name') for m in inspected.get('methods') or [] if isinstance(m, dict)}
     blocks, has = [], set()
+
+    def part(key, title, text, prefix, note=''):
+        if drawn(key):
+            return source_block(title, text, prefix, module, open_=key == 'entry' or key == shown, note=note)
+        lines = len(text.rstrip('\n').split('\n'))
+        near = near_diff(source, text) if key != 'entry' and shown != 'none' else None
+        if near:
+            return A['source_diff'].format(title=e(title), lines=lines, n=near[1], diff=e(near[0]), href=e(f'?bend={key}#{prefix}'))
+        return A['source_folded'].format(title=e(title), lines=lines, note=note, outline=outline_of(text, prefix, page_of(key)),
+                                         href=e(f'?bend={key}#{prefix}'))
     # The entry module first (what runs on top), then each layer below it, then a kind's body.
     if source:
-        blocks.append(source_block('what it runs: its entry module', source, 'src', module))
+        blocks.append(part('entry', 'what it runs: its entry module', source, 'src'))
         _, outline = bend(source, 'src')
         has |= {f'{k}-{n}' for k, n, _ in outline}
     for at, text in sorted(components, reverse=True):
         if text.strip() == source.strip():
             continue
-        blocks.append(source_block(f'layer {at} (Layer{at}), laid by its kind', text, f'src{at}', module, open_=False))
+        blocks.append(part(f'layer{at}', f'layer {at} (Layer{at}), laid by its kind', text, f'src{at}'))
     if body:
-        blocks.append(source_block('the body this kind lays on what it makes', body, 'body', module, open_=False,
-                                   note=A['body_note']))
+        blocks.append(part('body', 'the body this kind lays on what it makes', body, 'body', note=A['body_note']))
     maker = by(inspected.get('maker'), s.get('makerHandle'), town) if inspected.get('maker') else None
     owner = by(s.get('owner'), s.get('ownerHandle') or s.get('makerHandle') if s.get('owner') == inspected.get('maker') else s.get('ownerHandle'), town) \
         if isinstance(s.get('owner'), str) and s.get('owner') else None
@@ -397,7 +430,7 @@ def inspector(obj, who, view, inspected, *, stranger=None, rules_=(), wants_=(),
              ('state', e(f"{inspected.get('stateBytes', '?')} bytes")), ('views', e(', '.join(inspected['views']))) if inspected.get('views') else None,
              ('retired', 'yes') if inspected.get('retired') else None]
     fields = ''.join(A['field'].format(name=e(k), value=field_value(v)) for k, v in s.items())
-    receipts = PAGES['receipts'].format(n=len(entries), slips=''.join(slip(x, did) for x in entries)).replace('<details class="more">', '<details class="more" open>') if entries else ''
+    receipts = PAGES['receipts'].format(n=len(entries), slips=''.join(slip(x, did) for x in entries)) if entries else ''  # folded, as fields are
     return page(f'inspect {obj}', who, A['inspector'].format(
         name=e(s.get('head') if isinstance(s.get('head'), str) and s.get('head') else obj), obj=e(obj),
         read=e(href('o', obj)), go=e(href('play' if who else 'o', obj)),
@@ -406,7 +439,7 @@ def inspector(obj, who, view, inspected, *, stranger=None, rules_=(), wants_=(),
         who=who_can(inspected.get('methods') or [], (stranger or {}).get('methods') or inspected.get('methods') or [], bool(who)),
         laws=laws(inspected.get('laws') or [], has), rules=rules(rules_, wants_, town),
         fields=A['fields'].format(items=fields) if fields else '',
-        source=''.join(blocks) or A['source_none'], workshop=workshop(obj, edit, bool(who)),
+        source=''.join(blocks) or A['source_none'], workshop=workshop(obj, edit, bool(who)) if who else (A['workshop_closed'] if edit and edit.get('text') else ''),
         receipts=receipts), layout='atlas inspect')
 
 

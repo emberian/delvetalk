@@ -161,14 +161,21 @@ pair for retry. Keep both files and `answers/` in backups. ATPROTO §2 gives the
 answered `unreached`) is dropped 15 minutes after it was written, to an 8-byte URI hash so the feed never offers it
 again, and a skipped reply also leaves a (uri, author, replyTo) stub for 3 days, the ancestor `reach` is shown; a post
 that reached a card or was drafted, turned or answered is kept whole 7 days after it was written, then dropped to its
-hash; a post awaiting an interpretation, a draft or a mention turn is kept until answered. Every author seen stays
+hash; a post awaiting an interpretation or a draft is kept until answered. Every author seen stays
 (`authors`: an @handle resolves long after their posts are gone). Ages are measured on the newest post observed, never
 later than the clock. A day of 6,000 observed posts adds about 0.5 MB (the week's reached posts accumulate to about 4 MB
 and then stop), where the whole feed was 12 to 15 MB a day; carry copies the file through SQLite's backup, so a carry is
 that size. Dropped posts are gone from the hand's inbox, `retry` and `reply`, and from `measure` and `watch` counts.
-An old store is migrated on its first open: authors rebuilt, `posts.body` emptied, the file compacted. A mention of a
-resident is turned on the resident's avatar only for a post the host reached, carrying the post's URI and its first 280
-characters (the avatar's own bound).
+An old store is migrated on its first open: authors rebuilt, `posts.body` emptied, the file compacted. Whoever a post
+mentions hears it, reached or not: each mention of an arrived resident is queued in the store as its note (`mentions`:
+the author, their handle, the post's URI, its first 280 characters, the avatar's own bound), and once a resident's
+oldest note is an hour old (`bridge.MENTION_MINUTES`) the town tells their avatar every note queued since in one turn
+(`<did>.mentions {notes}` as the opener, 16 notes a turn), so the journal holds a turn per resident an hour. Edition 19
+told only posts that reached a card, and gsb's avatars heard nothing from its 09:07 carry on (2026-10-14). Such posts
+are heard again by `python3 -m transport bridge --hear-again <ISO>` (with the bridge stopped): it pages the town feed
+back to that time and queues, due at once, the mentions of every post there that the bridge skipped and told no one
+of; it asks reach nothing and turns nothing, and the next run tells them, one turn a resident. A resident told more
+than 64 notes keeps the newest 64 (the inbox's bound).
 
 `State` also hands out the host clients (`host()`, `root()`),
 `write` (atomic, the one `write_atomic`), the outbox reads, the daemon loop

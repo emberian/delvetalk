@@ -21,6 +21,7 @@ import secrets
 import sqlite3
 import threading
 import time
+import unicodedata
 import urllib.parse
 from transport.delve import POST, Failure
 from transport.state import NAME
@@ -37,12 +38,21 @@ NONCE = re.compile(r'[\x21-\x7e]{1,64}\Z')  # an arrival's nonce: printable ASCI
 INVITE_DAYS = 7  # how long an invitation's code may be accepted unless the operator says otherwise
 NEWEST = 20  # posts listed when a claim looks for its word
 
+def suggested_name(typed):
+    """The name the door would take nearest to what a person typed (`Ember A.` -> `ember-a`, `Zoë` -> `zoe`): lowercase
+    ASCII letters and digits, each other run a hyphen, from its first letter, at most 32; None when nothing is left."""
+    plain = unicodedata.normalize('NFKD', typed if isinstance(typed, str) else '').encode('ascii', 'ignore').decode().lower()
+    name = re.sub(r'[^a-z0-9]+', '-', plain).lstrip('-0123456789')[:32].rstrip('-')
+    return name if GUEST_NAME.fullmatch(name) else None
+
+
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS challenges(nonce TEXT PRIMARY KEY, handle TEXT, did TEXT, text TEXT,
   credential TEXT, created REAL, expires REAL, attempts INTEGER NOT NULL DEFAULT 0,
   state TEXT NOT NULL, uri TEXT, cid TEXT, verified REAL, revoked REAL, address TEXT, ends REAL);
 CREATE TABLE IF NOT EXISTS invitations(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, principal TEXT, code TEXT NOT NULL, note TEXT,
   created REAL, expires REAL, state TEXT NOT NULL, accepted REAL, revoked REAL, used REAL);
+CREATE TABLE IF NOT EXISTS keys(name TEXT PRIMARY KEY, value BLOB NOT NULL);
 '''
 
 
@@ -197,7 +207,12 @@ class Identity:
             if column not in invited:
                 self.db.execute(f'ALTER TABLE invitations ADD COLUMN {column} TEXT')
         self.db.execute('CREATE UNIQUE INDEX IF NOT EXISTS invitations_proof ON invitations(proof) WHERE proof IS NOT NULL')
-        self.secret = secrets.token_bytes(32)  # signs this process's arrival challenges; a restart voids the unanswered ones
+        # The door's key, made once and kept: it signs arrival challenges (`secret`) and binds a browser's forms to it
+        # (`csrf_secret`, transport/http.py), so a page drawn before a restart (a config change, a carry) still works.
+        # obend 10-14: each restart voided every open form, refused 403, and every unanswered challenge, refused 400.
+        self.db.execute('INSERT OR IGNORE INTO keys(name, value) VALUES(?, ?)', ('door', secrets.token_bytes(32)))
+        door = self.db.execute("SELECT value FROM keys WHERE name='door'").fetchone()[0]
+        self.secret, self.csrf_secret = (hmac.new(door, use, 'sha256').digest() for use in (b'arrive', b'csrf'))
         self.st = st
         self.client, self.origin, self.clock = client, st.config.origin.rstrip('/'), clock
         self.lock = threading.Lock()  # the one connection is shared by the front's threads; every use of it holds this

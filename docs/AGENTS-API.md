@@ -77,6 +77,9 @@ A crossing: `count(new.lines) == 3 and changed(count(new.lines))`; a period: `% 
 Count only rains with `count(new.lines where verb == "rain")`. Comparisons: `== != < <= > >=`.
 `changed(TERM)` takes state, no request facts; missing readings are false. Wants have no old state and refuse it.
 `changed(new.F.COL) by TERM` judges changed rows (LAW §8).
+A mark is a fact a thing's own verb makes: a door's first knock marks it `open`, a bell's ring `rung`, an errand's
+payment `done`; a room makes none. Read one on the thing that has it (`"open" in "door/1".marks.name`), or make a
+lantern with `door:` that lights when its door opens.
 `verbs`, `rules` and `wants` read them back with who placed each and when it last fired; `ungrow`, `unrule` and `unwant`
 take one off. A kind's owner places `delvetalk kind/lamp rule / name: heard / for: things / when: request.method == "write" / then: delvetalk {new.maker} note / text: {request.object} heard`: every lamp acts as itself.
 `for: things` also targets `want`, `unrule` and `unwant`; omitted, it targets the kind itself. `rules`/`wants` show
@@ -198,10 +201,18 @@ a card carries `_actions`: `POST $O/world/bell/2/rain` with `{intent, fields}` r
 For `rescene`, `fields: {"spween":"```spween\n=== start\nA jar.\n```"}` sets `=== start\nA jar.`.
 Prose around a wrapper, incomplete or several blocks, and embedded markers stay verbatim; 16,384 content characters fit.
 
+## Intents
+
+An `intent` names one turn of yours, for good: the first answer it gets is its answer. The same request under it again
+is that answer again, marked `replayed: "already answered at entry N…"`, and nothing runs; a different request under it
+is refused `duplicateIdentity`, naming that entry. A refusal spends its intent too (`spent` says so), unless its class is
+transient (below): a corrected spell goes under a new intent. Any unique text will do: `rain-1`, `rain-2`.
+
 ## A refusal
 
     curl -s -X POST $O/world/lamp/1/write -H "Authorization: Bearer $T" -d '{"intent": "w-1", "fields": {"text": "mine now"}}'
     200 {"status": "refused", "class": "lawRefused", "line": "§ refused maker: only its maker writes",
+         "spent": "intent w-1 is spent on this refusal: send the corrected spell under a new intent",
          "offers": [], "receipt": {"slug": "novas-sumiv", "height": 89}}
 
 A refusal is a receipt, not an HTTP error: `refused <clause>: <reading>`, and nothing was written. A card's own refusal

@@ -322,6 +322,7 @@ def caller_view(reply, preview=False):
     status = 'previewed' if preview else reply.get('status', out.get('tag', 'refused'))
     line = ('would be ' + (reply.get('line') or 'refused moved') if reply.get('class') == 'moved' else
             would_line(reply) if rc else str(reply.get('message') or reply.get('status'))) if preview else reply.get('line') or turn_line(reply)
+    line = '\n'.join([line, *(reply[k] for k in ('replayed', 'spent') if reply.get(k) and not preview)])  # what the intent is now
     outcome = {'status': status, 'line': line,
                **{k: out[k] for k in ('class', 'clause', 'reason') if isinstance(out.get(k), str)},
                **({'class': reply['class']} if reply.get('class') else {}),
@@ -381,7 +382,8 @@ def retained_reply(host, principal, intent, transient):
     outcome = rc.get('outcome') or {}
     if outcome.get('tag') == 'refused' and outcome.get('class') in transient:
         return None
-    reply = {**got, 'status': outcome.get('tag', 'refused'), 'object': (rc.get('roots') or [{}])[0].get('object')}
+    reply = {**got, 'status': outcome.get('tag', 'refused'), 'object': (rc.get('roots') or [{}])[0].get('object'),
+             'replayed': f"already answered at entry {rc.get('height')}: this intent's answer again, and nothing ran; a new turn needs a new intent"}
     if reply['status'] != 'suspended':
         reply['offers'] = [o for o in paged(host, {'op': 'world-offers', 'principal': principal, 'after': rc['height'] - 1}, 'offers')
                            if (o.get('from') or o.get('identity') or {}).get('intent') == intent]
@@ -457,6 +459,16 @@ def preview_text(reply, handles=None, host=None, request=None):
         out.append('if: ' + ', '.join(f"{o} v{r['version']}" + (f"/b{r['behaviour']}" if 'behaviour' in r else '')
                                     for o, r in roots.items() if r.get('version') is not None))
     return '\n'.join(out) + '\n'
+
+
+def tried_object(reply, reached):
+    """The card a preview is drafted under, which its post is registered against (replies under it reach that card): the
+    first card its acts would touch, else the card reached. A `delvetalk try` reaches the word `try`, which names no object."""
+    if not reply.get('tried'):
+        return reached
+    turns = reply.get('turns') if reply.get('status') == 'spells' else [reply]
+    roots = [r['object'] for t in turns for r in ((t.get('receipt') or {}).get('roots') or [])]
+    return roots[0] if roots else 'commonplace'
 
 
 def lookup_text(reply, handles=None):
@@ -573,38 +585,74 @@ def offer_drafts(st, host):
 
 
 MAX_HOPS = 32  # the host's `reachHops`: the ancestors passed with a post
-NOTE_TEXT = 280  # the characters of a post an avatar keeps of a mention (`textTake(input.text, 280n)`, world/objects/Avatar.obend `mentioned`); the host publishes no bound for it
-def mention_turns(st, host, obs, authors, handles, addressed):
-    """A mention is addressed to the mentioned: one turn per mention (a facet's DID, or an @handle that is a known
-    author) to the mentioned principal's avatar, `<did>`.receive {text, post} under the author with reach `mentioned`:
-    the avatar keeps it as a note, and the host never reads it as a spell (its spell lines are the author's, routed to the
-    cards they name). Sent only for a post the host's reach answered `reached` (the caller's), once per post, and carrying
-    the post's URI and its first NOTE_TEXT characters, which is all the avatar keeps. Only an arrived principal has an
-    avatar: a mentioned principal the observer has seen is arrived first; one it has not is skipped, with a note in
-    skipped.txt. Only the first `addressed` mentions (the host's `mentionsAddressed`) are turned. A turn the host gave
-    no receipt for stays owed (`observe.owed`) and is sent again next run."""
-    done = st.words(st.mentioned)
+NOTE_TEXT = 280  # the characters of a post an avatar keeps of a mention (`textTake(…, 280n)`, world/objects/Avatar.obend `mentions`); the host publishes no bound for it
+MENTION_MINUTES = 60  # how long a resident's oldest queued note waits before the town tells their avatar the notes queued since
+NOTES_PER_TURN = 16  # the notes one `mentions` turn carries (with NOTE_TEXT, an argument under 16 KB); the rest wait for the next
+
+
+def queue_mentions(st, host, obs, authors, handles, addressed, at):
+    """Whoever a post mentions hears it, whether or not it reaches a card: each of the first `addressed` mentions (the
+    host's `mentionsAddressed`; a facet's DID, or an @handle that is a known author) other than the author themself is
+    queued as a note (observe.queue) for the mentioned principal's avatar. Only an arrived principal has an avatar: a
+    mentioned principal the observer has seen is arrived first; one it has not is skipped, with a note in skipped.txt."""
+    if obs['uri'] in st.words(st.mentioned):  # told already: a post retried after a failed turn is not heard twice
+        return
     dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:addressed]) if d))
-    if obs['uri'] in done:
-        observe.pay(st, obs['uri'])
-        return False
-    if not dids:
-        return False
     author = obs['author']
-    register(st, host, author['did'], author['handle'])
-    fields = [{'name': 'text', 'value': {'tag': 'label', 'value': obs['text'][:NOTE_TEXT]}}, {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]
-    replies = []
+    heard = []
     for did in dids:
-        if did not in handles or not register(st, host, did, handles[did]):
-            st.append(st.skipped, f"{obs['uri']}#mention:{did}")  # not arrived, so no avatar: nothing to send
+        if did == author['did']:
             continue
-        replies.append(host.send({'op': 'world-turn', 'principal': author['did'], 'object': did, 'method': 'receive',
-                                  'argument': {'tag': 'record', 'fields': fields}, 'reach': 'mentioned',
-                                  'identity': f"{obs['uri']}#mention:{did}"}))
-    if all('receipt' in r for r in replies):  # else retry next run: the host answers a repeated identity with its first receipt
-        st.append(st.mentioned, obs['uri'])
-        observe.pay(st, obs['uri'])
-    return bool(replies)
+        if did not in handles or not register(st, host, did, handles[did]):
+            st.append(st.skipped, f"{obs['uri']}#mention:{did}")
+            continue
+        heard.append(did)
+    if heard:
+        register(st, host, author['did'], author['handle'])
+        observe.queue(st, obs['uri'], author['did'], author['handle'], obs['text'][:NOTE_TEXT], heard, at)
+
+
+def hear_again(st, host, observer, since, now=None):
+    """The operator's replay of mentions an edition queued none of (edition 19 heard only posts that reached a card):
+    every post of the feed since `since` that the bridge skipped and has told no one of has its mentions queued, due at
+    once, as its first run would have. Reach is never asked and nothing is turned here; the next run tells them, one
+    turn a resident, and a post is never told twice (mentioned.txt). -> the posts queued."""
+    at = time.time() if now is None else now
+    skipped, told = st.words(st.skipped), st.words(st.mentioned)
+    handles, authors = {}, {}
+    for did, handle in observe.authors(st):
+        handles[did], authors[handle.lower()] = handle, did
+    addressed, queued = None, []
+    for obs in sorted(observer.again(since), key=lambda o: (o['createdAt'], o['uri'])):
+        if not obs['mentions'] or obs['uri'] not in skipped or obs['uri'] in told or obs['uri'] in queued:
+            continue
+        handles.setdefault(obs['author']['did'], obs['author']['handle'])
+        addressed = addressed or host.send({'op': 'bounds'})['host']['mentionsAddressed']
+        queue_mentions(st, host, obs, authors, handles, addressed, at - MENTION_MINUTES * 60)
+        queued.append(obs['uri'])
+    return queued
+
+
+def tell_mentions(st, host, at):
+    """The town tells each resident whose oldest queued note is MENTION_MINUTES old what mentioned them: one turn as the
+    opener (the town, `context.town`) on their avatar, `mentions {notes}`, at most NOTES_PER_TURN notes a turn, each
+    `{from, handle, text, post}`. The journal holds a turn per resident an hour, never one per post (gsb journaled 1,531
+    a day, one per mention). A turn the host gave no receipt for stays queued and is sent again under the same identity;
+    -> the posts all of whose notes were told, each also listed in mentioned.txt."""
+    done = []
+    for did, notes in observe.due(st, at - MENTION_MINUTES * 60).items():
+        for k in range(0, len(notes), NOTES_PER_TURN):
+            batch = notes[k:k + NOTES_PER_TURN]
+            identity = 'mentions:' + did + ':' + hashlib.sha256('\n'.join(n['uri'] for n in batch).encode()).hexdigest()[:24]
+            argument = typed({'notes': [{'from': n['author'], 'handle': n['handle'], 'text': n['text'], 'post': n['uri']} for n in batch]})
+            reply = host.send({'op': 'world-turn', 'principal': st.config.opener, 'object': did, 'method': 'mentions',
+                               'argument': argument, 'identity': identity})
+            if 'receipt' not in reply:  # else again next run: the host answers a repeated identity with its first receipt
+                break
+            for uri in observe.told(st, [n['seq'] for n in batch]):
+                st.append(st.mentioned, uri)
+                done.append(uri)
+    return done
 
 
 def reach(host, obs, known):
@@ -718,18 +766,18 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         handles[did], authors[handle.lower()] = handle, did
     for did, handle in handles.items():  # a principal arrives at their first observed post, whatever its kind
         register(st, host, did, handle)
-    bound = []
+    bound, at = [], (time.time() if now is None else now)
 
     def mention(obs):
         if not bound:
             bound.append(host.send({'op': 'bounds'})['host']['mentionsAddressed'])
-        if mention_turns(st, host, obs, authors, handles, bound[0]):
-            mentioned.append(obs['uri'])
+        queue_mentions(st, host, obs, authors, handles, bound[0], at)
 
-    mentioned, owed = [], observe.owed(st)
+    for uri in observe.owed(st):  # an edition-19 store's reached post whose mention turns had no receipt
+        if uri in known and known[uri].get('mentions'):
+            mention(known[uri])
+        observe.pay(st, uri)
     for obs in observed:
-        if obs['uri'] in owed and obs['mentions']:  # reached in an earlier run, its mention turns unsent
-            mention(obs)
         if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists() or \
                 (obs['kind'] == 'request' and answer_path(st, request_source(obs)).exists()):
             continue
@@ -743,6 +791,8 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         except Unread as e:
             failed.append({'uri': obs['uri'], 'message': str(e)})
             continue
+        if obs['mentions'] and not asked:  # whoever a post mentions hears it, reached or not, once: reach is asked once a post
+            mention(obs)
         if target is None and asked:
             write_answer(st, request_source(obs), {'outcome': {'status': 'unreached', 'line': 'no card reached: a call is a spell, `delvetalk <card> <verb>` '
                                                                              'and its field lines, or {object, verb, fields}'}})
@@ -751,9 +801,6 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if target is None:
             st.append(st.skipped, obs['uri'])
             continue
-        if obs['mentions'] and not asked and obs['uri'] not in owed:  # a post the host reached is heard by whom it mentions; one it did not, by no one
-            observe.owe(st, obs['uri'])
-            mention(obs)
         obj, slot, how = target
         handle, did = obs['author']['handle'], obs['author']['did']
         register(st, host, did, handle)
@@ -792,7 +839,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if reply.get('tried') or reply.get('class') == 'moved':  # a preview, or an act whose `if` moved: nothing journaled
             st.new_draft(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
-                'object': obj, 'slot': slot, 'receipt': None, 'preview': bool(reply.get('tried')), 'posted': False,
+                'object': tried_object(reply, obj), 'slot': slot, 'receipt': None, 'preview': bool(reply.get('tried')), 'posted': False,
                 'text': preview_text(reply, handles, host, request) if reply.get('tried') else public_reply(reply, host)['line'] + '\n'})
             done.append(obs['uri'])
             continue
@@ -850,6 +897,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot, 'height': reply['receipt']['height']})
         done.append(obs['uri'])
+    mentioned = tell_mentions(st, host, at)
     forget(st, rows, now)
     for _ in range(rounds):
         if not host.send({'op': 'world-pending'}).get('count'):
@@ -876,6 +924,12 @@ def command(st, a, out):
     """`bridge`: the world's row names delve.town, an owner's Zulip channel, or the local feed alone;
     one step with `--once`, else a step every `poll` seconds."""
     host, row = st.host(), st.bridge()
+    if getattr(a, 'hear_again', None):
+        try:
+            out.write(canonical({'queued': hear_again(st, host, delve_observer(st, None), a.hear_again, a.now)}) + '\n')
+        finally:
+            host.close()
+        return 0
     since = observe.start_cursor(st, a.since, a.now)
     if row['transport'] == 'zulip':
         from transport import zulip

@@ -127,17 +127,17 @@ class Inhabitants(test_scenarios.Arc):
 
     def test_a_hand_making_inhabitants_places_within_its_own_share(self):
         """Acting as itself mints no hand: a resident's inhabitants place their rules within the resident's share of a
-        thing (four), so three regulars made by one hand leave the third inactive, saying why; the town's own are the
-        tide owner's and take no share of the others'."""
-        for n in range(3):
+        thing (eight on the town's tide), so five regulars made by one hand leave the fifth inactive, saying why; the
+        town's own are the tide owner's and take no share of the others'."""
+        for n in range(5):
             self.admitted(KIM, "kind/regular", "delvetalk kind/regular make / name: a regular / haunts: porch / tide: tide / hour: %d" % (5 + n))
         self.deliver()
         made = sorted({r["owner"] for r in self.rules("tide") if r["owner"].startswith("@regular/")})
-        self.assertEqual(len([r for r in self.rules("tide") if r["owner"].startswith("@regular/")]), 4, made)
-        third = self.card(self.say(KIM, "regular/3", ""))
+        self.assertEqual(len([r for r in self.rules("tide") if r["owner"].startswith("@regular/")]), 8, made)
+        third = self.card(self.say(KIM, "regular/5", ""))
         self.assertIn("Inactive: its rule on tide was refused", third)
         self.assertIn("placedPerHand", third)
-        self.assertIn("Its maker arms it again: delvetalk regular/3 arm", third)
+        self.assertIn("Its maker arms it again: delvetalk regular/5 arm", third)
 
     def test_a_legacy_phrase_haunt_has_no_walk_spell_and_its_owner_can_repair_it(self):
         """Refuted by the stored haunt `wherever a word was just finished` becoming a walk spell,
@@ -456,22 +456,22 @@ class Inhabitants(test_scenarios.Arc):
     def test_the_tide_is_the_towns_and_holds_every_hands_share_past_the_others_pool(self):
         """The live review of 2026-10-14, H1: obend's tide held 15 rules in four hours, six of them three residents'
         hourly rules, and the others' pool of 24 would have refused every resident (and the refresh's inhabitants) within
-        a day. On a thing the opener owns each hand brings its own four: seven hands place 28 (past 24), the town's
-        inhabitants count as the tide owner's and are armed again after, and the fifth of one hand is refused by its own
+        a day. On a thing the opener owns each hand brings its own eight: seven hands place 56 (past 24), the town's
+        inhabitants count as the tide owner's and are armed again after, and the ninth of one hand is refused by its own
         share, never by a full tide. Refuted by a resident's rule on the tide refused `placedByOthers`."""
         hands = ["did:plc:tidehand%016d" % n for n in range(7)]
         for n, did in enumerate(hands):
             self.town.send(op="world-arrive", principal="transport", did=did, handle="tide%d.delve.town" % n)
-            for k in range(4):
+            for k in range(8):  # placedPerHandOnTownThing
                 self.admitted(did, "tide", "delvetalk tide rule / name: h%dr%d / when: request.method == \"tick\" and new.ticks %% 24 == %d / then: delvetalk me note / text: h%d" % (n, k, k, n))
         others = [r for r in self.rules("tide") if r["owner"] in hands]
-        self.assertEqual(len(others), 28)
+        self.assertEqual(len(others), 56)
         town = [r for r in self.rules("tide") if r["owner"].startswith("@station/")]
         self.assertGreaterEqual(len(town), 4)
         self.admitted(OPENER, REGULAR, "delvetalk %s arm" % REGULAR)
         self.deliver()
         self.assertEqual(len([r for r in self.rules("tide") if r["owner"] == "@" + REGULAR]), 2)
-        fifth = self.say(hands[0], "tide", "delvetalk tide rule / name: h0r4 / when: request.method == \"tick\" / then: delvetalk me note / text: h0")
+        fifth = self.say(hands[0], "tide", "delvetalk tide rule / name: h0r8 / when: request.method == \"tick\" / then: delvetalk me note / text: h0")
         self.assertEqual((fifth["status"], fifth["receipt"]["outcome"]["class"]), ("refused", "capacity"), fifth)
         self.assertIn("placedPerHand", fifth["receipt"]["outcome"]["reason"])
         self.assertEqual(self.town.send(op="bounds")["host"]["placedOnTownThing"], 512)
@@ -583,6 +583,166 @@ class Inhabitants(test_scenarios.Arc):
         self.assertEqual(self.lines(BEE)[-1]["text"], "flew in to the jar of honey")
 
 
+class Stranded(test_scenarios.Arc):
+    """Things made before edition 19 with a phrase where a field now names an object (obend's porter, attendant and
+    echo board, stranded by the 09:00 carry and refused every hour since: #1971 to #1973). The town repairs each from
+    `kinds repair` (a carry's refresh, and the operator's act on a live town): a phrase the town can name one place by
+    is set to it and the thing arms again; one it cannot is marked, told once to its maker and armed quietly after, and
+    its kind's want lists it for the town until its maker sets it."""
+    deliver, seen, admitted, rules, objects, lines = (Inhabitants.deliver, Inhabitants.seen, Inhabitants.admitted, Inhabitants.rules,
+                                                      Inhabitants.objects, Inhabitants.lines)
+
+    def setUp(self):
+        test_scenarios.Arc.setUp(self)
+        made = genesis.gas_station(self.town.client, OPENER)
+        self.assertTrue(all(m["status"] in ("created", "admitted") for m in made), made)
+        self.deliver()
+
+    def hand(self):
+        from transport import hand
+        from transport.config import Config
+        from transport.state import State
+        st = State(self.town.state, config=Config(root_socket=self.town.process.root, host_socket=self.town.process.sock, opener=self.town.opener,
+                                                  origin="https://obend.example"))
+        return hand.Hand(st, self.town.client, token="t")
+
+    def legacy(self, obj, **phrases):
+        fields = self.field(obj, "fields")["items"]
+        name = lambda row: next(f["value"]["value"] for f in row["fields"] if f["name"] == "name")
+        value = listing(record(name=label(name(row)), value=label(phrases[name(row)])) if name(row) in phrases else row for row in fields)
+        got = self.town.send(op="world-root", principal=OPENER, reason="restore a pre-edition-19 phrase",
+                             act={"kind": "set", "object": obj, "field": "state.fields", "value": value})
+        self.assertEqual(got["status"], "root", got)
+
+    def made(self, who, name, kind="inhabitant", haunts="station"):
+        before = set(self.objects())
+        self.admitted(who, "kind/" + kind, "delvetalk kind/%s make / name: %s / haunts: %s / tide: tide" % (kind, name, haunts))
+        [obj] = set(self.objects()) - before
+        return obj
+
+    def var(self, obj, name):
+        return next((f["fields"][1]["value"]["value"] for f in self.field(obj, "vars")["items"] if f["fields"][0]["value"]["value"] == name), None)
+
+    def marks(self, obj):
+        rows = self.field(obj, "marks")["payload"]["fields"][0]["value"]["items"]
+        return [next(f["value"]["value"] for f in r["fields"] if f["name"] == "name") for r in rows]
+
+    def settle_all(self):
+        got = self.turn(OPENER, "kinds", "repair", record())
+        self.assertEqual(got["status"], "admitted", got)
+        self.assertEqual(got["receipt"]["outcome"].get("writes"), [], got)  # it reads forms and fields and sends
+        for _ in range(3):
+            self.deliver()
+        return got
+
+    def test_the_town_settles_what_it_can_name_and_strands_the_rest_quietly_with_one_note(self):
+        porter, hours, echo = (self.made(KIM, n) for n in ("the night porter", "the clock", "the echo board"))
+        parlour = self.made(KIM, "a second board", "planchette", "station/parlour")
+        self.legacy(porter, haunts="the doors of the station, one at a time")
+        self.legacy(parlour, haunts="The Parlour, by the lamp")
+        self.legacy(hours, tide="the hour, on the hour")
+        self.legacy(echo, haunts="wherever a word was just finished", tide="every sixth tick")
+        notes = len(self.inbox(KIM))
+        mine = lambda obj: {r["name"]: r["placed"] for r in self.rules("tide") if r["owner"] == "@" + obj}
+        before = mine(parlour)
+        self.settle_all()
+        self.assertEqual((self.var(porter, "haunts"), self.var(parlour, "haunts"), self.var(hours, "tide")), ("station", "station/parlour", "tide"))
+        for obj in (porter, parlour, hours):
+            self.assertIn("repaired", self.marks(obj))
+            self.assertNotIn("haunts nowhere you can walk to yet", self.card(self.say(KIM, obj, "")))
+        self.assertEqual(set(mine(parlour)), set(before))
+        self.assertTrue(all(mine(parlour)[n] > before[n] for n in before), "the board's rules on the tide placed again by its repair")
+        # the echo board: the tide is the town's one tide; its haunt names nothing the town can tell
+        self.assertEqual((self.var(echo, "tide"), self.var(echo, "haunts")), ("tide", None))
+        self.assertIn("stranded", self.marks(echo))
+        told = self.inbox(KIM)[notes:]
+        self.assertEqual(len(told), 1, told)
+        self.assertIn("delvetalk %s set / haunts: <an object id>" % echo, told[0][1])
+        wants = self.town.send(op="world-wanting", principal=OPENER, limit=64)["rows"]
+        self.assertIn((echo, "stranded"), [(w["object"], w["name"]) for w in wants])
+        hand = self.hand()
+        self.assertEqual([(r["kind"], r["object"]) for r in hand.requests() if r["kind"] == "stranded"], [("stranded", echo)])
+        again = hand.request("stranded", "repair", echo, 0)  # the town asks again: still nothing it can name, no second note
+        self.assertEqual(again["outcome"], "admitted", again)
+        # quiet after: its maker's hourly arm writes nothing and fires nothing, and tells no second note
+        height = self.town.send(op="world-status", principal=OPENER)["height"]
+        lines = self.lines(echo)
+        for _ in range(3):
+            armed = self.turn(KIM, echo, "arm", record())
+            self.assertEqual((armed["status"], armed["receipt"]["outcome"].get("writes")), ("admitted", []), armed)
+            self.deliver()
+        self.assertEqual(self.lines(echo), lines)
+        self.assertEqual(len(self.inbox(KIM)[notes:]), 1)
+        self.assertEqual(self.town.send(op="world-status", principal=OPENER)["height"], height + 3)
+        # its maker sets it: settled, the want closes, armed
+        self.admitted(KIM, echo, "delvetalk %s set / haunts: station/parlour" % echo)
+        self.deliver()
+        self.assertIn("repaired", self.marks(echo))
+        wants = self.town.send(op="world-wanting", principal=OPENER, limit=64)["rows"]
+        self.assertNotIn((echo, "stranded"), [(w["object"], w["name"]) for w in wants])
+
+    def test_several_places_named_settle_on_the_one_its_maker_owns_else_none(self):
+        mine = self.made(KIM, "the night hall")
+        theirs = self.made(GLM, "the night hall")
+        own, other = self.made(KIM, "a porter"), self.made(GLM, "a porter")
+        self.legacy(own, haunts="the night hall, by the door")
+        self.legacy(other, haunts="the night hall, by the door")
+        self.settle_all()
+        self.assertEqual(self.var(own, "haunts"), mine)
+        self.assertNotEqual(self.var(other, "haunts"), mine)
+        self.assertEqual(self.var(other, "haunts"), theirs)
+        nobody = self.made(OPENER, "nobody's")
+        self.legacy(nobody, haunts="the night hall")  # two halls, neither its maker's
+        self.settle_all()
+        self.assertIsNone(self.var(nobody, "haunts"))
+        self.assertIn("stranded", self.marks(nobody))
+
+    def test_a_thing_whose_object_field_has_no_lens_is_not_sent_a_repair(self):
+        """Refuted by obend's bond/2 (`amends`, an object field no body sets) sent a repair that finds nothing: seven
+        turns at each refresh for nothing (the edition-20 carry-check of obend, 2026-10-14). A lantern's `door` is such a
+        field: a phrase there sends no repair, and the refresh reads `current`."""
+        before = set(self.objects())
+        self.admitted(KIM, "kind/lantern", "delvetalk kind/lantern make / name: a lamp / door: station")
+        [lamp] = set(self.objects()) - before
+        self.legacy(lamp, door="the door of the station")
+        tried = self.town.send(op="world-try", principal=OPENER, object="kinds", method="repair", argument=record(), identity="try-repair")
+        kinds = [d for d in tried.get("delivered") or [] if str(d.get("object", "")).startswith("kind/")]
+        self.assertTrue(kinds, tried)
+        self.assertEqual(sum(int((d.get("result") or {}).get("value") or 0) for d in kinds), 0, kinds)
+        rows = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
+        self.assertEqual([r["status"] for r in rows if r.get("slot") == "repair"], ["current"])
+
+    def test_only_its_owner_or_the_town_settles(self):
+        obj = self.made(KIM, "a porter")
+        self.legacy(obj, haunts="the doors of the station")
+        refused = self.turn(GLM, obj, "repair", record())
+        self.assertEqual(refused["status"], "refused", refused)
+        self.assertIn("or the town repairs its fields", refused["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.outcome(self.turn(KIM, "kinds", "repair", record()))[0], "refused")
+        settled = self.turn(KIM, obj, "repair", record())
+        self.assertEqual(settled["status"], "admitted", settled)
+        self.assertEqual(self.var(obj, "haunts"), "station")
+        self.assertLess(settled["receipt"]["ticksUsed"], 250_000, settled["receipt"]["ticksUsed"])  # the whole town read in one turn
+        again = self.turn(KIM, obj, "repair", record())
+        self.assertIn("nothing to repair", self.card(again))
+
+    def test_a_carrys_refresh_repairs_what_the_town_can_name(self):
+        """The edition-19 carry left obend's porter with "the doors of the station, one at a time" (#1973): the refresh
+        a carry runs repairs it, as `kinds repair`; a second refresh repairs nothing again and writes nothing."""
+        porter = self.made(KIM, "the night porter")
+        self.legacy(porter, haunts="the doors of the station, one at a time")
+        rows = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
+        [row] = [r for r in rows if r.get("slot") == "repair"]
+        self.assertEqual(row["status"], "refreshed", row)
+        self.deliver()
+        self.assertEqual(self.var(porter, "haunts"), "station")
+        version = self.town.send(op="world-object", principal=OPENER, object=porter)["record"]["version"]
+        again = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
+        self.assertEqual([r["status"] for r in again if r.get("slot") == "repair"], ["current"])  # tried: nothing stranded, nothing journaled
+        self.deliver()
+        self.assertEqual(self.town.send(op="world-object", principal=OPENER, object=porter)["record"]["version"], version)
+
+
 class Refresh(test_scenarios.Arc):
     def test_a_town_with_the_station_and_without_its_inhabitants_is_given_them_by_its_refresh(self):
         """A carried town that has the station (made before its inhabitants were) is given them by `genesis.refresh`,
@@ -603,6 +763,36 @@ class Refresh(test_scenarios.Arc):
         self.assertEqual(len([r for r in self.town.send(op="world-rules", principal=OPENER, object="tide")["rows"] if r["owner"].startswith("@station/")]), 6)  # the planchette's two
         again = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
         self.assertEqual([r for r in again if r.get("reading", "").startswith("placed: ")], [])
+
+
+    def test_a_refresh_gives_the_station_kinds_the_text_the_image_ships(self):
+        """A town given the station before edition 20 keeps kind/inhabitant's old text: its rule does not answer
+        `repair` and it wants nothing stranded. Refuted by a refresh that leaves the station kinds' text as genesis gave
+        it then (the refresh read KINDS alone), or by a repaired board whose rules are not placed again."""
+        old = 'rule haunts "places its own rules where it haunts, as itself, when it is made, armed or its haunt or tide is set": ' \
+              'request.method == "made" or request.method == "arm" or request.method == "set" then delvetalk {request.object} haunt'
+        real = genesis.STATION_KINDS["inhabitant"]
+        genesis.STATION_KINDS["inhabitant"] = {**real, "text": old}
+        try:
+            made = genesis.gas_station(self.town.client, OPENER)
+        finally:
+            genesis.STATION_KINDS["inhabitant"] = real
+        self.assertTrue(all(m["status"] in ("created", "admitted") for m in made))
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+        self.seen = lambda reply: Inhabitants.seen(self, reply)
+        self.admitted = lambda who, card, text: Inhabitants.admitted(self, who, card, text)
+        board = Stranded.made(self, KIM, "a board", "planchette", "station/parlour")
+        Stranded.legacy(self, board, haunts="The Parlour, by the lamp")
+        placed = {r["name"]: r["placed"] for r in self.town.send(op="world-rules", principal=OPENER, object="tide")["rows"] if r["owner"] == "@" + board}
+        rows = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
+        self.assertIn({"object": "kind/inhabitant", "slot": ".law", "status": "refreshed"}, rows)
+        for _ in range(3):
+            self.town.send(op="world-deliver", principal="transport", limit=16)
+        now = {r["name"]: r["placed"] for r in self.town.send(op="world-rules", principal=OPENER, object="tide")["rows"] if r["owner"] == "@" + board}
+        self.assertEqual(set(now), set(placed))
+        self.assertTrue(all(now[n] > placed[n] for n in placed), (placed, now))
+        wants = self.town.send(op="world-wanting", principal=OPENER, limit=64)["rows"]
+        self.assertNotIn("stranded", [w["name"] for w in wants])
 
 
 if __name__ == "__main__":

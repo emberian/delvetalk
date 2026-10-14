@@ -76,8 +76,11 @@ def maxViewNodes : Nat := 4096
     (a store names a made thing's lineage bodies by CID, `Snapshot.knownLineage`, and keeps only the libraries in use,
     which a binary before it would misread; hob's prose is asked again, `attempted` reason `prose`); 19: lane/cx-night
     (declared text fields of direct requests unwrap one whole block or fence before bounds and execution; a direct
-    `publishPage` fills an omitted `page` with empty text when its input admits it). -/
-def replayEdition : Nat := 19
+    `publishPage` fills an omitted `page` with empty text when its input admits it); 20: lane/morningfix (a reading is not
+    stale for its own speaker's grow, the objects' `changedBy`; the spell grammar's new refusals and readings; eight
+    placed a hand on the town's own things; the commonplace's words come back as its `write`; a refusal that binds its
+    intent says `spent`; the world's `heads` read). -/
+def replayEdition : Nat := 20
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -143,6 +146,10 @@ def rulesPerObject : Nat := 32
 def wantsPerObject : Nat := 32
 /-- Rules, wants or grown verbs one hand other than the thing's owner (or the opener) may hold, each separately. -/
 def placedPerHand : Nat := 4
+/-- The same on a thing the town's opener owns (the tide, the station): the tide is the one place an hourly instrument
+    lives, and obend's busiest hand needed five there by its fourth hour (#1435; kestrel placed yue's under its own
+    name, #1440). On another's thing four stay, for the owner's room. -/
+def placedPerHandOnTownThing : Nat := 8
 /-- Of `rulesPerObject` (and `wantsPerObject`), what all other hands together may hold (the rest the owner's
     alone): a stranger's lines never take the owner's room
     (docs/review/astra-2026-10-12 world 6). -/
@@ -413,6 +420,11 @@ structure Object where
   version : Nat
   /-- The revision of its offers: each placing, reprogram or amendment advances it. -/
   behaviour : Nat := 0
+  /-- Who moved its offers last (`mover`), and the revision from which every move has been theirs (`moverFrom`):
+      a reading whose behaviour root only its own speaker's later placings moved is not stale for them
+      (`Ops.staleBehaviour`; obend's grow-then-write, #833 #1230 #1259 #1267). -/
+  mover : String := ""
+  moverFrom : Nat := 0
   /-- Its state as cells (`Turn.StateCells`): the scalar part and each declared relation's rows in
       key order, with the state's CID; `state` is the whole value they make. -/
   cells : Delvetalk.Turn.StateCells

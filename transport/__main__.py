@@ -65,6 +65,8 @@ def parser():
     p.add_argument('--once', action='store_true', help='one step, not a step every `poll` seconds')
     p.add_argument('--since', metavar='ISO', help='observe posts created at or after this time (a deliberate replay)')
     p.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default the wall clock)')
+    p.add_argument('--hear-again', metavar='ISO', help="queue the mentions of the feed's posts since this time that were skipped and told no one, "
+                                                       "due at once, and stop: the next run tells them (docs/OPERATIONS.md)")
     add('interpret', 'ask the model for each pending interpretation and submit its answer').add_argument('--once', action='store_true')
     p = add('automod', "screen residents' public texts after they are admitted and give the host the classifier's verdicts")
     p.add_argument('--once', action='store_true')

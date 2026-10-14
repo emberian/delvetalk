@@ -545,6 +545,9 @@ def memberRule : String := "membership in a field reads a field, request.subject
   request.method, request.verb, request.object or a text constant; a number is a member of [INT, …]"
 def sumRule : String := "+ adds numbers"
 def modRule : String := "a remainder is TERM % INT, a number by an integer at least 1"
+def naturalRule : String := "a law's numbers are plain integers: write 0, not Bend's 0n"
+def constantRule : String := "a clause is a condition on the write, and true and false are not terms; a law that always \
+  holds is no law: leave it out, and the record's own law still lets anyone cast its spells"
 def tokenRule : String := "a clause compares with ==, !=, <, <=, > and >=, adds with + and %, and combines with and, or, not, implies"
 def joinRule : String := "then ends a rule's condition (rule NAME \"reading\": EXPR then SPELL); asks ends a want's \
   (want NAME \"reading\": EXPR asks SPELL); a law refuses and never causes"
@@ -914,9 +917,20 @@ def parseUnary : Nat → List Tok → Except String (LawExpr × List Tok)
     | _ => parseComparison fuel toks
 end
 
+/-- What a hand writes first from Bend or from other languages, and the fragment does not take: a
+natural `0n` (obend 2026-10-14, yue's `new.shade >= 0n`) and `true` or `false` (claude's
+`law anyone "anyone may add a sign": true`). A field so named (`new.true`) is a field. -/
+def foreignWord : List Tok → Option (String × String)
+  | .int v :: .ident "n" :: _ => some ("`" ++ toString v ++ "n`", naturalRule)
+  | .sym "." :: .ident _ :: rest => foreignWord rest
+  | .ident w :: rest => if w == "true" || w == "false" then some ("`" ++ w ++ "`", constantRule) else foreignWord rest
+  | _ :: rest => foreignWord rest
+  | [] => none
+
 /-- A whole condition from its tokens. -/
 def parseCondition (toks : List Tok) : Except String LawExpr := do
   if toks.isEmpty then refuse "an empty condition" "a condition is one expression"
+  if let some (word, rule) := foreignWord toks then refuse word rule
   let (e, rest) ← parseImplies (8 * (toks.length + 2)) toks
   match rest with
   | [] => return e
@@ -1402,6 +1416,10 @@ theorem refusals_name_what_and_why :
     refusalOf "new.a < \"x\"" = some (refusal "`new.a < \"x\"`" textRule) ∧
     refusalOf "1 != 2" = some (refusal "`1 != 2`" compareRule) ∧
     refusalOf "new.a == 1 then delvetalk x ring" = some (refusal "`then`" joinRule) ∧
+    refusalOf "new.shade >= 0n" = some (refusal "`0n`" naturalRule) ∧
+    refusalOf "true" = some (refusal "`true`" constantRule) ∧
+    refusalOf "new.open == 1 or false" = some (refusal "`false`" constantRule) ∧
+    refusalOf "new.true == 1 and new.a >= 0n" = some (refusal "`0n`" naturalRule) ∧
     clauseRefusalOf "rule r: new.a == 1" = some (refusal "the end of the rule" ruleLineRule) ∧
     clauseRefusalOf "want w: new.a == 1" = some (refusal "the end of the want" wantLineRule) ∧
     clauseRefusalOf "want w: new.a == 1 then delvetalk x y" = some (refusal "`then`" joinRule) ∧

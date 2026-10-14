@@ -2,7 +2,7 @@ WORLD PROTOCOL (lib/World.obend). world.X::<T>(arg) yields Message{object: world
 Data}. Results: the call site's sum, plus refused{clause}; reads add denied{}.
 view<S>{object} -> viewed{version, state: S}  S: its state type or Data
 viewField<S>{object, field} -> viewed  one field, a field root; viewAt<S>{object, version} -> viewed
-viewDerived<T>{object, view} -> derived{version, value: T}  of its views()
+viewDerived<T>{object, view} -> derived{version, value: T}  of its views(); refused{clause, reading}
 card{object} -> carded{document}; inspect{object, source} -> inspected{pin, law, source, methods, laws,
     offered}; objects{prefix, after} -> listed{ids, more}
 check{package}, checkObject{object} -> checked{diagnostics}

@@ -9,4 +9,5 @@ END
 head: {name}
 voice: a gathering, counted in segments, that comes on whether anyone posts or not
 about: a clock that fills while a condition holds; moves when full
+text: want stranded "a field that names no place: the town repairs it, or its maker sets it": "stranded" in new.marks.name and not ("repaired" in new.marks.name) asks delvetalk {request.object} repair
 body: front

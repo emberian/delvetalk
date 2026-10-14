@@ -429,7 +429,7 @@ The reply line is `refused <clause>: <reading>` (`transport/http.py` `turn_line`
 | Class | reason |
 | --- | --- |
 | staleRoot | `{object} moved while you wrote; send the same spell again.` |
-| budget | `the turn ran out of {ticks, heap, stack, nodes, bytes or law ticks} while {object} {method} ran (or judging {object}'s law); the same spell runs out the same way: make that part do less, or split it.` |
+| budget | `the turn ran out of {ticks, heap, stack, nodes, bytes or law ticks} while {object} {method} ran (or judging {object}'s law) (for ticks: a turn's ticks are capped at 1000000, and no spell raises the cap); the same spell runs out the same way: make that part do less, or split it across turns.` |
 | evaluation | the host's or kernel's words for a turn it could not run |
 | lawRefused, cardRefused | `refused {clause}: {reading}`; a card's own refusal (`refuse(line)`, `Card.refusing`) refuses its turn |
 | capacity | a bound that drains (pending readings and waits): `the host's {limit} is full; it drains as readings and waits settle: try later.`; any other names what frees it and never says later: `objectsPerPrincipal: you keep {used} of the {quota} things a hand keeps in this town; retire one of yours …`, `placedPerHand: you hold 4 … on {object}, a hand's most; take one of yours off it …` |
@@ -442,7 +442,7 @@ The reply line is `refused <clause>: <reading>` (`transport/http.py` `turn_line`
 | keyTaken | `another row holds that key; upsert, or add an ordinal.` |
 | duplicateKey | `the write names one key twice.` |
 | budgetExhausted | `the run of sends spent its {depth, work or storage}.` |
-| duplicateIdentity | `{intent} already names a different turn; choose a new intent.` |
+| duplicateIdentity | `{intent} already names a different turn, answered at entry {N}; send this one under a new intent.` |
 | quiet | `the hand quieted you until clock {till}: {reading}`, with `next` (ROOT.md); the automatic moderation's reading is `automod {category}: {reason}` |
 | noMethod | `{object} has no method {method}; reply delvetalk {object} ? for its spells.` |
 

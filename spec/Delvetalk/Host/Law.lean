@@ -535,6 +535,34 @@ def fires (facts : Facts) (old : Option Data) (new : Data) (clauses : List Claus
 def poses (facts : Facts) (object : String) (state : Data) (clauses : List Clause) : List Clause :=
   clauses.filter fun c => isWant c && c.fieldsPlain && denote (asItStands facts object) none state c.condition
 
+/-- The terms a condition reads of the written thing's own state (`new.F`, `count(new.F…)`), in order; `rules`'
+    readback shows each with its value now (Kestrel, gsb 10-11: a watch counted in the dark, with nothing to check it
+    against). -/
+def stateTerms : LawExpr → List LawTerm
+  | .eq l r | .ne l r | .lt l r | .le l r | .gt l r | .ge l r => termsOf l ++ termsOf r
+  | .member t _ => termsOf t
+  | .changedTerm t => termsOf t
+  | .not b => stateTerms b
+  | .and l r | .or l r | .implies l r => stateTerms l ++ stateTerms r
+  | _ => []
+where
+  termsOf : LawTerm → List LawTerm
+    | t@(.count .new _ _) => [t]
+    | t@(.field .new _) => [t]
+    | .sum l r => termsOf l ++ termsOf r
+    | .mod t _ => termsOf t
+    | _ => []
+
+/-- `now: count(new.lines) = 4, new.tended = 10`: each state term of `cond` (`stateTerms`, each once) as `state`
+    reads now, a write that changed nothing; "" when it reads none. -/
+def nowLine (state : Data) (cond : LawExpr) (height : Nat) : String :=
+  let facts : Facts := { subject := "", caller := "", height, turn := 0 }
+  let terms := (stateTerms cond).foldl (fun acc t => if acc.any (·.render == t.render) then acc else acc ++ [t]) []
+  let shown := terms.filterMap fun t => (read facts (some state) state t).map fun
+    | .num n => s!"{t.render} = {n}"
+    | .text v => s!"{t.render} = {v.quote}"
+  if shown.isEmpty then "" else "now: " ++ ", ".intercalate shown
+
 /-- What a hole reads as spell text: text as it is, a number in decimal; none when it reads nothing. -/
 def holeText (facts : Facts) (old : Option Data) (new : Data) (term : LawTerm) : Option String :=
   match textOf facts old new term with
