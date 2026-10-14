@@ -6059,7 +6059,8 @@ def lawRows (o : Object) : Json :=
       ((reading.orElse fun _ => o.readings.lookup name).map fun r => [("reading", toJson r)]).getD []))
 
 /-- A rule a thing carries, as `rules` reads it (docs/FOUNDATION.md §10, the readback a wake never had): its
-    name, owner (and handle), reading, condition, spell, line and the object holding it; when a hand
+    name, owner (and handle), reading, condition, spell, line and the object holding it; what its condition reads
+    of the thing now (`now`, `Law.nowLine`); when a hand
     placed it, the height; its last firing (`fired {height, id, receipt}`, the receipt the slug of the
     turn it delivered once that ran) or refusal to fire (`unfired {height, why}`). -/
 def ruleRow (w : World) (id : String) (c : CarriedClause) : Json :=
@@ -6070,6 +6071,9 @@ def ruleRow (w : World) (id : String) (c : CarriedClause) : Json :=
       ("when", toJson c.clause.condition.render), ("then", toJson ((c.clause.modality.spell?.map (·.render)).getD "")),
       ("line", toJson c.clause.render), ("from", toJson c.holder)] ++
     (if c.clause.reading.isEmpty then [] else [("reading", toJson c.clause.reading)]) ++
+    (match (w.objects[id]?).map fun o => Law.nowLine o.state c.clause.condition w.height with
+      | some now => if now.isEmpty then [] else [("now", toJson now)]
+      | none => []) ++
     ((c.placed.map fun h => [("placed", toJson h)]).getD []) ++
     ((last.map fun l => if (l.getObjVal? "why").toOption.isSome then [("unfired", l)]
       else [("fired", (receipt.map fun r => l.setObjVal! "receipt" (toJson r)).getD l)]).getD []))

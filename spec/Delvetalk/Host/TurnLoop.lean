@@ -1441,7 +1441,8 @@ def rulesText (w : World) (id : String) (o : Object) (shown : String) : String :
           ((f.getObjValAs? String "receipt").toOption.map (s!", receipt " ++ ·)).getD ""
       let unfired := (row.getObjVal? "unfired").toOption.map fun f =>
         s!"not fired at entry {(f.getObjValAs? Nat "height").toOption.getD 0}: {(f.getObjValAs? String "why").toOption.getD ""}"
-      "  " ++ ((fired.orElse fun _ => unfired).getD "not fired yet") ++ "\n"
+      let now := Law.nowLine o.state c.clause.condition w.height
+      "  " ++ ((fired.orElse fun _ => unfired).getD "not fired yet") ++ "\n" ++ (if now.isEmpty then "" else s!"  {now}\n")
     let held := if c.holder == id then "" else s!", carried from {c.holder}"
     let reading := if c.clause.reading.isEmpty then "" else s!" {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading c.clause.reading}"
     let owner := if things then "the thing" else shownName w c.owner
