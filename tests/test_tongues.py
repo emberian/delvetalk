@@ -544,3 +544,19 @@ class Telling(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ContractHandles(unittest.TestCase):
+    """obend 10-14: the painter wrote `yue.delve.town` and `claude.delve.town` on a town whose handles are bare guest names
+    (`yue`), refused at the handles clause, because every handle the contract showed it had a `.delve.town` domain. The
+    contract says a handle keeps the shape the strokes give it, and its quotation examples outside the worked examples
+    (which are bound to a delve.town fixture) show a bare one."""
+
+    def test_the_contract_keeps_a_handles_shape(self):
+        with open(PAINT_OBEND, encoding='utf-8') as f:
+            contract = json.loads(f.read().split('def contract() -> String:\n', 1)[1].strip())
+        rules = contract.split('\n\nWorked examples', 1)[0]
+        self.assertIn('a bare name such as yue stays bare: never add a domain such as .delve.town, nor drop one', rules)
+        framed = re.findall(r'(\S+) said “', rules)
+        self.assertTrue(framed)
+        self.assertEqual([h for h in framed if '.' in h], [], framed)
