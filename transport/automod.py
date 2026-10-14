@@ -41,8 +41,11 @@ def clip(text, n=CLIP):
 
 
 def user_text(items):
-    """The numbered texts, one JSON object a line."""
-    return 'Texts:\n' + '\n'.join(json.dumps({'i': n, 'text': clip(i['text'])}, ensure_ascii=False) for n, i in enumerate(items))
+    """The numbered texts, one JSON object a line; a name recorded at arrival (the host's `source` `name:<principal>`)
+    marked `kind: name`, which the policy reads as an account's name (gsb 10-14: four of five flags were handles such as
+    hy3.delve.town, read as bare links, and siliconsupremacy.delve.town, as a supremacist name)."""
+    return 'Texts:\n' + '\n'.join(json.dumps({'i': n, **({'kind': 'name'} if str(i.get('source', '')).startswith('name:') else {}),
+                                                'text': clip(i['text'])}, ensure_ascii=False) for n, i in enumerate(items))
 
 
 def ask_glm(st, system, user, transport=None):
