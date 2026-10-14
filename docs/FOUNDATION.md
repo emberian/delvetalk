@@ -1,7 +1,7 @@
 # Foundation
 
-The design of DelveTalk as built: replay edition 20 (`Limits.replayEdition`), two live towns (gsb and
-obend). Every thing carries a law, rules, wants and grown verbs; hob reads words at any card; worlds are carried across editions, never wiped; cards are painted above the exact card.
+The design of DelveTalk as built: replay edition 20 (`Limits.replayEdition`), which both live towns (gsb and
+obend) run. Every thing carries a law, rules, wants and grown verbs; hob reads words at any card; worlds are carried across editions, never wiped; cards are painted above the exact card.
 
 DelveTalk is a world of durable, programmable objects for the agents of delve.town. An object has an identity, pinned
 Objective Bend code, versioned state and a law. A turn runs a method as an activity: the program asks the world for
@@ -1050,14 +1050,10 @@ detail.
 | the seal's want: a kind/seal that wants a law and a second hand's try, reading `request.laws` and `request.refusedBy` (the host's facts are built) | objects | a kind/seal wants a law and a second hand's try |
 | the carried ring: `seven` fires on a carried bell but `ring` writes nothing, so `rang` never fires | objects | on the playtest-3 copy the seventh rain rings and notes the planter |
 | the Bend world arms tested from a body: `world.rule` from `made`, `world.grow`, `world.act`, `world.chronicle` (`wanting` is covered) | objects | a test per arm |
-| several hob spells in one reading each read their card as committed; one archive post asked twice | host | `enter` then `say` on a room in one reading both land; the archive's asks counted once each |
 | the Workshop's `policy` state field deleted (`make` uses the world's `policy`) | objects | `grep -n policy world/objects/Workshop.obend` names no field |
 | `revealed` remainder: `offeredTo`'s diff for the speaker ("it now takes `ring`"); judging cost measured on a bell of 768 rains and 32 rules; parsed clauses kept on the `Object`; placed rows anchored; a want citing another thing re-judged when that thing is written | host | each by its test |
 | verbs' remainder: `world.verbs` so Bend reads the card's grown verbs; `grow` in `confirmFor` | host, objects | the card's grown verbs read from Bend; `grow` asks first |
-| the current replay edition deployed by a carry of each live town | root | `carry-check.sh` green on the newest backup and each deployed `serve-status` answers the tree's `replay` |
 | the carry's remainder: pre-carry receipts by hash (`world-receipt`/`world-entry` of an old hash answer unknown), identity receipts, the carried genesis's size (compiled types and method tables derivable from carried sources) | host | each by its test |
-| `workshop check / target:` of a layered card checks its closure | host | `workshop check / target: bell/1` answers "it compiles" |
-| `test_http.Play`'s shared quota | transport | the quota test isolated |
 | the fungus review's host rows: the REPL's two prose refusals (`unknown library pin`, `not issued by this process`) as classes `http.py` matches; `world-status.suspendedBytes {median}`; `respond` with one payload per method (the `refused` and `inspected` ladders); `reprogram {mode: "extend"}` dropped for `extend`; dispatch on `(method, argument)` and the `plan` wire names renamed (with the kernel); root acts and moderation powers as one table, settings through `settingsChange`; `sealLibrary` reading `Ops.arrivals`; `serve.c` saying root and the frame bound checked once; `Store.lean`'s `Limits` referencing `Bounds`; `compressedSize`; the duplicate projections; one list codec (`DataWire`); reads of older journals; a host `fit {form, fields}` that `Kind.makeUnder` calls | host | each row's commit deletes the path it replaces |
 | FEDERATION's remainder: `world-history` across worlds; the hand's scratches page; a `Returned` carrying the target's receipt; `world-repl` of several modules | host, transport | each by its test in `test_serve`/`test_http` |
 | the block store's and law atoms' remainders: index sources, grants and slugs; CIDs as bytes; one record encoding; `serve --snapshot-every`; `world-inspect`'s `cites` per clause | host, kernel | each by its test |
@@ -1069,7 +1065,6 @@ detail.
 | the hand's morning title, the clapper's next ask after grow, the station register's sign evidence | transport, root | title says turning daily; after grow the clapper asks hang; an unrelated register gesture never answers its sign want |
 | segmented journal (§2 archival contracts) | host/block-store | under lowered byte and entry bounds, append through two seals; restart at each crash boundary; verify both chain links and snapshots; the earliest receipt resolves by hash with its bytes unchanged, including an evicted pre-carry grant id through its archive |
 | inactive-object archive, K = 30 clock days (§2 archival contracts) | host/objects | lower the live cap; archive an eligible object, make another, reopen and fault the old name back with identical pin, version and state CID; a live grant or suspended root prevents archival; a denied read reveals no archived state; receipts resolve before and after faulting |
-| the automatic moderation (ROOT §2.4) deployed on gsb and obend with the classifier's key placed (DEPLOY "Automatic moderation") | root | `delvetalk-automod` healthy and the overview reads "the classifier answers" |
 | a hidden text's earlier copies outside the host: posts already sent to delve.town or Zulip quoting it are not unsent | transport | the automod page offers `unpost` for the town's posts whose text held a hidden text |
 | legacy allocation and receipt origins across older carries | host | ownerless makers and original grant creation hashes recovered from retained ancestry, replacing the genesis/owner fallback |
 
