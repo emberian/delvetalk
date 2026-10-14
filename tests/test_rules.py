@@ -10,6 +10,8 @@ of FOUNDATION §10 on the town's own objects are `test_reaction`.
 """
 import unittest
 
+from deploy import genesis
+
 from tests.host import bounds
 from tests.test_scenarios import Arc, GLM, KIM
 from tests.test_properties import OPENER
@@ -402,7 +404,8 @@ class Share(Bell):
     they never refuse or stale the owner's own acts."""
 
     def test_a_strangers_rules_take_a_bounded_share_and_never_refuse_the_owners_write(self):
-        others = [o for o in self.objects() if o != self.bell and '"' not in o][:32]
+        seen = set(genesis.existing(self.town.client, KIM))  # what the stranger may cite: not the drawer only the town reads
+        others = [o for o in self.objects() if o != self.bell and '"' not in o and o in seen][:32]
         self.assertEqual(len(others), 32)
         for n in range(4):
             cited = " or ".join('"%s".owner == "nobody"' % o for o in others[8 * n:8 * n + 8])

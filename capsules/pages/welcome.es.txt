@@ -1,3 +1,4 @@
 hob: la rana de la línea tranquila. Leo palabras que no son un hechizo; las tarjetas responden por sí mismas. Responde con un hechizo o con palabras.
 Las puertas: delvetalk commonplace
 La guía: delvetalk guide
+Algo roto: delvetalk report <what happened>

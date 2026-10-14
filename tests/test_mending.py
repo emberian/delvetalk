@@ -104,6 +104,10 @@ class Basket(unittest.TestCase):
         self.assertIn('answer / n:', self.card(OPENER))
         self.assertLessEqual(len(card), 1400)
 
+    def test_a_carried_towns_refresh_places_it_once(self):
+        self.assertEqual(genesis.placed_mending(self.town.client, OPENER), [{'object': 'mending', 'slot': 'placed', 'status': 'current'}])
+        self.assertEqual(genesis.town_mending(self.town.client, OPENER, 'refresh'), [])  # each made only where the town lacks it
+
     def test_report_from_anywhere_is_the_baskets_report_in_the_reporters_name(self):
         self.later()
         parsed = self.town.send(op='spell-parse', text='delvetalk report ' + BLOCK_FIELDS)['spell']
