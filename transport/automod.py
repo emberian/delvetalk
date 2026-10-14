@@ -3,7 +3,7 @@
 Every second it asks the host, on the root socket as the opener, for the texts written since its cursor
 (`world-screen {after, external}`), offering the feed's new posts beside them; the host answers the texts and has
 already acted on any its wordlist names. The worker holds what is new; once it has held a text for `automod_window`
-seconds, or holds `automod_batch` texts, it asks the classifier (Z.ai's GLM, `automod_model`) about the batch in one
+seconds, or holds `automod_batch` texts, it asks the classifier (the owner's Z.ai subscription, its Anthropic-compatible Messages endpoint, `automod_model`) about the batch in one
 call, each text numbered, and gives the host the classifier's reply verbatim (`world-screen-verdicts`). The host decides
 what a verdict does and journals it; nothing here hides or quiets anything. An idle worker asks the host and calls no
 model. When the classifier fails, the texts wait (the cursor and the held texts are kept on disk, so a restart loses
@@ -11,21 +11,16 @@ none), the worker backs off, and its status file says so for the hand's overview
 a batch, the worker asks again in halves, and a single text the provider refuses goes to the host as `blocked`.
 
 The key is a file (`zai_key_file`), read on every call; spend is a line a call in <state>/automod-spend.jsonl, kept
-apart from the Anthropic ledger, and the day's calls are capped by `automod_daily_calls`. Run as
+apart from the Anthropic ledger (tokens only: a subscription has no per-token price), and the day's calls are capped by `automod_daily_calls`. Run as
 `python3 -m transport automod --state DIR [--world W] [--once]`.
 """
 import json
 import sqlite3
 import time
-from pathlib import Path
 
-from transport.delve import Failure, canonical, http_transport
+from transport import model
+from transport.delve import canonical
 
-URL = 'https://api.z.ai/api/paas/v4/chat/completions'
-TIMEOUT, MAX_RESPONSE = 60, 1024 * 1024
-# Dollars per million tokens (docs.z.ai pricing, read 2026-10-13); the flash models are free.
-RATES = {'glm-4.7-flash': (0.0, 0.0), 'glm-4.5-flash': (0.0, 0.0), 'glm-4.7-flashx': (0.07, 0.40),
-         'glm-4-32b-0414-128k': (0.10, 0.10), 'glm-4.5-air': (0.20, 1.10)}
 CLIP = 2048  # bytes of one text the classifier reads: a verdict on its opening hides it whole
 BATCH_BYTES = 32 * 1024  # bytes of clipped text in one call, so a batch of long posts is cut short of the cap
 SCAN_ROUNDS = 8  # world-screen calls a step makes catching up (512 entries each)
@@ -50,49 +45,29 @@ def user_text(items):
 
 
 def ask_glm(st, system, user, transport=None):
-    """One chat completion -> {status: replied, raw, model, usage, seconds} | {status: blocked} | failed(...). The free
-    models answer 429 when Z.ai is loaded (code 1305, measured 2026-10-13): then the same request goes once to
-    `automod_fallback`, the other free model, before the worker backs off."""
+    """One Messages API call to the owner's Z.ai subscription (its Anthropic-compatible endpoint, `automod_base_url`) ->
+    {status: replied, raw, model, usage, seconds} | {status: blocked} | failed(...). The wire is model.py's: its key
+    reader, its HTTP, its reading of the answer (thinking blocks skipped, the text blocks joined). Thinking is off:
+    left on, glm-5.3-flash spends seconds deliberating before a one-line verdict (measured 2026-10-13: 7.6 s against
+    1.4 s with `thinking: disabled`)."""
     c = st.config
-    try:
-        secret = Path(c.zai_key_file).expanduser().read_text().strip() if c.zai_key_file else ''
-    except OSError:
-        secret = ''
+    secret = model.key(c.zai_key_file)
     if not secret:
         return failed('refused', 'no key: zai_key_file names none')
-    out = ask_model(c, secret, c.automod_model, system, user, transport)
-    if out.get('reason') == 'rate' and c.automod_fallback and c.automod_fallback != c.automod_model:
-        out = ask_model(c, secret, c.automod_fallback, system, user, transport)
-    return out
-
-
-def ask_model(c, secret, model, system, user, transport=None):
-    body = {'model': model, 'temperature': 0, 'max_tokens': 4096, 'response_format': {'type': 'json_object'},
-            'thinking': {'type': 'disabled'}, 'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]}
+    body = {'model': c.automod_model, 'temperature': 0, 'max_tokens': 4096, 'thinking': {'type': 'disabled'},
+            'system': system, 'messages': [{'role': 'user', 'content': user}]}
+    headers = {'x-api-key': secret, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'}
     began = time.monotonic()
-    try:
-        status, raw, *_ = (transport or http_transport)('POST', c.automod_url, {'Authorization': 'Bearer ' + secret,
-                                                         'Content-Type': 'application/json'}, json.dumps(body).encode(), MAX_RESPONSE, TIMEOUT)
-    except Failure as f:
-        return failed('transport', f.code)
+    status, raw, *_ = (transport or model.http)('POST', c.automod_base_url.rstrip('/') + '/v1/messages', headers, json.dumps(body).encode())
     seconds = round(time.monotonic() - began, 3)
     try:
         out = json.loads(raw)
     except ValueError:
-        return failed('transport', f'http {status}')
+        out = {}
     error = (out.get('error') or {}) if isinstance(out, dict) else {}
-    if status != 200:
-        if str(error.get('code')) == '1301':  # the provider's content filter refused the input
-            return {'status': 'blocked', 'seconds': seconds}
-        return failed('rate' if status == 429 else 'transport', f"http {status} {error.get('code', '')}".strip())
-    try:
-        choice = out['choices'][0]
-        if choice.get('finish_reason') == 'sensitive':
-            return {'status': 'blocked', 'seconds': seconds}
-        text = choice['message']['content']
-    except (KeyError, IndexError, TypeError):
-        return failed('malformed')
-    return {'status': 'replied', 'raw': text, 'model': out.get('model', model), 'usage': out.get('usage') or {}, 'seconds': seconds}
+    if str(error.get('code')) == '1301' or (isinstance(out, dict) and out.get('stop_reason') == 'sensitive'):
+        return {'status': 'blocked', 'seconds': seconds}  # the provider's content filter refused the input
+    return {**model.interpret_body(status, raw, c.automod_model), 'seconds': seconds}
 
 
 def spend_path(st):
@@ -100,16 +75,13 @@ def spend_path(st):
 
 
 def spent(st, start=0):
-    """{calls, inputTokens, outputTokens, dollars} of this world's classifier calls at or after unix time `start`."""
-    t = {'calls': 0, 'inputTokens': 0, 'outputTokens': 0, 'dollars': 0.0}
+    """{calls, inputTokens, outputTokens} of this world's classifier calls at or after unix time `start`."""
+    t = {'calls': 0, 'inputTokens': 0, 'outputTokens': 0}
     for row in st.lines(spend_path(st)) if spend_path(st).exists() else ():
         if row.get('at', 0) >= start and row.get('world') == st.world:
-            rate = RATES.get(row.get('model'), (0.0, 0.0))
             t['calls'] += 1
             t['inputTokens'] += row.get('inputTokens') or 0
             t['outputTokens'] += row.get('outputTokens') or 0
-            t['dollars'] += ((row.get('inputTokens') or 0) * rate[0] + (row.get('outputTokens') or 0) * rate[1]) / 1e6
-    t['dollars'] = round(t['dollars'], 4)
     return t
 
 
@@ -223,7 +195,7 @@ class Worker:
         if result.get('status') == 'replied':
             usage = result.get('usage') or {}
             self.st.append(spend_path(self.st), canonical({'at': self.clock(), 'world': self.st.world, 'model': result.get('model'),
-                                                           'inputTokens': usage.get('prompt_tokens'), 'outputTokens': usage.get('completion_tokens'),
+                                                           'inputTokens': usage.get('input_tokens'), 'outputTokens': usage.get('output_tokens'),
                                                            'texts': len(items), 'seconds': result.get('seconds')}))
         self.note['lastCall'] = {'at': self.clock(), 'texts': len(items), 'status': result.get('status'), 'seconds': result.get('seconds')}
         return result

@@ -281,7 +281,8 @@ opener's) asks `world-screen {after, external}` every second; the host answers t
 any screened, and first runs its wordlist (`Screen.prefilter`: a dozen slurs and child-abuse terms, whole words, digit
 stand-ins and spaced-out letters read) on each: a hit is hidden and its author quieted at once, with no model. The
 worker holds the rest; a held text waits `automod_window` (5 s) for others, a batch goes at once at `automod_batch` (24),
-and one call to Z.ai's GLM (`automod_model`, glm-4.7-flash, free) reads the batch, each text numbered and clipped to
+and one Messages API call to the owner's Z.ai subscription (`automod_base_url`, its Anthropic-compatible endpoint;
+`automod_model`, glm-5.3-flash; thinking off, about 2 s a call) reads the batch, each text numbered and clipped to
 2 KiB. The reply goes to the host verbatim (`world-screen-verdicts`), which reads one verdict per number and decides:
 high confidence hides the text and quiets its author `automod_quiet_hours` (24); medium hides it; low hides nothing and
 waits for the owner's review; `sexual-minors` is always high. A text the reply did not answer is asked again. An idle
