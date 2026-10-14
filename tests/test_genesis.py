@@ -674,6 +674,53 @@ class Reshape(unittest.TestCase):
         self.assertTrue(any(line.startswith("weather's rain, clock ") for line in lines('bell/1')), lines('bell/1'))
 
 
+class ReshapeAnEarlierMake(unittest.TestCase):
+    """A carried kind keeps the make layer an earlier edition generated: gsb's and obend's kind/weather, laid in edition 17
+    (tests/fixtures/kinds/weather-make-edition17.obend, read from gsb's journal), offers `place` an `id: text 1..64`
+    where today's generator writes `object 1..64`. The edition-19 carry-check refused every such kind's form refresh
+    (`shaped`) because `reshape` compared the installed layer with today's generator's text for the old form. Re-shaped
+    under today's code, it is admitted: the make is the one layer over Kind, whatever text laid it."""
+
+    OLD_FORM = 'over: text 1..128\ntide: text 1..128'
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        old_kinds = [(n, of, cls.OLD_FORM if n == 'weather' else form, head, law, body) for n, of, form, head, law, body in genesis.KINDS]
+        with unittest.mock.patch.multiple(genesis, KINDS=old_kinds, MOTION=[]):
+            cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+        cls.send = cls.town.send
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', 'kinds', 'weather-make-edition17.obend')) as f:
+            cls.layer = f.read()
+        version = int(cls.send(op='world-object', principal=genesis.OPENER, object='kind/weather')['record']['version'])
+        cls.laid = cls.send(op='world-reprogram', principal=genesis.OPENER, identity='weather-edition17-make', object='kind/weather',
+                            version=version, package=cls.layer)
+        cls.before = cls.field_kinds('place')
+        cls.rows = genesis.refresh(cls.town.client, genesis.OPENER, genesis.ancestry(cls.town.journal))
+
+    @classmethod
+    def field_kinds(cls, action):
+        """The fields `action` takes as the host reads the installed code: name to its kind's label."""
+        forms = cls.send(op='world-inspect', principal=genesis.OPENER, object='kind/weather')['forms']['items']
+        [form] = [f for f in forms if field(f, 'action')['value'] == action]
+        return {field(x, 'name')['value']: field(x, 'kind')['label'] for x in field(form, 'fields')['items']}
+
+    def test_the_earlier_make_is_installed_as_a_carry_leaves_it(self):
+        self.assertEqual(self.laid['status'], 'admitted', self.laid)
+        self.assertNotIn('id: object', self.layer)
+        self.assertEqual(self.before, {'over': 'text', 'tide': 'text', 'id': 'text'})
+
+    def test_it_is_reshaped_to_the_new_form_with_the_make_the_new_form_lays(self):
+        [row] = [r for r in self.rows if (r['object'], r.get('slot')) == ('kind/weather', '.form')]
+        self.assertEqual(row['status'], 'refreshed', row)
+        self.assertEqual(self.field_kinds('place'), {'over': 'object', 'tide': 'object', 'id': 'object'})
+        self.assertEqual(self.field_kinds('make'), {'over': 'object', 'tide': 'object'})
+        self.assertEqual([r for r in self.rows if r['status'] not in ('refreshed', 'current')], [])
+        again = genesis.refresh(self.town.client, genesis.OPENER, genesis.ancestry(self.town.journal))
+        self.assertEqual({r['status'] for r in again}, {'current'}, [r for r in again if r['status'] != 'current'])
+
+
 def genesis_outcome(path):
     from transport import journal
     return journal.read(path, journal.links(path)[:1])[0]['outcome']

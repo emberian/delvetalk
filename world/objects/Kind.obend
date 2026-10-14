@@ -305,17 +305,25 @@ def reshaped(state: State, context: Abi.Context) -> Activity<Done>:
     case refused(r): refused(context, {clause: r.clause, reading: r.reading})
 # Re-shapes the kind to a new form, the owner's (genesis's refresh of a kind's form): the make layer
 # its form laid is laid again from the new form, then the form is written, in one turn, so the make
-# and place it offers are what its form says. A kind whose code over Kind is not that make layer (a
-# layer laid over its make) is refused by name, its form left as it was.
+# and place it offers are what its form says. `reprogram` replaces the top module, so it is the make
+# only while the make is the one layer over Kind: a kind with a layer laid over its make, or with no
+# make yet, is refused by name, its form left as it was. Which layer is on top is the stack's own
+# fact (`madeLayer`), never the make's text regenerated: the text a make is generated as may change
+# between editions, and every carried kind keeps the text it was laid with.
 def reshape(state: State, input: {form: String}, context: Abi.Context) -> Activity<Done>:
   if context.principal != state.owner then refused(context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} reshapes this kind"}) else reshaping(state, input.form, context)
 def reshaping(state: State, form: String, context: Abi.Context) -> Activity<Done>:
   match world.inspect({object: Plans.self(context), source: true}):
-    case inspected(i): if belowFirstLine(i.source) == belowFirstLine(layerSource(state.of, state.form)) then relaid(state, form, context) else refused(context, {clause: "shaped", reading: "Its code over Kind is not the make its form laid; its make stands"})
+    case inspected(i): if madeLayer(i.source) then relaid(state, form, context) else if Text.starts(i.source, "layer over ") then refused(context, {clause: "shaped", reading: "A layer is laid over its make; its make stands"}) else refused(context, {clause: "shaped", reading: "It has no make to lay again: its owner shapes it first"})
     case _: refused(context, {clause: "shaped", reading: "Its code is not readable here; its make stands"})
-# A layer's text after its `layer over` line, which the host writes for the module below.
-def belowFirstLine(source: String) -> String:
-  textDrop(source, Text.indexOf(source, "\n"))
+# Is the top module (`inspect`'s source) the one layer over Kind's own module? The host links every
+# layer to the module below by its first line, `layer over ./<below>.obend` (HOST `layerLine`): the
+# first layer laid on a kind, its make, reads `overKind()`; one laid over that reads `layer over
+# ./Layer1.obend`; a kind with no layer is Kind's own source.
+def madeLayer(source: String) -> Bool:
+  Text.starts(source, "{overKind()}\n")
+def overKind() -> String:
+  "layer over ./Kind.obend"
 def relaid(state: State, form: String, context: Abi.Context) -> Activity<Done>:
   match world.reprogram({object: Plans.self(context), package: layerSource(state.of, form), migration: ""}):
     case reprogrammed(_): reformed(state, form, context)
@@ -376,7 +384,7 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
 def layerSource(of: String, form: String) -> String:
   let items = Forms.specs(form)
   let place = if of == "kind" then "" else actionSource("place", Lists.append(items, {name: "id", kind: "object 1..64"}))
-  "layer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\ntype State = Super.State\n{actionSource(\"make\", items)}{place}"
+  "{overKind()}\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\ntype State = Super.State\n{actionSource(\"make\", items)}{place}"
 def actionSource(action: String, items: Lists.List<Forms.Spec>) -> String:
   let formLines = textJoin(Lists.map(items, Forms.formLine), "")
   let converters = textJoin(Lists.map(items, fn(i: Forms.Spec) -> String: Forms.converter(action, i)), "")
