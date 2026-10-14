@@ -218,6 +218,21 @@ def line() -> String:
 """
 
 
+class RefreshedPlaythings(Arc):
+    """A carried open town that lacks the counter and the hexboard gets them in the carry's refresh; a second refresh
+    reads them `current`; an invited town gets none (obend's v2 carry, 2026-10-14)."""
+
+    def test_an_open_towns_refresh_places_them_once_and_an_invited_towns_none(self):
+        from transport.config import Config
+        self.assertEqual(genesis.placed_playthings(self.town.client, OPENER, Config(arrival='invited')), [])
+        self.assertNotIn('hexboard', genesis.existing(self.town.client, OPENER))
+        rows = genesis.placed_playthings(self.town.client, OPENER, Config(arrival='open'))
+        self.assertEqual([(r['object'], r['status']) for r in rows],
+                         [('kind/counter', 'refreshed'), ('kind/hexboard', 'refreshed'), ('counter', 'refreshed'), ('hexboard', 'refreshed')], rows)
+        self.assertEqual({r['status'] for r in genesis.placed_playthings(self.town.client, OPENER, Config(arrival='open'))}, {'current'})
+        self.assertEqual(self.town.send(op='world-derived', principal=OPENER, object='hexboard', view='view').get('status'), 'derived')
+
+
 class Derived(Arc):
     """The host's side: `world-derived` of a card's `view`, the counter and the hexboard as genesis places them."""
 

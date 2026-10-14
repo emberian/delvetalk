@@ -59,7 +59,7 @@ elif [[ $served == "$pin" ]]; then pass "host sha256 $served equals the build's 
 else fail "host sha256 $served, build pin $pin"; fi
 
 req GET /
-if [[ $code == 200 ]] && has '<title>a town of things that answer · DelveTalk</title>' && grep -qE '<p class="shelf">entry [0-9]+ ' "$work/body"; then pass "GET / is the front page at $(grep -oE 'entry [0-9]+' "$work/body" | head -1)"; else fail "GET /: $code"; fi
+if [[ $code == 200 ]] && has '<title>a town of things that answer · DelveTalk</title>' && grep -qE '<p class="shelf">entry [0-9]+ ' "$work/body"; then pass "GET / is the front page at $(grep -oE '<p class="shelf">entry [0-9]+' "$work/body" | head -1 | sed 's/.*>//')"; else fail "GET /: $code"; fi
 
 req GET "/o/$object"
 if [[ $code == 200 ]] && has "<!doctype html>" && has "$object"; then pass "GET /o/$object renders"; else fail "GET /o/$object: $code"; fi

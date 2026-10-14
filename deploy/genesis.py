@@ -1088,6 +1088,7 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
     out += harmonic(host, opener, have)
     out += placed_register(host, opener)
+    out += placed_playthings(host, opener, config)
     whole, installed = True, False
     if station and station_complete(host, opener):
         out.append({'object': 'station', 'slot': 'placed', 'status': 'current'})
@@ -1112,6 +1113,21 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
             except Stopped as e:
                 out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
     return out
+
+
+def placed_playthings(host, opener, config=None):
+    """An open town's counter and hexboard (docs/VIEWS.md), placed on a carried town that lacks them as its genesis
+    places them (`playthings` under `refresh-*` identities), `current` once they stand; an invited town has none."""
+    if not config or config.arrival != 'open':
+        return []
+    wanted = ['kind/' + name for name in PLAY_KINDS] + [dict(fields)['id'] for _, fields in PLAYTHINGS]
+    if set(wanted) <= set(existing(host, opener)):
+        return [{'object': obj, 'slot': 'placed', 'status': 'current'} for obj in wanted]
+    try:
+        return [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
+                for m in playthings(host, opener, 'refresh')]
+    except Stopped as e:  # a step not admitted: the carry exits 1, naming it
+        return [{'object': 'playthings', 'slot': 'placed', 'status': 'refused', 'reading': str(e)}]
 
 
 def placed_register(host, opener):
