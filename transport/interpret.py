@@ -13,7 +13,7 @@ a request the host lists as pending is submitted again from that cache whatever 
 `retrying` answer drops the cache, so the next ask is a new call. A round asks every interpretation first and then at
 most PAINTS_PER_ROUND paints, so words wait on at most that many paints. A paint is not journaled, so it is not cached here:
 a crash between the call and the submit costs one call. Every call is a line of the spend ledger, `use` naming which.
-Run as `python3 -m transport interpret --state DIR [--world W] [--once]`: a round every `model_poll` seconds, so a
+Run as `python3 -m transport interpret --state DIR [--world W] [--once]`: a round every second, so a
 reader's paint can arrive inside the host's `patience`.
 """
 import hashlib
@@ -82,7 +82,7 @@ def paint(host, ask=model.ask, limit=None):
 
 
 def command(st, a, out):
-    """`interpret`: one round with `--once`, else a round every `model_poll` seconds: interpretations, then paints."""
+    """`interpret`: one round with `--once`, else a round every second: interpretations, then paints."""
     host = st.host()
     ask = lambda req: model.ask(req, st)
 
@@ -92,6 +92,6 @@ def command(st, a, out):
             out.write(canonical(rounds) + '\n')  # a quiet round says nothing: the worker steps every second
             out.flush()
     try:
-        step(True) if a.once else st.daemon('interpret', step, every=st.config.model_poll)
+        step(True) if a.once else st.daemon('interpret', step, every=1.0)
     finally:
         host.close()

@@ -1881,7 +1881,7 @@ class Handler(BaseHTTPRequestHandler):
         wanting = host.send({'op': 'world-wanting', 'principal': reader})
         self.html(200, atlas.town(who and who['handle'], nodes, ways, seen, alone=alone, height=host.send({'op': 'world-status'}).get('height'),
                                   town_principal=self.server.town(), unfold=(q.get('open') or [None])[0], signed_in=bool(who),
-                                  probes=tuple(self.server.st.config.probe_names.split()),
+                                  probes=('deploycheck',),
                                   wanting=[w for w in wanting.get('rows') or [] if isinstance(w, dict)] if wanting.get('status') == 'wanting' else []))
 
     def atlas_inspect(self, name):

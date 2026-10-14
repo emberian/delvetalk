@@ -247,14 +247,14 @@ opener's):
 - asks `world-screen {after, external}` every second; the host answers the texts written since the cursor, less any
   screened, after running its wordlist (`Screen.prefilter`: a dozen slurs and child-abuse terms, whole words, reading
   digit stand-ins and spaced-out letters). A hit is hidden and its author quieted at once, with no model.
-- holds the rest: a text waits `automod_window` (5 s) for others; a full batch of `automod_batch` (24) goes at once.
-- makes one Messages API call per batch to the owner's Z.ai subscription (`automod_base_url`, its
-  Anthropic-compatible endpoint; `automod_model`, glm-5.3-flash; thinking off, about 2 s a call), each text numbered
+- holds the rest: a text waits 5 s for others; a full batch of 24 goes at once.
+- makes one Messages API call per batch to the owner's Z.ai subscription (https://api.z.ai/api/anthropic, its
+  Anthropic-compatible endpoint; glm-5.3-flash; thinking off, about 2 s a call), each text numbered
   and clipped to 2 KiB, a batch to 32 KiB.
 - hands the reply verbatim to the host (`world-screen-verdicts`), which reads one verdict per number and decides: high
-  confidence hides the text and quiets its author `automod_quiet_hours` (24); medium hides it; low hides nothing and
+  confidence hides the text and quiets its author for 24 hours; medium hides it; low hides nothing and
   waits for the owner; `sexual-minors` is always high. An unanswered text is asked again.
-- calls nothing when idle; has its own day of calls (`automod_daily_calls`, 2000) and ledger (`automod-spend.jsonl`),
+- calls nothing when idle; has its own day of 2,000 calls and ledger (`automod-spend.jsonl`),
   apart from hob's and the paints'.
 - when GLM fails: the texts wait on disk with the cursor, the worker backs off (5 s doubling to 300 s), the wordlist
   still acts, and the hand's overview says "the classifier is down". When the provider's own filter refuses a batch

@@ -220,7 +220,7 @@ def automod_of(h, n=8):
     screened = h.host.send({'op': 'world-screened', 'principal': h.owner, 'limit': n})
     s = automod.status(h.st)
     if s is None:
-        state = 'off: the worker never ran' if h.st.config.automod else 'off in the config'
+        state = 'off: the worker never ran'
     elif s['stale']:
         state = f"stopped: no step since {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(s['at']))}"
     else:

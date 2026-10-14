@@ -103,7 +103,7 @@ class Town_(unittest.TestCase):
 
     def run_worker(self, w, now):
         w.step()  # collects
-        now[0] += self.st.config.automod_window + 1
+        now[0] += automod.WINDOW + 1
         w.step()  # the window passed: one call
 
     def test_the_workers_host_policy_exempts_play_and_handles_and_narrows_spam(self):

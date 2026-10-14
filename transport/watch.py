@@ -160,7 +160,7 @@ def watch(st, a, out, send=None):
         if send is None:
             from transport.zulip import Client
             client, c = Client(st.config.watch_zuliprc), st.config
-            send = lambda text: client.send(c.watch_stream, c.watch_topic, text)
+            send = lambda text: client.send('delvetalk-ops', c.watch_topic, text)
         for key, line in lines:
             send(line)
             alerted[key] = p['at']

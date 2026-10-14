@@ -184,7 +184,7 @@ A newcomer should take in the town in one look; bookkeeping and repeated links h
   The summary carries the newest resident line. The body: who is here, what lies here, two earlier resident lines, the
   doors, one row of links (go there · inspect). Unfolded, it fetches its scene, view and spells (`say.js`).
 - **Quiet now:** every other place, by name, in one line.
-- **The town's own lines** (the opener's, the weather's, an inhabitant's, a deploy check's: config `probe_names`) are
+- **The town's own lines** (the opener's, the weather's, an inhabitant's, a deploy check's: `deploycheck*` guests) are
   counted under a room, never shown as a resident's. Identical lines show once.
 - `?open=<id>` unfolds a room without a script. `GET /live` sends `moved` when the journal moves; the page redraws.
 

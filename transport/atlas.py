@@ -195,7 +195,7 @@ def graph(nodes, ways, info, root='commonplace', target=None):
 
 def resident_of(principal, town='', probes=()):
     """Whether a line's author is a resident speaking: an avatar's principal (a DID or an invited guest), not the town's
-    own, not a deploy's check (a guest named with one of `probes`, config `probe_names`). The weather, a place's
+    own, not a deploy's check (a guest named with one of `probes`, the front's `deploycheck` prefix). The weather, a place's
     inhabitants (`@…`) and the town keep the town's books; their lines are counted, not shown."""
     p = str(principal or '')
     if not pages.resident(p) or (town and p == town):

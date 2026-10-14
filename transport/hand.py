@@ -18,7 +18,7 @@ import urllib.parse
 from html import escape as e
 from pathlib import Path
 
-from transport import bridge, byhand, mending, measure, model, overview, post, pages, root
+from transport import automod, bridge, byhand, mending, measure, model, overview, post, pages, root
 from transport.bridge import awaiting_path, uri_hash
 from transport import observe
 from transport.delve import Failure, canonical
@@ -1353,8 +1353,8 @@ class Hand:
         rows = lambda states: ''.join(self.screened_row(i, base, q) for i in a['items'] if i.get('state') in states)
         today = s.get('today') or {}
         codes = self.codes([a['state'], f"{s.get('pending', 0)} waiting" + (f", the oldest {s.get('oldestSeconds')} s" if s.get('pending') else ''),
-                            f"cursor entry {s.get('cursor', 0)} of {s.get('height', 0)}", f"model {s.get('model', self.st.config.automod_model)}",
-                            f"calls today {today.get('calls', 0)} of {today.get('budget', self.st.config.automod_daily_calls)}, {today.get('inputTokens', 0)} tokens in, {today.get('outputTokens', 0)} out"] +
+                            f"cursor entry {s.get('cursor', 0)} of {s.get('height', 0)}", f"model {s.get('model', automod.MODEL)}",
+                            f"calls today {today.get('calls', 0)} of {today.get('budget', automod.DAILY_CALLS)}, {today.get('inputTokens', 0)} tokens in, {today.get('outputTokens', 0)} out"] +
                            [f"{k} {v}" for k, v in a['counts'].items()])
         return shell('automod', self.st.world, H['automod'].format(world=q(self.st.world), codes=codes,
                      review=rows(('review',)) or none('nothing waits for review'), hidden=rows(('hidden',)) or none('nothing hidden'),
