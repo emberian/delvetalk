@@ -1,0 +1,116 @@
+layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Card.obend as Card
+import ./Scenes.obend as Scenes
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+import ./Text.obend as Text
+import ./View.obend as View
+# The hexboard's body, over RECORD (docs/VIEWS.md, the first view that is a board): a board of `size` by `size` hexes
+# (its kind's form, 3 to 11, 7 when none was given), numbered from 0 along each row, top row first. A hand places its
+# colour on an empty hex (`place / cell: N`), once a hex: each placing is the record's mark `hex N`, by whoever placed
+# it, which RECORD's law keeps (a mark is only added). Each hand's colour is the one its first placing came to, in
+# the order hands came (View.player: red, blue, green, …). Its view is the board as hex tiles, an empty hex a button
+# that places the reader's colour there; its card the same board in letters.
+type State = Super.State
+form place:
+  cell: natural 0..120
+form lines:
+  from: natural 1..1000000000
+form door:
+  label: text 1..32
+  to: text 1..128
+form undoor:
+  label: text 1..32
+def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.lines(state, {from: input.from}, context)
+def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.door(state, {label: input.label, to: input.to}, context)
+def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.undoor(state, {label: input.label}, context)
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  if context.principal == state.owner then Text.words("place lines door undoor") else Text.words("place lines")
+def methods() -> Lists.List<String>:
+  Text.words("~made ~act")
+def views() -> Lists.List<String>:
+  Text.words("view")
+def size(state: State) -> Nat:
+  match Text.number(Super.field(state, "size")):
+    case yes(n): if n.value < 3n then 3n else if n.value > 11n then 11n else n.value
+    case no(_): 7n
+def cellName(n: Nat) -> String:
+  "hex {natText(n)}"
+def columns() -> String:
+  "ABCDEFGHIJK"
+# A hex as a person names it: its column's letter and its row from 1 (`D4`), and its number.
+def where(n: Nat, size: Nat) -> String:
+  "{textTake(textDrop(columns(), n % size), 1n)}{natText(n / size + 1n)}"
+def placed(state: State, n: Nat) -> Lists.Maybe<Rows.Mark>:
+  Relations.lookup(state.marks, {name: cellName(n)})
+def place(state: State, input: PlaceInput, context: Abi.Context) -> Activity<Bool>:
+  let id = Card.called(context, "hexboard")
+  if input.cell >= size(state) * size(state) then Card.refusing(false, {clause: "offBoard", reading: "The board's hexes are 0 to {natText(size(state) * size(state) - 1n)}: delvetalk {id} place / cell: 0"}, context) else placing(state, input.cell, id, context)
+def placing(state: State, n: Nat, id: String, context: Abi.Context) -> Activity<Bool>:
+  match placed(state, n):
+    case some(m): Card.refusing(false, {clause: "taken", reading: "{where(n, size(state))} is {Card.shown(m.value.who, m.value.handle, context)}'s already; an empty hex is a dot on the card: delvetalk {id} ?"}, context)
+    case none(_): placedNow(state, n, context)
+def placedNow(state: State, n: Nat, context: Abi.Context) -> Activity<Bool>:
+  let written(_) = write {marks: insert {name: cellName(n), who: context.principal, handle: context.handle, at: context.height}, tended: set context.clock}
+  Card.tell(true, Document.text("{toneOf(players(state), context.principal)} on {where(n, size(state))}.\n"))
+def isHex(mark: Rows.Mark) -> Bool:
+  Text.starts(mark.name, "hex ")
+# The hands that have placed, in the order they first did (their colours' order).
+def players(state: State) -> Lists.List<Rows.Mark>:
+  firsts(Relations.order(state.marks, fn(m: Rows.Mark) -> Nat: m.at), Lists.List.nil())
+def firsts(marks: Lists.List<Rows.Mark>, seen: Lists.List<Rows.Mark>) -> Lists.List<Rows.Mark>:
+  match marks:
+    case nil(_): seen
+    case cons(c): firsts(c.tail, if isHex(c.head) == false || Lists.any(seen, fn(p: Rows.Mark) -> Bool: p.who == c.head.who) then seen else Lists.append(seen, c.head))
+# A hand's colour: its place among the players, or the next colour for one who has not placed yet.
+def toneOf(players: Lists.List<Rows.Mark>, who: String) -> String:
+  match Lists.indexWhere(players, fn(p: Rows.Mark) -> Bool: p.who == who):
+    case some(i): View.player(i.value)
+    case none(_): View.player(Lists.length(players))
+def name(state: State) -> String:
+  if state.head == "" then "A HEXBOARD" else state.head
+def count(state: State) -> Nat:
+  Lists.length(Lists.filter(Relations.rows(state.marks), isHex))
+def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
+  let n = size(state)
+  let ps = players(state)
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("{name(state)}, {natText(n)} by {natText(n)} hexes: {natText(count(state))} placed by {Text.countWord(Lists.length(ps))} hands. Your colour {yours(ps, context)}. Place it on an empty hex (a dot), numbered from 0 along each row: delvetalk {id} place / cell: <0 to {natText(n * n - 1n)}>\n"), tail: Document.Documents.cons({head: Document.text(board(state, ps, n, 0n)), tail: Document.Documents.cons({head: Document.text(Super.inactiveLine(state, id)), tail: Document.Documents.nil()})})})})
+def yours(players: Lists.List<Rows.Mark>, context: Abi.Context) -> String:
+  if Lists.any(players, fn(p: Rows.Mark) -> Bool: p.who == context.principal) then "is {toneOf(players, context.principal)}" else "will be {toneOf(players, context.principal)}"
+# The board in letters, each placed hex its colour's first letter and an empty one a dot, odd rows set in by one.
+def board(state: State, players: Lists.List<Rows.Mark>, n: Nat, y: Nat) -> String:
+  if y >= n then "" else "{indent(y)}{rowText(state, players, n, y * n, n)}\n{board(state, players, n, y + 1n)}"
+def indent(y: Nat) -> String:
+  if y % 2n == 1n then " " else ""
+def rowText(state: State, players: Lists.List<Rows.Mark>, n: Nat, at: Nat, left: Nat) -> String:
+  if left == 0n then "" else "{glyph(state, players, at)}{gap(left)}{rowText(state, players, n, at + 1n, left - 1n)}"
+def gap(left: Nat) -> String:
+  if left > 1n then " " else ""
+def glyph(state: State, players: Lists.List<Rows.Mark>, at: Nat) -> String:
+  match placed(state, at):
+    case some(m): textTake(toneOf(players, m.value.who), 1n)
+    case none(_): "."
+# What the page draws: the board as hex tiles, an empty one a button placing the reader's colour, and who is which.
+def view(state: State, context: Abi.Context) -> View.View:
+  let n = size(state)
+  let ps = players(state)
+  View.stack(View.three(View.heading(name(state)), View.hexes(n, View.tiles(0n, n * n, fn(i: Nat) -> View.Tile: tileAt(state, ps, n, i, context))), View.small(legend(state, ps, context))))
+def tileAt(state: State, players: Lists.List<Rows.Mark>, n: Nat, i: Nat, context: Abi.Context) -> View.Tile:
+  match placed(state, i):
+    case some(m): View.tile("leaf", toneOf(players, m.value.who), "", "{where(i, n)}: {Card.shown(m.value.who, m.value.handle, context)}{Card.mine(m.value.who, context)}", View.nothing())
+    case none(_): View.tile("leaf", "", "", "{where(i, n)}: place {toneOf(players, context.principal)} here", View.act("place", View.given("cell", natText(i))))
+def legend(state: State, players: Lists.List<Rows.Mark>, context: Abi.Context) -> String:
+  let hands = textJoin(Lists.map(players, fn(p: Rows.Mark) -> String: "{toneOf(players, p.who)}: {Card.shown(p.who, p.handle, context)}{Card.mine(p.who, context)}"), " · ")
+  "Your colour {yours(players, context)}. {natText(count(state))} of {natText(size(state) * size(state))} placed{semi(hands)}{hands}."
+def semi(hands: String) -> String:
+  if hands == "" then "" else "; "

@@ -1,0 +1,9 @@
+# a shared number with a view (docs/VIEWS.md): its page draws it between a − and a + button
+of: record
+form: <<END
+name: text 1..64
+END
+head: {name}
+voice: a number on a wall that anyone may nudge; it remembers who nudged it last
+about: a number anyone raises or lowers, one step a turn, drawn live on its page
+body: counter

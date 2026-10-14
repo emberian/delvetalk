@@ -1,0 +1,123 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Text.obend as Text
+# A card's view (docs/VIEWS.md): what the web front draws for a thing, live, beside its exact card, as data. A body
+# defines `view(state: State, context: Abi.Context) -> View.View` and names it in `views()`, as any derived view: the
+# host runs it on the committed state for the reader (`world-derived`, under `Limits.maxViewBytes` of wire JSON) and
+# the front draws it (transport/views.py) from this vocabulary alone, every word escaped, at most `Limits.maxViewNodes`
+# nodes. There is no markup, no style, no script and no address but an image's: a colour is a named tone (`tones`), a
+# size a natural, and what a button or a tile does is an Act, a spell on the thing itself by the name of one of its
+# own forms, which the front casts as the reader who clicks it (one click, one turn, its receipt shown inline).
+#
+# An Act names its form's `action` and the fields it fills, each as the form reads it (a natural in digits, a choice
+# by its word); an action "" is none (a tile that only shows). A field the form does not declare, an action this
+# reader is not offered or a value outside its bound is refused by the host as a typed spell is.
+record Field:
+  name: String
+  value: String
+type Fields = Lists.List<Field>
+record Act:
+  action: String
+  fields: Fields
+# A tile of a grid or a hex map: its ground (`fill`, a tone), a disc on it (`mark`, a tone; "" none), a few characters
+# on it (`label`, at most eight drawn), what it says when pointed at (`title`) and what choosing it does (`act`).
+record Tile:
+  fill: String
+  mark: String
+  label: String
+  title: String
+  act: Act
+type Tiles = Lists.List<Tile>
+# A shape of a drawing, in the drawing's own units (its width and height), each a natural; colours are tones.
+# A path's `d` is SVG path data of commands and naturals only (M L H V C S Q T A Z, either case); anything else in it
+# is dropped by the front.
+sum Shape:
+  circle: {x: Nat, y: Nat, r: Nat, fill: String, stroke: String}
+  rect: {x: Nat, y: Nat, width: Nat, height: Nat, fill: String, stroke: String}
+  line: {x1: Nat, y1: Nat, x2: Nat, y2: Nat, stroke: String, width: Nat}
+  path: {d: String, fill: String, stroke: String}
+  label: {x: Nat, y: Nat, text: String, tone: String}
+type Shapes = Lists.List<Shape>
+type Words = Lists.List<String>
+# The views: words (`text`, a tone and a size: "" | "small" | "large"), a heading, views one above another (`stack`)
+# or side by side (`row`), a button, a box whose words fill one field of an act (`ask`), a progress bar, a table of
+# words, square tiles (`grid`, `columns` to a row), hex tiles (`hexes`, rows offset by half a tile, odd rows to the
+# right), a drawing of shapes, an image (a `data:image/png|gif|jpeg|webp;base64,` source, or an address the town allows)
+# and a rule between parts.
+sum View:
+  text: {value: String, tone: String, size: String}
+  heading: {value: String}
+  stack: {items: Views}
+  row: {items: Views}
+  button: {label: String, act: Act, tone: String}
+  ask: {label: String, act: Act, field: String, placeholder: String}
+  progress: {value: Nat, max: Nat, label: String, tone: String}
+  table: {head: Words, rows: Lists.List<Words>}
+  grid: {columns: Nat, tiles: Tiles}
+  hexes: {columns: Nat, tiles: Tiles}
+  drawing: {width: Nat, height: Nat, shapes: Shapes}
+  image: {source: String, alt: String, width: Nat}
+  rule: {}
+type Views = Lists.List<View>
+# The tones a view may name (docs/VIEWS.md "Tones"): the page's own, players' colours and terrains. Any other word
+# draws as the page's ink (a fill as none).
+def tones() -> Words:
+  Text.words("ink soft muted paper leaf tint rule amber violet silver terracotta sage glow red orange yellow green cyan blue purple magenta white black grey grass forest hills mountain water shallows sand snow cave village castle keep road")
+def say(value: String) -> View:
+  View.text({value: value, tone: "", size: ""})
+def toned(value: String, tone: String) -> View:
+  View.text({value: value, tone: tone, size: ""})
+def large(value: String) -> View:
+  View.text({value: value, tone: "", size: "large"})
+def small(value: String) -> View:
+  View.text({value: value, tone: "muted", size: "small"})
+def heading(value: String) -> View:
+  View.heading({value: value})
+def stack(items: Views) -> View:
+  View.stack({items: items})
+def row(items: Views) -> View:
+  View.row({items: items})
+def empty() -> View:
+  View.stack({items: Views.nil()})
+def act(action: String, fields: Fields) -> Act:
+  {action: action, fields: fields}
+# The act of a form without fields; `nothing` the act of a tile that only shows.
+def bare(action: String) -> Act:
+  {action: action, fields: Fields.nil()}
+def nothing() -> Act:
+  bare("")
+def field(name: String, value: String) -> Field:
+  {name: name, value: value}
+def number(name: String, value: Nat) -> Field:
+  {name: name, value: natText(value)}
+def given(name: String, value: String) -> Fields:
+  Fields.cons({head: field(name, value), tail: Fields.nil()})
+def button(label: String, act: Act) -> View:
+  View.button({label: label, act: act, tone: ""})
+def ask(label: String, act: Act, field: String) -> View:
+  View.ask({label: label, act: act, field: field, placeholder: ""})
+def progress(value: Nat, max: Nat, label: String) -> View:
+  View.progress({value: value, max: max, label: label, tone: ""})
+def tile(fill: String, mark: String, label: String, title: String, act: Act) -> Tile:
+  {fill: fill, mark: mark, label: label, title: title, act: act}
+def hexes(columns: Nat, tiles: Tiles) -> View:
+  View.hexes({columns: columns, tiles: tiles})
+def grid(columns: Nat, tiles: Tiles) -> View:
+  View.grid({columns: columns, tiles: tiles})
+# Lists without a literal: two to five views.
+def two(a: View, b: View) -> Views:
+  Views.cons({head: a, tail: Views.cons({head: b, tail: Views.nil()})})
+def three(a: View, b: View, c: View) -> Views:
+  Views.cons({head: a, tail: two(b, c)})
+def four(a: View, b: View, c: View, d: View) -> Views:
+  Views.cons({head: a, tail: three(b, c, d)})
+def five(a: View, b: View, c: View, d: View, e: View) -> Views:
+  Views.cons({head: a, tail: four(b, c, d, e)})
+# The tiles `from` up to `count`, each as `each` draws it: a board from its cells' numbers.
+def tiles(from: Nat, count: Nat, each: Nat -> Tile) -> Tiles:
+  if from >= count then Tiles.nil() else Tiles.cons({head: each(from), tail: tiles(from + 1n, count, each)})
+# A colour for each of up to eight hands, in the order they first came (a board's players): the nth's tone.
+def player(n: Nat) -> String:
+  match Lists.at(Text.words("red blue green orange purple cyan magenta yellow"), n % 8n):
+    case some(w): w.value
+    case none(_): "ink"

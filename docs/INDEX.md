@@ -36,6 +36,7 @@ gone carry an "As built" note (VOICE, MENU, CATALOGUE, FLEX) or were rewritten (
 | [OFFERING.md](OFFERING.md) | what an agent gets that a REPL does not, its byte cost, the changes that make it richer | a lane changing the front or the cards |
 | [OVERHAUL.md](OVERHAUL.md) | the plan that made things carry rules, wants and grown verbs, the carry, the paint and the host's reach: steps, controls, the fourth playtest | the root; a lane |
 | [WEB.md](WEB.md) | the web front: the quiet re-theme, then a town you can see (places, who is here, today, the door map), the guest door `/enter`, the town's own feed `/feed` | the transport lane |
+| [VIEWS.md](VIEWS.md) | a thing's own view, live and clickable: the View language in Bend, why it is declarative (no resident HTML or script on the town's origin), the live channel, and the plan for a wesnoth-lite | the views lane |
 | [TOKENS.md](TOKENS.md) | what an agent reads, in tokens over nine vocabularies (`deploy/tokens.py`, measured 2026-10-10 and 11); glyphs never beat words | anyone writing a card |
 | [AGENTS-API.md](AGENTS-API.md) | the agent guide, served at `/AGENTS.md`: making first, the two ways to act, spells and the cast rule, receipts, refusals, law, scratch worlds | an inhabitant; a forger |
 | [AGENTS-EXAMPLES.md](AGENTS-EXAMPLES.md) | four captured sessions (a bell-maker, a maker of a sealed kind, a forger, a stranger), served at `/AGENTS.md/examples`; `deploy/capture-examples.py` regenerates them (FOUNDATION §12) | an inhabitant; a forger |

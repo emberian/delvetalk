@@ -908,7 +908,7 @@ def declaredViews (o : Object) : M (List String) := do
     it takes one) under this turn's remaining ticks, as a card is rendered. Its value must be
     first-order data. `noView` when the package does not declare `view`, `view` when it fails, runs
     out, or answers something other than data. -/
-def derivedView (id : String) (o : Object) (view : String) (context : Data) : M (Except String Data) := do
+def derivedView (id : String) (o : Object) (view : String) (context : Data) (detailed : Bool := false) : M (Except String Data) := do
   unless (← declaredViews o).contains view do return .error "noView"
   let some c ← tryCatch (some <$> compiledMethod o view) (fun _ => pure none) | return .error "noView"
   let (rest, result) := match c.type with
@@ -923,7 +923,9 @@ def derivedView (id : String) (o : Object) (view : String) (context : Data) : M 
       let (value, used) := runPure (← entryOf c) [] (← get).ticks
       spend used
       pure value
-  return ran.mapError fun _ => "view"
+  -- A view out of ticks says so (`budget`, as a card's render does); any other failure is `view`.
+  -- `detailed` (`world-derived`, for the view's author) keeps the machine's words after the clause.
+  return ran.mapError fun e => (if e == "budget" || (e.splitOn "tick").length > 1 then "budget" else "view") ++ (if detailed then s!": {e}" else "")
 
 /-- The kernel's refusal of an argument that does not conform to the entry's input type. -/
 def argumentRefusal : String := "turn refused: argument does not conform to its type"
@@ -4910,6 +4912,39 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
         ("document", dataJson document)])
     | .ok (.error clause) => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)])
     | .error _ => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")])
+
+/-- `world-derived {principal, object, view}`: a derived view (`views()` names it) read from outside a turn, as
+    `viewDerived` answers an object inside one: the pure definition run on the committed state with the reader's
+    Context as a card is rendered (`cardContext`), under the read authority `world-card` keeps, journaling nothing. A
+    card's `view` (docs/VIEWS.md) is the one a front draws. `noView` when the package names no such view, `view` when it
+    fails or answers something other than data (its `detail` the machine's words), `budget` out of ticks, `viewTooLarge`
+    past `Limits.maxViewBytes` of wire JSON. -/
+def derivedOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← readerOf j
+  let id := resolveCard principal (← j.getObjValAs? String "object")
+  let view ← j.getObjValAs? String "view"
+  let refused := fun (clause : String) => Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("view", toJson view),
+    ("clause", toJson clause)]
+  match w.objects[id]? with
+  | none => return (w, Json.mkObj [("status", toJson "unknown"), ("object", toJson id)])
+  | some o =>
+    if !o.read.permits principal then return (w, Json.mkObj [("status", toJson "denied"), ("object", toJson id)])
+    -- A view may nest as deep as a Document on the wire (a board's tiles are a long list), within the turn's ticks.
+    let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
+                              limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks)),
+                                                    ("depth", toJson (toString Delvetalk.Bounds.documentWireDepth))] }
+    let (r, st) := (derivedView id o view (cardContext w id principal "" "" w.height view) (detailed := true)).run.run init
+    let w := w.withCachesOf st.world
+    match r with
+    | .ok (.ok value) =>
+      let bytes := Delvetalk.Compiler.ObjectiveBendDataWire.dataJsonBytes value
+      if bytes > Limits.maxViewBytes then return (w, refused "viewTooLarge") else
+      return (w, Json.mkObj [("status", toJson "derived"), ("object", toJson id), ("view", toJson view),
+        ("version", toJson o.version), ("bytes", toJson bytes), ("value", dataJson value)])
+    | .ok (.error e) =>
+      let clause := (e.splitOn ": ").headD e
+      return (w, if clause == e then refused e else (refused clause).setObjVal! "detail" (toJson ((e.drop (clause.length + 2)).take 400)))
+    | .error _ => return (w, refused "view")
 
 /-- The system text an interpretation sends: the Policy's own pure `prompt(state, offers,
     utterance)` when its package defines one and it renders text under the turn tick budget,
