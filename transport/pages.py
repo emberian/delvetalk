@@ -284,7 +284,7 @@ def heading(name, view, did=None, town=''):
                   if (town and p == town) or (isinstance(h, str) and h)), None)
     about = ' · '.join(x for x in (name if head else None, f"a {kind.rpartition('/')[2]}" if kind else None,
                                    f'made by {maker}' if isinstance(maker, str) and maker else None) if x)
-    return T['heading'].format(about=e(about), name=e(head or name), yours=yours(name, did))
+    return T['heading'].format(about=e(about), name=e(head or name), yours=yours(name, did), inspect=e(quote(name, safe='/:')))
 
 
 LATELY, LOCAL_DOORS = 6, 8  # lines shown under a place; doors drawn on its local map

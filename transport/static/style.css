@@ -331,6 +331,117 @@ blockquote.under { margin: 0 0 .25rem; padding: .4rem .75rem; border-left: 2px s
 .view .s-cave { stroke: var(--v-cave); } .view .s-village { stroke: var(--v-village); } .view .s-castle { stroke: var(--v-castle); } .view .s-keep { stroke: var(--v-keep); }
 .view .s-road { stroke: var(--v-road); }
 
+/* ---- the town unfolded, an inspector, the library (transport/atlas.py; docs/WEB.md "The town unfolded"): the door graph in
+   the text colours, rooms as quiet panels that unfold, Bend set in type with its keywords, strings and comments told apart
+   by weight and the palette's own tokens */
+.atlas-head .lede { max-width: 46rem; }
+.atlas-links { display: flex; flex-wrap: wrap; gap: .2rem 1rem; font-family: var(--sans); }
+.graph-wrap { margin: 1rem 0 1.5rem; }
+.graph-scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; background: linear-gradient(170deg, var(--lamp), var(--leaf) 70%);
+  -webkit-overflow-scrolling: touch; }
+svg.town-graph { display: block; width: 100%; min-width: 46rem; height: auto; font-family: var(--sans); }
+svg.town-graph path.door { fill: none; stroke: var(--muted); stroke-opacity: .55; stroke-width: 1.3; }
+svg.town-graph path.door.both { stroke: var(--soft); stroke-opacity: .7; marker-start: url(#arrow); }
+svg.town-graph path.door:hover { stroke: var(--violet); stroke-opacity: 1; stroke-width: 2; }
+svg.town-graph .arrowhead { fill: var(--muted); }
+svg.town-graph a.node circle { fill: var(--paper); stroke: var(--soft); stroke-width: 1.5; }
+svg.town-graph a.node.lit > circle { fill: var(--amber); stroke: var(--amber); }
+svg.town-graph a.node text.nl { fill: var(--ink); font-size: 11.5px; text-anchor: middle; }
+svg.town-graph a.node text.ns { fill: var(--muted); font: 9.5px var(--mono); text-anchor: middle; }
+svg.town-graph a.node:hover text.nl, svg.town-graph a.node:focus text.nl { fill: var(--violet); text-decoration: underline; }
+svg.town-graph a.node:focus { outline: none; }
+svg.town-graph a.node.chosen > circle { stroke: var(--violet); stroke-width: 3; }
+svg.town-graph g.count circle { stroke: var(--paper); stroke-width: 1.5; }
+svg.town-graph g.count.who circle { fill: var(--sage); } svg.town-graph g.count.what circle { fill: var(--silver); }
+svg.town-graph g.count text { fill: var(--paper); font: 700 9.5px var(--sans); text-anchor: middle; }
+section.rooms { display: grid; gap: .5rem; }
+details.room { border: 1px solid var(--rule); border-radius: 10px; background: var(--leaf); padding: 0 .9rem; scroll-margin-top: 1rem; transition: box-shadow .4s; }
+details.room > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; padding: .6rem 0; width: auto; color: var(--ink); font-size: 1rem; }
+details.room > summary::marker { color: var(--muted); }
+details.room .rname { font-weight: 600; }
+details.room .rabout { color: var(--muted); font: .75rem var(--mono); }
+details.room .rsum { margin-left: auto; color: var(--muted); font: .8rem var(--sans); }
+details.room.lit > summary .rname::before { content: "● "; color: var(--sage); font-size: .8em; }
+details.room[open] { box-shadow: 0 14px 34px -26px var(--shade); }
+details.room .rbody { padding-bottom: .5rem; border-top: 1px dotted var(--rule); }
+details.room .lazy.loading::before { content: "unfolding…"; color: var(--muted); font-style: italic; font-size: .9rem; }
+details.room .lazy .scene { margin-top: .75rem; }
+details.room .lazy pre.card { max-height: 22rem; overflow: auto; }
+.moved { box-shadow: 0 0 0 2px var(--glow) !important; }
+h2.alone { margin-top: 1.25rem; }
+details.map-text { margin-top: 2rem; }
+
+/* the inspector */
+.ins-head .facts { grid-template-columns: max-content 1fr; font-size: .9rem; margin: .75rem 0 1.25rem; }
+.ins-head .facts a { font-family: var(--mono); font-size: .85rem; }
+.ins-side > section, .ins-more > section { margin: 0 0 1.75rem; }
+ul.verbs { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+li.verb { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; padding: .35rem 0; border-bottom: 1px dotted var(--rule); }
+form.cast { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; margin: 0; flex: 1 1 18rem; }
+form.cast .vname { font: 600 .95rem var(--mono); color: var(--ink); }
+form.cast .vfield { display: inline-flex; align-items: center; gap: .3rem; width: auto; flex: 1 1 9rem; font: .8rem var(--mono); }
+form.cast code.vspell { font-size: .75rem; color: var(--soft); overflow-wrap: anywhere; }
+form.cast .vact { margin-left: auto; white-space: nowrap; }
+form.cast .vfield input, form.cast .vfield select { width: 100%; min-width: 5rem; padding: .2rem .45rem; font-size: .9rem; }
+form.cast .vfield input[type=number] { min-width: 5rem; width: 6rem; }
+form.cast button.cast-go { padding: .2rem .7rem; font-size: .85rem; }
+form.cast.sending, form.ws.sending { opacity: .6; }
+.grown { color: var(--amber); font: 600 .7rem var(--mono); font-variant: small-caps; letter-spacing: .06em; }
+a.vline { font: .75rem var(--sans); color: var(--muted); }
+.cast-reply { flex-basis: 100%; }
+.cast-reply section.reply, .ws-reply section.reply { margin: .25rem 0 .5rem; padding: .5rem .75rem; border-left: 3px solid var(--amber); border-bottom: 0;
+  background: var(--tint); border-radius: 0 8px 8px 0; font-size: .95rem; }
+td.yes { color: var(--sage); white-space: nowrap; } td.no { color: var(--terracotta); } td.no .reading { display: block; color: var(--soft); font-size: .8rem; }
+td.unknown { color: var(--muted); }
+ul.clauses { list-style: none; margin: 0; padding: 0; }
+li.clause { padding: .45rem 0; border-bottom: 1px dotted var(--rule); font-size: .92rem; }
+li.clause .kw, ul.library .kw { color: var(--violet); font: 600 .75rem var(--mono); }
+li.clause .reading { display: block; color: var(--soft); font-style: italic; }
+li.clause code.expr { display: block; margin-top: .15rem; padding: .25rem .5rem; background: var(--leaf); font-size: .78rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+li.clause code.then::before { content: "then "; color: var(--muted); }
+li.clause .by, li.clause .last { color: var(--muted); font: .78rem var(--sans); }
+li.clause .last { display: block; }
+dl.state-fields { grid-template-columns: max-content minmax(0, 1fr); font-size: .9rem; }
+dl.state-fields dt { padding-top: .1rem; }
+dl.state-fields .fempty { color: var(--muted); font-style: italic; font-size: .85rem; }
+dl.state-fields .fnum { font: .9rem var(--mono); }
+dl.state-fields dl.rec { margin: 0; font-size: .85rem; }
+dl.state-fields ol.frows { margin: .25rem 0; padding-left: 1.25rem; }
+dl.state-fields details { margin: 0; }
+dl.state-fields .tag { color: var(--violet); font: .75rem var(--mono); }
+details.bend { margin: .5rem 0 1rem; }
+details.bend > summary { font: 600 .9rem var(--sans); color: var(--soft); }
+nav.outline { display: flex; flex-wrap: wrap; gap: .25rem .5rem; margin: .5rem 0; font: .78rem var(--mono); }
+nav.outline details.odefs { flex-basis: 100%; margin: .15rem 0; }
+nav.outline details.odefs[open] { display: flex; flex-wrap: wrap; gap: .25rem .5rem; max-height: 12rem; overflow: auto; }
+nav.outline details.odefs > summary { font: .8rem var(--sans); flex-basis: 100%; }
+nav.outline a { text-decoration: none; padding: .05rem .4rem; border: 1px solid var(--rule); border-radius: 999px; color: var(--soft); background: var(--leaf); }
+nav.outline a:hover { color: var(--violet); border-color: var(--violet); }
+nav.outline .okw { color: var(--muted); }
+pre.bend { margin: .5rem 0; padding: .6rem 0; background: var(--leaf); border: 1px solid var(--rule); border-radius: 6px; overflow: auto; max-height: 80vh;
+  font: 12.5px/1.55 var(--mono); tab-size: 2; counter-reset: none; }
+pre.bend .ln { display: block; padding-right: 1rem; white-space: pre; }
+pre.bend .ln:target, pre.bend .ln:has(> i:target) { background: var(--lamp); box-shadow: inset 3px 0 var(--amber); }
+pre.bend a.no { display: inline-block; width: 3.6em; padding-right: .9em; margin-right: .6em; text-align: right; color: var(--muted); opacity: .7;
+  text-decoration: none; border-right: 1px solid var(--rule); user-select: none; }
+pre.bend a.no:hover { color: var(--violet); opacity: 1; }
+pre.bend i { font-style: normal; }
+pre.bend .k { color: var(--violet); font-weight: 600; }
+pre.bend .s { color: var(--sage); }
+pre.bend .c { color: var(--muted); font-style: italic; }
+pre.bend .n { color: var(--amber); }
+pre.bend b.n { font-weight: 700; }
+pre.bend a.mod { color: var(--violet); }
+section.workshop form.ws { margin-top: .5rem; justify-items: stretch; }
+section.workshop textarea.ws-text { font: 12.5px/1.5 var(--mono); white-space: pre; overflow: auto; tab-size: 2; }
+section.workshop .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .5rem 1rem; margin: 0; }
+section.workshop .ws-modes { display: inline-flex; gap: .75rem; margin-right: auto; font-size: .9rem; }
+section.workshop .ws-modes .on { color: var(--ink); text-decoration: none; font-weight: 600; }
+ol.diagnostics { margin: 0 0 .5rem; padding-left: 1.25rem; font: .85rem/1.5 var(--mono); }
+ol.diagnostics a { font-weight: 600; }
+ul.library li, ul.modules li, ul.kinds li { font-size: .98rem; }
+pre.page-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; }
+
 /* ---- A wide screen (docs/WEB.md "A desktop"): from 68rem the frame widens and a page lays out in columns by its body's
    class. Nothing above this block changes, so a phone reads every page exactly as before. `wide`: the frame only (the
    catalogue). `place`: the place at a comfortable measure, its view the whole column, what is around it and what is
@@ -380,4 +491,19 @@ blockquote.under { margin: 0 0 .25rem; padding: .4rem .75rem; border-left: 2px s
   body.surface figure.map { margin: .25rem 0 0; position: sticky; top: 1.25rem; }
   body.surface .scene:has(> .paint) { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: 2.5rem; align-items: start; }
   body.surface .scene:has(> .paint) > pre.card { margin-top: 0; }
+
+  /* the town unfolded: the drawing beside the rooms, kept in view; an inspector: its Bend beside what it is and does */
+  body.atlas :is(header, main, footer) { max-width: calc(var(--frame) + 4rem); padding-inline: 2rem; }
+  body.atlas .graph-wrap svg.town-graph { min-width: 0; max-height: 80vh; }
+  body.atlas section.rooms { grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); align-items: start; gap: .6rem .75rem; }
+  body.atlas section.rooms > :is(details.room[open], h2) { grid-column: 1 / -1; }
+  body.atlas details.room[open] .rbody { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); column-gap: 2rem; }
+  body.atlas details.room[open] .rbody > :is(.now, .doors, .ways) { grid-column: 1; }
+  body.atlas details.room[open] .rbody > .lazy { grid-column: 2; grid-row: 1 / span 6; }
+  body.inspect main { display: grid; grid-template-columns: minmax(0, 1fr) 27rem; grid-template-areas: "head side" "src side" "src more" ". more";
+    grid-template-rows: auto auto auto 1fr; column-gap: 2.5rem; align-items: start; }
+  body.inspect .ins-head { grid-area: head; } body.inspect .ins-side { grid-area: side; }
+  body.inspect .ins-src { grid-area: src; min-width: 0; } body.inspect .ins-more { grid-area: more; min-width: 0; }
+  body.inspect .ins-side, body.inspect .ins-more { padding-left: 2rem; border-left: 1px solid var(--rule); }
+  body.inspect pre.bend { max-height: 84vh; }
 }

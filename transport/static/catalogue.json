@@ -416,6 +416,62 @@
    "does": "Server-Sent Events: a thing's view (docs/VIEWS.md) drawn again for you whenever the thing moves past the version a page drew (`?v=`, or Last-Event-ID), event `view` with its version as `id`; held 55 s, then the browser comes back; 404 for a thing with no view, 503 past 16 at once"
   },
   {
+   "name": "liveTown",
+   "method": "GET",
+   "href": "/live",
+   "auth": "cookie",
+   "does": "Server-Sent Events: the town's own channel, event `moved` (its `id` and data the journal's height) whenever the journal moves past the height a page was drawn at (`?h=`, or Last-Event-ID); /town and an inspector draw themselves again on it; held 55 s, then the browser comes back; 503 past 16 at once"
+  },
+  {
+   "name": "town",
+   "method": "GET",
+   "href": "/town",
+   "auth": "cookie",
+   "does": "HTML: the town unfolded: every room and door you may see, drawn (a door an arrow, a lit room someone is in), and each room a panel that unfolds in place: who is here, what lies here, its newest lines, its doors and the ways in, its scene and spells; rooms no door reaches after; ?open=<card> unfolds one"
+  },
+  {
+   "name": "inspect",
+   "method": "GET",
+   "href": "/inspect/{object}",
+   "auth": "cookie",
+   "does": "HTML: a card inspected: its Bend set in type with every declaration and line an anchor (its entry module, the layers its kind laid, a kind's body), its kind chain, owner and maker, its spells to cast (each a form posting `do` to /play/{object}), who may do what as its law stands, its law with readings, its rules and wants, its fields, its newest receipts, and the workshop's check spell with its Bend in the block, to amend and send to /play/workshop"
+  },
+  {
+   "name": "kinds",
+   "method": "GET",
+   "href": "/kinds",
+   "auth": "cookie",
+   "does": "HTML: every kind you may see: what it is of, who made it, how many it made, what it is for; each a link to its inspector"
+  },
+  {
+   "name": "library",
+   "method": "GET",
+   "href": "/library",
+   "auth": "cookie",
+   "does": "HTML: the library's pages (the language, the API, the walks), as its state shelves them"
+  },
+  {
+   "name": "libraryPage",
+   "method": "GET",
+   "href": "/library/{name}",
+   "auth": "cookie",
+   "does": "HTML: one page of the library, verbatim, as `delvetalk library read / page: {name}` answers it"
+  },
+  {
+   "name": "modules",
+   "method": "GET",
+   "href": "/lib",
+   "auth": "cookie",
+   "does": "HTML: every Bend module the town holds that you may read (`world-sources`): the sealed library and the packages its things run, each by name, its newest text"
+  },
+  {
+   "name": "module",
+   "method": "GET",
+   "href": "/lib/{name}",
+   "auth": "cookie",
+   "does": "HTML: one module's Bend, set in type, its declarations outlined and its imports linked; ?cid= another text of it"
+  },
+  {
    "name": "book",
    "method": "GET",
    "href": "/o/{handle}/book",
@@ -467,7 +523,7 @@
    "method": "GET",
    "href": "/static/{file}",
    "auth": "none",
-   "does": "style.css, the one stylesheet; say.js, which fills the reply box with a chosen suggestion and rings what a bell or a place rings (the page works without it)"
+   "does": "style.css, the one stylesheet; atlas.js, which unfolds a room in place, keeps /town and an inspector live and casts a spell or sends the workshop's spell in place; say.js, which fills the reply box with a chosen suggestion and rings what a bell or a place rings (the page works without it)"
   }
  ],
  "errors": {
