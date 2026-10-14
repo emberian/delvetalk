@@ -6,7 +6,8 @@ library's pages, the town's modules and its kinds; /live tells a page the journa
 Evidence for docs/WEB.md (layer: transport).
 
 Refuted by: a room that only its own doors join to the town missing from the drawing or the rooms; a room no door
-reaches unlisted; a door drawn that the host's `ways` does not hold; a resident's word reaching the markup unescaped; a
+reaches unlisted; a line of the town's own (its opener, the weather, an inhabitant, a deploy's check) shown as a
+resident's, or a resident's hidden; /town past 40 KB on its fixture; a door drawn that the host's `ways` does not hold; a resident's word reaching the markup unescaped; a
 declaration of a thing's Bend with no anchor; a spell offered with no form, or a form that casts anything but the
 reader's own turn of that spell; a verdict in "who may do what" that is not the host's `admits`; the workshop's spell on
 the page not checking the Bend shown, or a broken line not named by its number; a library page, module or kind the host
@@ -24,7 +25,7 @@ ATTACK = '"\'><script>alert(1)</script><img src=x onerror=alert(1)>'
 
 
 class Atlas(InTown):
-    OPENER = 'did:plc:' + 'a' * 24
+    OPENER = 'did:plc:' + 'z' * 24  # the town; the browser (talkie) is a resident
     strip = {}
 
     def say(self, card, text):
@@ -62,17 +63,37 @@ class Atlas(InTown):
         self.assertIn(f'<details class="room lit" id="p-{strip.replace("/", "-")}" data-obj="{strip}"', page)  # someone is in it
         panel = re.search(rf'id="p-{strip.replace("/", "-")}".*?</details>', page, re.S)[0]
         self.assertIn('the crossroads', panel)
-        self.assertIn('href="#p-rooms" title="rooms">to the moss gate</a>', panel)
-        self.assertIn('is here.</p>', panel)  # who is in it, as the place pages name them
+        self.assertIn('>to the moss gate</a>', panel)
+        self.assertIn('talkie.delve.town is here.</p>', panel)
         self.assertNotIn('<script>', page)
-        self.assertIn(html.escape(ATTACK), panel)  # a resident's line, escaped
-        alone = page[page.index('No door reaches these yet'):]
-        self.assertIn(f'data-obj="{lone}"', alone)
+        self.assertIn(html.escape(ATTACK), panel)  # a resident's line, escaped, the panel's summary
         self.assertNotIn(f'data-id="{lone}"', page)  # not drawn: no door touches it
+        quiet = page[page.index('<p class="quiet-places">'):]
+        self.assertIn(f'href="/o/{lone}"', quiet)  # nothing happens there: one name among the quiet places
         self.assertRegex(self.page(f'/town?open={lone}'), rf'<details class="room" id="p-{lone.replace("/", "-")}" data-obj="{lone}" data-version="\d+" open>')  # unfolded with no script
+        self.assertIn(f'<b>talkie.delve.town</b> in <a href="#p-{strip.replace("/", "-")}">the crossroads</a>', page)  # who is around, first
+        for gone in ('The way here', 'the door map, as the commonplace writes it', 'inspect its Bend', 'Read it'):
+            self.assertNotIn(gone, page)
+        self.assertLess(len(page.encode()), 40_000)
         text = self.page('/town?text=1')
         self.assertIn('the crossroads', text)
         self.assertIn('Doors: to the moss gate', text)
+
+    def test_the_towns_own_lines_are_counted_and_a_residents_shown(self):
+        from deploy import genesis
+        strip = self.strip['strip']
+        genesis.said(self.root, self.OPENER, strip, 'write', [('text', 'the town kept its hours')], 'atlas-books')
+        panel = re.search(rf'id="p-{strip.replace("/", "-")}".*?</details>', self.page('/town'), re.S)[0]
+        self.assertNotIn('the town kept its hours', panel)
+        self.assertRegex(panel, r"and \d+ lines? of the town's own")
+        self.assertIn(html.escape(ATTACK), panel)
+
+    def test_a_residents_line_is_a_residents_and_a_deploys_check_is_not(self):
+        from transport import atlas
+        town, probes = 'did:web:t.example', ('deploycheck',)
+        cases = {'guest:t.example:yue': True, 'did:plc:' + 'q' * 24: True, town: False, '@station/bee': False, 'weather': False,
+                 'guest:t.example:deploycheck20': False, '': False}
+        self.assertEqual({p: atlas.resident_of(p, town, probes) for p in cases}, cases)
 
     def test_the_inspector_sets_its_bend_in_type_and_casts_its_spells_as_the_reader(self):
         strip = self.strip['strip']

@@ -7,6 +7,7 @@ What a room shows and how a view lays out are the host's and Bend's (`world-view
 `world-inspect`); this module draws the door graph (a layout of the host's `ways`, as pages.door_map draws its tree),
 sets Bend source in type, and decides nothing about the world."""
 import re
+import urllib.parse
 from html import escape as e
 from urllib.parse import quote
 
@@ -158,10 +159,11 @@ def label(text):
     return text if len(text) <= LABEL else text[:LABEL - 1] + '…'
 
 
-def graph(nodes, ways, info, root='commonplace'):
+def graph(nodes, ways, info, root='commonplace', target=None):
     """The door graph as SVG: a door a curve from the card it hangs on to the card it opens onto (a pair of doors one
-    curve, arrowed both ways); a room a circle, lit when someone is in it, the count of who is here and what lies here
-    beside it; each a link to its panel. `info` {node: {name, present, things}}."""
+    curve, arrowed both ways); a room a circle, lit when someone is in it, the count of who is here beside it; each a
+    link (`target(node)`: its panel, or its page). `info` {node: {name, present, things}}."""
+    target = target or (lambda n: '#' + anchor(n))
     place, width, height = layout(nodes, ways)
     pairs, drawn = {(w['from'], w['to']) for w in ways}, set()
     curves = []
@@ -179,76 +181,109 @@ def graph(nodes, ways, info, root='commonplace'):
             s = 1 if x2 > x1 else -1
             mid = (x1 + x2) / 2
             d = f'M{x1 + 7 * s:.0f} {y1:.0f} C{mid:.0f} {y1:.0f} {mid:.0f} {y2:.0f} {x2 - 7 * s:.0f} {y2:.0f}'
-        curves.append(A['graph_door'].format(d=d, both=' both' if both else '', title=e(f"{w.get('label') or b}: {a} → {b}" + (' and back' if both else ''))))
+        curves.append(A['graph_door'].format(d=d, both=' both' if both else ''))
     marks = []
     for n, (x, y) in place.items():
         i = info.get(n) or {}
-        present, things = i.get('present') or [], i.get('things') or []
-        badge = ''.join(A['graph_count'].format(x=f'{x + 9 + 15 * k:.0f}', y=f'{y - 9:.0f}', cls=cls, n=len(v))
-                        for k, (cls, v) in enumerate((c, v) for c, v in (('who', present), ('what', things)) if v))
-        title = i.get('name') or n
-        title += ''.join(f"\n{len(v)} {w}: {', '.join(v[:6])}{'…' if len(v) > 6 else ''}" for w, v in (('here', present), ('lying here', things)) if v)
-        marks.append(A['graph_node'].format(href=e('#' + anchor(n)), x=f'{x:.0f}', y=f'{y:.0f}', cls=' lit' if present else '', id=e(n),
-                                            label=e(label(i.get('name') or n)), sub=e(label(n)) if i.get('name') and i.get('name') != n else '',
-                                            sy=f'{y + 31:.0f}', ty=f'{y + 20:.0f}', title=e(title), badge=badge))
-    return A['graph'].format(width=f'{width:.0f}', height=f'{height + 18:.0f}', minwidth=f'{width * 0.62:.0f}', doors=''.join(curves), nodes=''.join(marks))
+        present = i.get('present') or []
+        badge = A['graph_count'].format(x=f'{x + 9:.0f}', y=f'{y - 9:.0f}', cls='who', n=len(present)) if present else ''
+        title = (i.get('name') or n) + (f": {', '.join(present[:6])}{'…' if len(present) > 6 else ''} here" if present else '')
+        marks.append(A['graph_node'].format(href=e(target(n)), x=f'{x:.0f}', y=f'{y:.0f}', cls=' lit' if present else '', id=e(n),
+                                            label=e(label(i.get('name') or n)), ty=f'{y + 20:.0f}', title=e(title), badge=badge))
+    return A['graph'].format(width=f'{width:.0f}', height=f'{height + 8:.0f}', doors=''.join(curves), nodes=''.join(marks))
 
 
-def info_of(view, town=''):
-    """What the door graph and a room's panel read of its state: name (`head`), who is here, what lies here."""
+def resident_of(principal, town='', probes=()):
+    """Whether a line's author is a resident speaking: an avatar's principal (a DID or an invited guest), not the town's
+    own, not a deploy's check (a guest named with one of `probes`, config `probe_names`). The weather, a place's
+    inhabitants (`@…`) and the town keep the town's books; their lines are counted, not shown."""
+    p = str(principal or '')
+    if not pages.resident(p) or (town and p == town):
+        return False
+    return not any(pages.guest_name(p).startswith(x) for x in probes if x)
+
+
+def info_of(view, town='', probes=()):
+    """What the door graph and a room's panel read of its state: its name (`head`), the residents here (a place's
+    inhabitants apart), what lies here, and its residents' newest lines, each said once (`said`), and how many lines of
+    the town's own it holds besides (`books`)."""
     s = state_of(view)
     head = s.get('head') if isinstance(s.get('head'), str) and s.get('head').strip() else None
-    return {'name': head, 'present': [by(r.get('who'), r.get('handle'), town) for r in rows(s.get('presence'))],
+    here = rows(s.get('presence'))
+    said, seen, books = [], set(), 0
+    for r in sorted(rows(s.get('lines')), key=lambda r: r.get('at') or 0, reverse=True):
+        if not resident_of(r.get('author'), town, probes):
+            books += 1
+        elif (r.get('verb'), r.get('text')) not in seen:
+            seen.add((r.get('verb'), r.get('text')))
+            said.append(r)
+    return {'name': head, 'present': [by(r.get('who'), r.get('handle'), town) for r in here if resident_of(r.get('who'), town, probes)],
+            'others': [by(r.get('who'), r.get('handle'), town) for r in here if not pages.resident(str(r.get('who') or ''))],  # its inhabitants; never a deploy's check
             'things': [r['object'] for r in rows(s.get('things')) if isinstance(r.get('object'), str) and r.get('object')],
-            'kind': s.get('kind') if isinstance(s.get('kind'), str) else None, 'state': s}
+            'said': said, 'books': books, 'state': s}
 
 
-LINES = 4  # a room's newest lines in its panel
+LINES = 3  # a room's residents' newest lines in its panel
 
 
-def panel(obj, view, ways, signed_in, town='', unfold=False):
-    """A room unfolded in place: what it is called and what it is, who is here and what lies here, its newest lines,
-    its doors out and the ways in (each a link to that room's panel), and the ways to go there, read it, inspect it.
-    The scene, the card and its verbs come from its own pages when it is opened (say.js); without a script the
-    links are the way."""
-    i = info_of(view, town)
-    s = i['state']
-    newest = sorted(rows(s.get('lines')), key=lambda r: r.get('at') or 0, reverse=True)[:LINES]
+def lively(i):
+    """A room worth a panel: someone is in it, something lies in it, or a resident has said something there."""
+    return bool(i['present'] or i['others'] or i['things'] or i['said'])
+
+
+def panel(obj, view, i, ways, names, signed_in, town='', unfold=False, target=None):
+    """A room on /town: its name, who is here and what lies here, its residents' newest lines, its doors (each to that
+    room's panel), and one row of ways: go there, inspect it. Unfolded, its scene, view and spells come from its own
+    pages (say.js); without a script the links are the way."""
     lines = ''.join(PAGES['line'].format(who=e(by(r.get('author'), r.get('handle'), town)), verb=e(str(r.get('verb') or 'wrote')),
                                          text=PAGES['line_text'].format(text=e(r['text'])) if r.get('text') else '', at=e(str(r.get('at', ''))))
-                    for r in newest)
+                    for r in i['said'][1:LINES + 1])  # the newest is in its summary
     out = [w for w in ways if w['from'] == obj and w['to'] != obj]
-    into = [w for w in ways if w['to'] == obj and w['from'] != obj]
-    door = lambda w, end: A['panel_door'].format(href=e('#' + anchor(w[end])), label=e(w.get('label') if end == 'to' else w[end]), to=e(w[end]))
-    here = ', '.join(i['present'])
-    summary = ' · '.join(x for x in (f"{len(i['present'])} here" if i['present'] else '', f"{len(i['things'])} lying here" if i['things'] else '',
-                                     f"{len(out)} door{'s' * (len(out) != 1)}" if out else '') if x)
+    target = target or (lambda n: '#' + anchor(n))
+    door = lambda w: A['panel_door'].format(href=e(target(w['to'])), label=e(w.get('label') or names.get(w['to']) or w['to']))
+    who = i['present'] + [names.get(x[1:]) or x[1:] if x.startswith('@') else x for x in i['others']]  # an inhabitant by its own name
+    summary = ' · '.join(x for x in (f"{len(who)} here" if who else '', f"{len(out)} door{'s' * (len(out) != 1)}" if out else '') if x)
     return A['panel'].format(
-        id=e(anchor(obj)), obj=e(obj), open=' open' if unfold else '', name=e(i['name'] or obj),
-        about=e(' · '.join(x for x in (obj if i['name'] else '', f"a {i['kind'].rpartition('/')[2]}" if i['kind'] else '') if x)),
-        summary=e(summary), lit=' lit' if i['present'] else '', version=e(str(view.get('version', ''))),
-        here=PAGES['present'].format(names=e(here), verb='is' if len(i['present']) == 1 else 'are') if here else '',
-        things=PAGES['things'].format(items=', '.join(PAGES['link'].format(href=e(href('inspect', t)), rel=e(t)) for t in i['things'])) if i['things'] else '',
-        lines=PAGES['lately'].format(items=lines) if lines else '',
-        doors=A['panel_doors'].format(items=' · '.join(door(w, 'to') for w in out)) if out else '',
-        into=A['panel_into'].format(items=' · '.join(door(w, 'from') for w in into)) if into else '',
-        go=e(href('play' if signed_in else 'o', obj)), read=e(href('o', obj)), inspect=e(href('inspect', obj)),
-        golabel='Go there' if signed_in else 'Read it')
+        id=e(anchor(obj)), obj=e(obj), open=' open' if unfold else '', name=e(i['name'] or obj), summary=e(summary),
+        last=A['panel_last'].format(who=e(by(i['said'][0].get('author'), i['said'][0].get('handle'), town)), text=e(i['said'][0].get('text') or i['said'][0].get('verb') or ''))
+        if i['said'] else '',
+        lit=' lit' if i['present'] else '', version=e(str(view.get('version', ''))),
+        here=PAGES['present'].format(names=e(', '.join(who)), verb='is' if len(who) == 1 else 'are') if who else '',
+        things=A['panel_things'].format(items=', '.join(PAGES['link'].format(href=e(href('o', t)), rel=e(names.get(t) or t.rpartition('/')[2])) for t in i['things'])) if i['things'] else '',
+        lines=A['panel_lines'].format(items=lines) if lines else '',
+        books=A['panel_books'].format(n=i['books'], s='s' * (i['books'] != 1), read=e(href('o', obj))) if i['books'] else '',
+        doors=A['panel_doors'].format(items=' · '.join(door(w) for w in out)) if out else '',
+        go=e(href('play' if signed_in else 'o', obj)), read=e(href('o', obj)), inspect=e(href('inspect', obj)))
 
 
-def town(who, nodes, ways, views, *, alone=(), height=None, town_principal='', unfold=None, map_text=None):
-    """/town: the walking graph and every room as a panel that unfolds in place; the rooms no door reaches listed
-    after; the commonplace's own map (its Bend) folded at the foot. `views` {node: world-view reply}."""
-    info = {n: info_of(views.get(n) or {}, town_principal) for n in nodes}
-    present = sum(len(i['present']) for i in info.values())
-    order = sorted(nodes, key=lambda n: (n != 'commonplace', -len(info[n]['present']), (info[n]['name'] or n).lower()))
-    panels = ''.join(panel(n, views.get(n) or {}, ways, bool(who), town_principal, unfold == n) for n in order)
-    lonely = ''.join(panel(n, views.get(n) or {}, ways, bool(who), town_principal, unfold == n) for n in alone)
+def town(who, nodes, ways, views, *, alone=(), height=None, town_principal='', unfold=None, probes=(), wanting=(), signed_in=False):
+    """/town: what a visitor can do and who is around first; the door graph; a panel for each room where someone is,
+    something lies or a resident spoke (the commonplace first, then the lit rooms); every quieter place a name in one
+    line. `views` {node: world-view reply}; `wanting` world-wanting's rows."""
+    every = [*nodes, *alone]
+    info = {n: info_of(views.get(n) or {}, town_principal, probes) for n in every}
+    names = {n: i['name'] for n, i in info.items() if i['name']}
+    live = [n for n in every if n == 'commonplace' or lively(info[n]) or n == unfold]
+    order = sorted(live, key=lambda n: (n != 'commonplace', not info[n]['present'], not info[n]['said'], (info[n]['name'] or n).lower()))
+    quiet = sorted((n for n in every if n not in live), key=lambda n: (info[n]['name'] or n).lower())
+    target = lambda n: '#' + anchor(n) if n in live else href('o', n)
+    about = [(p, n) for n in order for p in info[n]['present']]
+    groups = [n for n in order if info[n]['present']]
+    around = A['around_item'].format(items=''.join(A['around_one'].format(who=e(', '.join(info[n]['present'])), href=e('#' + anchor(n)), place=e(info[n]['name'] or n))
+                                                   for n in groups)) if groups else A['around_none']
+    go = lambda w: href('play' if signed_in else 'o', w['object']) + ('?say=' + urllib.parse.quote(w['asks'], safe='') if signed_in and w.get('asks') else '')
+    asked, distinct = set(), []
+    for w in wanting:  # what wants a hand, each want once however many places pose it
+        if isinstance(w, dict) and w.get('object') and (w.get('reading') or w.get('name')) not in asked and len(distinct) < 3:
+            asked.add(w.get('reading') or w.get('name'))
+            distinct.append(w)
+    wants = ''.join(A['can_want'].format(href=e(go(w)), reading=e(w.get('reading') or w.get('name', '')), place=e(names.get(w['object']) or w['object']))
+                    for w in distinct)
     body = A['town'].format(
-        places=len(nodes) + len(alone), doors=len(ways), present=present, height=e(str(height or '')),
-        graph=graph(nodes, ways, info) if nodes else '', panels=panels,
-        alone=A['town_alone'].format(panels=lonely) if lonely else '',
-        map=A['town_map'].format(text=e(map_text)) if map_text else '')
+        places=len(every), residents=len(about), can=A['can_in' if signed_in else 'can_out'].format(wants=A['can_wants'].format(items=wants) if wants else ''),
+        around=around, height=e(str(height or '')), graph=graph(nodes, ways, info, target=target) if nodes else '',
+        panels=''.join(panel(n, views.get(n) or {}, info[n], ways, names, signed_in, town_principal, unfold == n, target) for n in order),
+        quiet=A['town_quiet'].format(items=' '.join(PAGES['link'].format(href=e(href('o', n)), rel=e(info[n]['name'] or n)) for n in quiet)) if quiet else '')
     return page('the town', who, body, layout='atlas')
 
 
