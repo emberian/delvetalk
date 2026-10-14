@@ -255,7 +255,12 @@ class BrowserSecurity(unittest.TestCase):
                                   ({'Referer': ORIGIN + '.evil.example/enter'}, 403),
                                   ({'Origin': 'null', 'Referer': ORIGIN + '/enter'}, 403),
                                   ({'Origin': ORIGIN, 'Sec-Fetch-Site': 'cross-site'}, 403),
-                                  ({'Origin': ORIGIN, 'Sec-Fetch-Site': 'same-site'}, 303)):
+                                  ({'Origin': ORIGIN, 'Sec-Fetch-Site': 'same-site'}, 303),
+                                  # behind `Referrer-Policy: no-referrer` a browser's own form says `Origin: null` (obend, 2026-10-14)
+                                  ({'Origin': 'null', 'Sec-Fetch-Site': 'same-origin'}, 303),
+                                  ({'Origin': 'null', 'Sec-Fetch-Site': 'same-site'}, 403),
+                                  ({'Origin': 'null', 'Sec-Fetch-Site': 'cross-site'}, 403),
+                                  ({'Origin': 'null', 'Sec-Fetch-Site': 'none'}, 403)):
             with self.subTest(headers=headers):
                 self.assertEqual(self.post('/enter', {'credential': KEY, 'csrf': token}, jar, **headers)[0], expected)
 
