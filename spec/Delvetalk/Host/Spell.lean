@@ -248,12 +248,23 @@ def inline (tail : T) : Fields2 :=
 def isDelimiter (text : T) : Bool :=
   decide (text.length ≥ 1) && decide (text.length ≤ 32) && span text delimiterAlphabet == text.length
 
+/-- The delimiter a field's value opens a block with (`<<END`), if it is one. -/
+def blockValue (value : T) : Option T :=
+  if value.take 2 == lit "<<" && isDelimiter (trimEnd (value.drop 2)) then some (trimEnd (value.drop 2)) else none
+
 /-- The delimiter of the block a field line opens (`law: <<END`), if it opens one. -/
 def blockOpener (line : T) : Option T :=
   let colon := brk line [':']
-  let value := trimStart (line.drop (colon + 1))
-  if colon < line.length && looksLikeField line && value.take 2 == lit "<<" && isDelimiter (trimEnd (value.drop 2))
-  then some (trimEnd (value.drop 2)) else none
+  if colon < line.length && looksLikeField line then blockValue (trimStart (line.drop (colon + 1))) else none
+
+/-- The spell line's last inline field when its value opens a block (`delvetalk kind/room make / name: jar / spween:
+    <<END`): the fields before it, its name and the delimiter. The block's lines follow the spell line, as they follow a
+    field line that opens one. -/
+def lastOpens (bs : List Binding) : Option (List Binding × String × T) := do
+  let b ← bs.getLast?
+  guard (!b.name.isEmpty)
+  let d ← blockValue b.value.toList
+  return (bs.dropLast, b.name, d)
 
 /-- A block's last line: exactly its delimiter (a trailing carriage return allowed). -/
 def closesBlock (delimiter line : T) : Bool :=
@@ -325,6 +336,23 @@ partial def block (name : String) (delimiter rest : T) (lines : List T) : Fields
     else block name delimiter after (line :: lines)
 end
 
+/-- A spell line's inline fields, then the lines under it: a block when its last inline field opens one (`lastOpens`),
+    else field lines. -/
+def headed (tail rest : T) : Fields2 :=
+  match inline tail with
+  | .found bs => match lastOpens bs with
+    | some (before, name, delimiter) => sequenced before (block name delimiter rest [])
+    | none => sequenced bs (fieldLines rest)
+  | other => other
+
+/-- The delimiter of the block a spell line opens with its last inline field, if it does. -/
+def lineOpens (line : T) : Option T :=
+  match headingAt line 0 line.length with
+  | .stands _ _ tail _ => match inline tail with
+    | .found bs => (lastOpens bs).map (·.2.2)
+    | _ => none
+  | .none => none
+
 /-- A spell line is cast only at the margin: an indented `delvetalk …` line is a quotation or an example
     (every card prints its spells indented), never a spell. -/
 partial def parseFrom (text : T) (fielded : Bool) : Parsed :=
@@ -336,7 +364,7 @@ partial def parseFrom (text : T) (fielded : Bool) : Parsed :=
     else if indent == 0 && decide (0 < stop) && isSpellAt text 0 then
       match headingAt text 0 stop with
       | .none => parseFrom (text.drop (stop + 1)) fielded
-      | .stands c a tail rest => spelled c a (both (inline tail) (fieldLines rest))
+      | .stands c a tail rest => spelled c a (headed tail rest)
     else parseFrom (text.drop (stop + 1)) (fielded || fieldHead text indent stop)
 where
   spelled (card action : String) : Fields2 → Parsed
@@ -352,7 +380,7 @@ where
     else if indent == 0 && decide (0 < stop) && isSpellAt text 0 then
       match headingAt text 0 stop with
       | .none => seekAfter (text.drop (stop + 1)) otherwise
-      | .stands c a tail rest => spelled c a (both (inline tail) (fieldLines rest))
+      | .stands c a tail rest => spelled c a (headed tail rest)
     else seekAfter (text.drop (stop + 1)) otherwise
 
 /-! ## Render: values as data
@@ -360,7 +388,8 @@ where
 `render` writes a spell whose fields hold arbitrary text so that `parse` reads back exactly those
 fields. A value goes inline (`/ name: value`) only when `inlineSafe` says no rule of `slashed`,
 `piece` or `more` could cut it: it is one printable line with no edge blank, no ` /` (the cut of
-`slashed`), no leading `/`, and no comma-led piece that looks like a field (`more`). From the first
+`slashed`), no leading `/`, no comma-led piece that looks like a field (`more`), and is not itself a
+block's opener (`<<END`, which `headed` and `binding` read as one). From the first
 field that is not inline-safe on, each field takes a line of its own: `name: value` when the value is
 inline-safe (`binding` takes the whole line after the colon), else a `name: <<DELIM` block (`block`
 takes every line verbatim up to `closesBlock`), the delimiter chosen so that no line of the value
@@ -373,7 +402,7 @@ def slashAfterBlank : T → Bool
 
 def inlineSafe (value : String) : Bool :=
   let t := value.toList
-  !t.isEmpty && t.all (fun c => c.toNat ≥ 32 && c.toNat != 127) &&
+  !t.isEmpty && (blockValue t).isNone && t.all (fun c => c.toNat ≥ 32 && c.toNat != 127) &&
     t.head? != some ' ' && t.getLast? != some ' ' && t.head? != some '/' && !slashAfterBlank t &&
     ((value.splitOn ",").drop 1).all fun p => !p.any (· == ':')
 
@@ -452,7 +481,8 @@ def segments (text : String) (probe : String → String := id) : List String :=
       | .open_ =>
           let head := (probe line).toList
           if isSpellAt head 0 && (match headingAt head 0 head.length with | .stands .. => true | .none => false) then
-            (match open_ with | some ls => done ++ ["\n".intercalate ls] | none => done, some [line], .open_)
+            (match open_ with | some ls => done ++ ["\n".intercalate ls] | none => done, some [line],
+              match lineOpens (trimEnd head) with | some delimiter => .block delimiter | none => .open_)
           else if tagged chars indent chars.length then (done, append open_, .fence)
           else match open_ with
             | some _ =>
@@ -879,6 +909,14 @@ private def plant : Form :=
 
 #guard render "me" "note" [⟨"text", "bell/2 has 2 rains, the last by kim"⟩] == "delvetalk me note / text: bell/2 has 2 rains, the last by kim"
 #guard render "me" "note" [⟨"text", "a / to: eve"⟩] == "delvetalk me note\ntext: <<END\na / to: eve\nEND"
+-- A block opened by the spell line's last inline field (the jar of 2026-10-14): its lines are the value, as under a
+-- field line; the fields after the block follow it.
+#guard parse "delvetalk kind/room make / name: jar / spween: <<END\n---\nid: jar\n---\n=== start\nHoney.\n* [Taste] -> start\nEND" ==
+  .spell "kind/room" "make" [⟨"name", "jar"⟩, ⟨"spween", "---\nid: jar\n---\n=== start\nHoney.\n* [Taste] -> start"⟩]
+#guard parse "delvetalk w c / a: 1 / b: <<B\nx\nB\nc: 2" == .spell "w" "c" [⟨"a", "1"⟩, ⟨"b", "x"⟩, ⟨"c", "2"⟩]
+#guard parse "delvetalk w c / b: <<B\nx\n" == .notASpell "The block <<B for b needs a last line that is exactly B." true
+#guard segments "delvetalk w c / b: <<B\ndelvetalk p q\nB\ndelvetalk r s" == ["delvetalk w c / b: <<B\ndelvetalk p q\nB", "delvetalk r s"]
+#guard (renderChecked "me" "note" [⟨"text", "<<END"⟩]).isSome
 #guard ["", " lead", "trail ", "a\nb", "END", "END\nEND_0\nEND_1", "<<END", "x\ndelvetalk p s / o: e", "---", "# h", "> q", "```", "a, b: c", "/ x", "tab\tx", "r\r\nEND\r"].all fun v =>
   renderChecked "me" "note" [⟨"a", "q"⟩, ⟨"text", v⟩, ⟨"z", "w"⟩] == some (render "me" "note" [⟨"a", "q"⟩, ⟨"text", v⟩, ⟨"z", "w"⟩])
 

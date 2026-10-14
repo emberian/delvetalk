@@ -54,7 +54,8 @@ import ./Text.obend as Text
 # what taking it says (gemini's "The cold tap runs warm"), shown above the passage it leads to, or alone when
 # it ends the visit.
 #
-# Refused by name: `weight` in the frontmatter (a scene is entered by name, never drawn; a draw is inside one), a category other than keeps,
+# Refused by name: a first line that wraps a scene (`<<END`, a ``` fence) rather than begins one, `weight` in the
+# frontmatter (a scene is entered by name, never drawn; a draw is inside one), a category other than keeps,
 # holds and has, an effect outside a choice, and a target no passage answers. Forty passages of eight
 # choices and 600 characters, a choice's text 280, as a card shows them.
 sum Parsed:
@@ -138,7 +139,11 @@ sum Front:
 def front(ls: Lists.List<String>) -> Front:
   match ls:
     case nil(_): Front.bare({rest: ls})
-    case cons(c): if Text.trim(c.head) == "" then front(c.tail) else if Text.trim(c.head) == "---" then closing(c.tail, Lists.List.nil({})) else Front.bare({rest: ls})
+    case cons(c): if Text.trim(c.head) == "" then front(c.tail) else if Text.trim(c.head) == "---" then closing(c.tail, Lists.List.nil({})) else if wrapper(Text.trim(c.head)) != "" then Front.bad({reason: wrapper(Text.trim(c.head))}) else Front.bare({rest: ls})
+# A first line that wraps a scene rather than begins one: a block's opener or a code fence kept as text (the jar of
+# 2026-10-14, whose `<<END` became its one passage). Refused by name, never read as prose.
+def wrapper(line: String) -> String:
+  if Text.starts(line, "<<") then "the scene's first line is {line}, a block's opener kept as text: the scene is the lines under it, up to its closing line" else if Text.starts(line, "```") then "the scene's first line is {line}, a code fence kept as text: the scene is the lines inside it" else ""
 def closing(ls: Lists.List<String>, seen: Lists.List<String>) -> Front:
   match ls:
     case nil(_): Front.bad({reason: "the frontmatter has no closing ---; add --- on the line after its last field"})

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from tests.host import serve
 from tests.keys import write_repo_key
+from tests.test_scene import plain
 from tests.town import Town
 from transport import bridge, delve, feed, identity, post
 from transport.config import Config
@@ -136,6 +137,25 @@ class Feed(unittest.TestCase):
         mine = [r for r in feed.Feed(self.st).rows() if not r['town']]
         self.assertTrue(mine and all(r['uri'] in observed for r in mine))
         self.assertEqual(observed[mine[0]['uri']]['author']['handle'], 'wren')
+
+    def test_a_jar_made_over_http_and_on_the_feed_reads_its_scene_and_its_owner_rescenes_it(self):
+        """Kestrel's jar (2026-10-14): `/ spween: <<END` on the spell line over HTTP receive, a ```spween fence under the
+        spell line on the feed, and the owner's rescene, each the scene and never its source as prose."""
+        from tests.test_spween import JAR
+        t = self.guest('kestrel')
+        passages = lambda room: [p['id'] for p in plain(self.town.send(op='world-view', principal='anonymous', object=room)['state'])['passages']]  # noqa: E731
+        spell = 'delvetalk kind/room make / name: the jar of honey / spween: <<END\n' + JAR + 'END'
+        s, _, body = self.request('POST', '/AGENTS.md/world/kind/room/receive', {'intent': 'jar-http', 'spell': spell}, t)
+        self.assertEqual(s, 200, body)
+        [room] = [c['name'] for c in json.loads(body)['_links']['created']]
+        self.assertEqual(passages(room), ['sill'])
+        fed, _ = self.said(t, 'delvetalk kind/room make / name: the jar again\n```spween\n' + JAR + '```')
+        again = re.search(r'\b(room/\d+)\b', fed)[1]
+        self.assertNotEqual(again, room)
+        self.assertEqual(passages(again), ['sill'])
+        rescened, _ = self.said(t, f'delvetalk {room} rescene\n```spween\n=== shelf\nThe jar moved to the shelf.\n* [Taste] -> shelf\n```')
+        self.assertIn('admitted', rescened)
+        self.assertEqual(passages(room), ['shelf'])
 
     def test_alices_book_of_a_diary_only_she_reads_is_never_published_in_the_feed(self):
         from deploy import genesis
