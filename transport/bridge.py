@@ -573,20 +573,26 @@ def offer_drafts(st, host):
 
 
 MAX_HOPS = 32  # the host's `reachHops`: the ancestors passed with a post
+NOTE_TEXT = 280  # the characters of a post an avatar keeps of a mention (`textTake(input.text, 280n)`, world/objects/Avatar.obend `mentioned`); the host publishes no bound for it
 def mention_turns(st, host, obs, authors, handles, addressed):
     """A mention is addressed to the mentioned: one turn per mention (a facet's DID, or an @handle that is a known
     author) to the mentioned principal's avatar, `<did>`.receive {text, post} under the author with reach `mentioned`:
     the avatar keeps it as a note, and the host never reads it as a spell (its spell lines are the author's, routed to the
-    cards they name). Once per post. Only an arrived principal has an avatar: a mentioned principal the observer has seen
-    is arrived first; one it has not is skipped, with a note in skipped.txt. Only the first `addressed` mentions (the
-    host's `mentionsAddressed`) are turned."""
+    cards they name). Sent only for a post the host's reach answered `reached` (the caller's), once per post, and carrying
+    the post's URI and its first NOTE_TEXT characters, which is all the avatar keeps. Only an arrived principal has an
+    avatar: a mentioned principal the observer has seen is arrived first; one it has not is skipped, with a note in
+    skipped.txt. Only the first `addressed` mentions (the host's `mentionsAddressed`) are turned. A turn the host gave
+    no receipt for stays owed (`observe.owed`) and is sent again next run."""
     done = st.words(st.mentioned)
     dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:addressed]) if d))
-    if obs['uri'] in done or not dids:
+    if obs['uri'] in done:
+        observe.pay(st, obs['uri'])
+        return False
+    if not dids:
         return False
     author = obs['author']
     register(st, host, author['did'], author['handle'])
-    fields = [{'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}}, {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]
+    fields = [{'name': 'text', 'value': {'tag': 'label', 'value': obs['text'][:NOTE_TEXT]}}, {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]
     replies = []
     for did in dids:
         if did not in handles or not register(st, host, did, handles[did]):
@@ -597,6 +603,7 @@ def mention_turns(st, host, obs, authors, handles, addressed):
                                   'identity': f"{obs['uri']}#mention:{did}"}))
     if all('receipt' in r for r in replies):  # else retry next run: the host answers a repeated identity with its first receipt
         st.append(st.mentioned, obs['uri'])
+        observe.pay(st, obs['uri'])
     return bool(replies)
 
 
@@ -667,6 +674,26 @@ def tick(host, now=None):
     return host.send({'op': 'world-advance', 'principal': CLOCK, 'height': int((time.time() if now is None else now) // 60)})
 
 
+def answered(st, obs):
+    """Whether the bridge is done with a post: it has a draft (or, for a request record, an answer) and nothing is
+    awaiting an interpretation of it. A post that failed this run, or whose turn is suspended, is not."""
+    awaiting = awaiting_path(st, obs['uri'])
+    if awaiting.exists():
+        return bool(json.loads(awaiting.read_text()).get('settled'))
+    return draft_exists(st.outbox, obs['uri']) or (obs['kind'] == 'request' and answer_path(st, request_source(obs)).exists())
+
+
+def forget(st, rows, now=None):
+    """Prune the observer's store of what this run answered (observe.py's docstring says what is kept): a skipped post
+    is dropped to its hash SKIP_MINUTES after it was written, an answered one RETAIN_DAYS after; a pending one stays. The posts of
+    the town's own feed keep their `posts` row, which `feed.waiting` reads."""
+    from transport import feed
+    skip = st.words(st.skipped)
+    gone = [o for o in rows if o['uri'] in skip]
+    kept = [o for o in rows if o['uri'] not in skip and answered(st, o)]
+    return observe.prune(st, gone, kept, at=observe.timeline(rows, now), keep={o['uri'] for o in rows if feed.is_feed(o['uri'], st.config.origin, st.world)})
+
+
 def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     """One step: observe (when given an observer), tick the clock, turn every addressed observation, settle what the
     host has to deliver, and draft what was offered and published."""
@@ -685,14 +712,24 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     done, skip, origin = [], st.words(st.skipped), st.config.origin
     rows = st.observations()
     observed = sorted(rows, key=lambda o: (o['createdAt'], o['uri']))  # every post goes to `world-reach` once; the host says where
-    known = {o['uri']: o for o in observed}
-    authors = {o['author']['handle'].lower(): o['author']['did'] for o in rows}  # every author seen, so an @handle resolves
-    handles = {o['author']['did']: o['author']['handle'] for o in rows}
+    known = {**observe.stubs(st), **{o['uri']: o for o in observed}}  # the ancestors reach may be shown: whole, or the stub of a dropped reply
+    handles, authors = {}, {}  # every author seen, so an @handle resolves, and each arrives at their first observed post
+    for did, handle in [*observe.authors(st), *((o['author']['did'], o['author']['handle']) for o in rows)]:
+        handles[did], authors[handle.lower()] = handle, did
     for did, handle in handles.items():  # a principal arrives at their first observed post, whatever its kind
         register(st, host, did, handle)
-    addressed = host.send({'op': 'bounds'})['host']['mentionsAddressed'] if any(obs['mentions'] for obs in observed) else 0
-    mentioned = [obs['uri'] for obs in observed if obs['mentions'] and mention_turns(st, host, obs, authors, handles, addressed)]
+    bound = []
+
+    def mention(obs):
+        if not bound:
+            bound.append(host.send({'op': 'bounds'})['host']['mentionsAddressed'])
+        if mention_turns(st, host, obs, authors, handles, bound[0]):
+            mentioned.append(obs['uri'])
+
+    mentioned, owed = [], observe.owed(st)
     for obs in observed:
+        if obs['uri'] in owed and obs['mentions']:  # reached in an earlier run, its mention turns unsent
+            mention(obs)
         if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists() or \
                 (obs['kind'] == 'request' and answer_path(st, request_source(obs)).exists()):
             continue
@@ -714,6 +751,9 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if target is None:
             st.append(st.skipped, obs['uri'])
             continue
+        if obs['mentions'] and not asked and obs['uri'] not in owed:  # a post the host reached is heard by whom it mentions; one it did not, by no one
+            observe.owe(st, obs['uri'])
+            mention(obs)
         obj, slot, how = target
         handle, did = obs['author']['handle'], obs['author']['did']
         register(st, host, did, handle)
@@ -810,6 +850,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot, 'height': reply['receipt']['height']})
         done.append(obs['uri'])
+    forget(st, rows, now)
     for _ in range(rounds):
         if not host.send({'op': 'world-pending'}).get('count'):
             break

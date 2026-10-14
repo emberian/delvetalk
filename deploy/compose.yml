@@ -117,7 +117,7 @@ services:
       - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_HTTP_PORT:-8765}:${DELVETALK_HTTP_PORT:-8765}/tcp"
     depends_on:
       delvetalk-host: { condition: service_healthy }
-    mem_limit: 512m
+    mem_limit: 256m
     cpus: 1.0
     pids_limit: 64
     healthcheck:
@@ -136,7 +136,7 @@ services:
     command: ["python3", "-m", "transport", "bridge"]
     depends_on:
       delvetalk-host: { condition: service_healthy }
-    mem_limit: 1g
+    mem_limit: 256m
     cpus: 0.5
     pids_limit: 64
     healthcheck:
@@ -156,7 +156,7 @@ services:
       <<: *env
       DELVETALK_ANTHROPIC_KEY_FILE: /run/secrets/anthropic_key
     secrets: [anthropic_key]
-    mem_limit: 1g
+    mem_limit: 256m
     cpus: 0.5
     pids_limit: 64
     healthcheck:

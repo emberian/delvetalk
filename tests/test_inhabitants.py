@@ -74,8 +74,10 @@ class Inhabitants(test_scenarios.Arc):
         at = self.clock() + 61
         self.assertEqual(self.town.send(op="world-advance", principal="transport", height=at)["status"], "advanced")
         self.deliver()
-        self.assertEqual(self.clock(), at)
-        return at % 1440 // 60
+        # The tick stands for the clock its wait was set for, a gap after the last, though the wait ends the minute
+        # after it: ticks are 60 minutes apart, never 61 (the live review's H6).
+        self.assertEqual(self.clock(), at - 1)
+        return (at - 1) % 1440 // 60
 
     def until(self, hour):
         """Ticks until the clock's hour of the day is `hour`."""
@@ -123,6 +125,29 @@ class Inhabitants(test_scenarios.Arc):
         self.assertIn("placedPerHand", third)
         self.assertIn("Its maker arms it again: delvetalk regular/3 arm", third)
 
+    def test_the_tide_is_the_towns_and_holds_every_hands_share_past_the_others_pool(self):
+        """The live review of 2026-10-14, H1: obend's tide held 15 rules in four hours, six of them three residents'
+        hourly rules, and the others' pool of 24 would have refused every resident (and the refresh's inhabitants) within
+        a day. On a thing the opener owns each hand brings its own four: seven hands place 28 (past 24), the town's
+        inhabitants count as the tide owner's and are armed again after, and the fifth of one hand is refused by its own
+        share, never by a full tide. Refuted by a resident's rule on the tide refused `placedByOthers`."""
+        hands = ["did:plc:tidehand%016d" % n for n in range(7)]
+        for n, did in enumerate(hands):
+            self.town.send(op="world-arrive", principal="transport", did=did, handle="tide%d.delve.town" % n)
+            for k in range(4):
+                self.admitted(did, "tide", "delvetalk tide rule / name: h%dr%d / when: request.method == \"tick\" and new.ticks %% 24 == %d / then: delvetalk me note / text: h%d" % (n, k, k, n))
+        others = [r for r in self.rules("tide") if r["owner"] in hands]
+        self.assertEqual(len(others), 28)
+        town = [r for r in self.rules("tide") if r["owner"].startswith("@station/")]
+        self.assertGreaterEqual(len(town), 4)
+        self.admitted(OPENER, REGULAR, "delvetalk %s arm" % REGULAR)
+        self.deliver()
+        self.assertEqual(len([r for r in self.rules("tide") if r["owner"] == "@" + REGULAR]), 2)
+        fifth = self.say(hands[0], "tide", "delvetalk tide rule / name: h0r4 / when: request.method == \"tick\" / then: delvetalk me note / text: h0")
+        self.assertEqual((fifth["status"], fifth["receipt"]["outcome"]["class"]), ("refused", "capacity"), fifth)
+        self.assertIn("placedPerHand", fifth["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.town.send(op="bounds")["host"]["placedOnTownThing"], 512)
+
     def test_a_day_of_ticks_moves_each_by_its_own_rules_journaled_and_replayed(self):
         start = self.clock()
         self.assertNotIn("rung", str(self.field("bell/1", "marks")))
@@ -167,7 +192,7 @@ class Inhabitants(test_scenarios.Arc):
         before = {o: self.town.send(op="world-view", principal=OPENER, object=o)["state"] for o in objects}
         self.town.reopen()
         self.assertEqual({o: self.town.send(op="world-view", principal=OPENER, object=o)["state"] for o in objects}, before)
-        self.assertEqual(self.clock(), start + 26 * 61)
+        self.assertEqual(self.clock(), start + 26 * 60)  # 26 ticks, each 60 minutes after the last
 
     def test_three_of_her_coins_lie_in_the_till_at_most(self):
         """She lays a coin each day while fewer than three of hers lie untaken; then she pays with one already there,

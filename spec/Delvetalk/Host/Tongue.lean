@@ -277,6 +277,7 @@ def english : Tongue :=
             ("needs", "hob: that still needs {fields}; send it filled:"),
             ("noneTakes", "hob: none of {card}'s spells takes that; its spells: delvetalk {card} ?"),
             ("usage", "hob: how a spell is read: delvetalk library read / page: spells"),
+            ("heard", "hob: the town heard you. A spell acts here: delvetalk guide shows how, delvetalk commonplace ? lists what it takes."),
             ("hint", "hob: the page on this: delvetalk library read / page: spells"),
             ("away", "While you were away"), ("before", "Before you arrived")] }
 

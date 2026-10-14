@@ -6,6 +6,7 @@ import html
 import hmac
 import json
 import os
+import re
 import secrets
 import socket
 import sys
@@ -146,6 +147,24 @@ def argument(data):
     if 'spell' in data:
         return typed({'text': data['spell'], 'post': ''})
     return typed(data['fields']) if isinstance(data.get('fields'), dict) else data.get('argument', {'tag': 'record', 'fields': []})
+
+
+def arguments_of(items):
+    """A REPL's `arguments` as typed data: an element already `{tag, ...}` stays, plain JSON (21, "text", true, {..}) is `typed`."""
+    return [i if isinstance(i, dict) and 'tag' in i else typed(i) for i in items] if isinstance(items, list) else items
+
+
+def repl_misfit(kind, data):
+    """What a scratch `repl` or `check` body lacks or has the wrong shape, named, or None: the host's own words for these are `String expected`."""
+    for k in ('source', 'entry', 'object'):
+        if k in data and not isinstance(data[k], str):
+            return f'{k} must be a string'
+    if kind == 'check' and not isinstance(data.get('source'), str) and not isinstance(data.get('modules'), list):
+        return 'a check needs source (the Bend text) or modules'
+    if kind == 'repl' and 'entry' not in data:
+        return 'a repl needs entry, the name of the def to run (and source, unless the object already holds it)'
+    if 'arguments' in data and not isinstance(data['arguments'], list):
+        return 'arguments must be a list, one element per parameter of entry'
 
 
 # Keys whose values are content ids, digests or chain links: the default rendering omits them; ?full=1 shows them.
@@ -337,17 +356,27 @@ BUSY = (b'HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json; ch
         b'Connection: close\r\nContent-Length: %d\r\n\r\n' % len(_busy)) + _busy
 
 
+LABEL = re.compile(r'[A-Za-z][A-Za-z0-9_.-]{0,47}')
+
+
+def named(*parts):
+    """The access log's class label: each part that is a fixed identifier, joined by `:`; a word with anything else in it is dropped."""
+    return ':'.join(p for p in parts if isinstance(p, str) and LABEL.fullmatch(p)) or None
+
+
 class AccessLog:
     """One line per request: time, method, path (no query), status, bytes sent, the principal's DID or `-`, the world.
-    A service-auth refusal appends its fixed reason code. Never a credential or a body.
+    A refusal (4xx, 5xx) appends `class=<label>`: the envelope's class, with the host's own stage, clause or class after a `:` when
+    the host refused; a service-auth refusal appends `auth=<fixed reason code>`. Never a credential, a body or a reason's words.
     Rotated by size: past `limit` bytes the file becomes `<name>.1` (the previous one is dropped)."""
     LIMIT = 16 * 1024 * 1024
 
     def __init__(self, path, world, limit=LIMIT):
         self.path, self.world, self.limit, self.lock = Path(path), world, limit, threading.Lock()
 
-    def write(self, when, method, path, status, sent, did, reason=None):
-        line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'} {self.world}" + (f" auth={reason}" if reason else '') + '\n'
+    def write(self, when, method, path, status, sent, did, reason=None, refusal=None):
+        line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'} {self.world}" + \
+            (f" class={refusal}" if refusal else '') + (f" auth={reason}" if reason else '') + '\n'
         with self.lock:
             try:
                 if self.path.exists() and self.path.stat().st_size + len(line) > self.limit:
@@ -662,12 +691,13 @@ class Handler(BaseHTTPRequestHandler):
         super().send_response(code, message)
 
     def handle_one_request(self):
-        self.status, self.did, self.head, self.auth_reason = 0, None, False, None
+        self.status, self.did, self.head, self.auth_reason, self.refusal = 0, None, False, None, None
         self.wfile.sent = 0
         super().handle_one_request()
         if self.server.access and self.status:  # a request that never parsed has no status
             self.server.access.write(self.server.clock(), getattr(self, 'command', '-'), urllib.parse.urlsplit(self.path).path,
-                                     self.status, self.wfile.sent, self.did, self.auth_reason)
+                                     self.status, self.wfile.sent, self.did, self.auth_reason,
+                                     (self.refusal or 'unclassed') if self.status >= 400 else None)
 
     def reply(self, code, body, ctype='application/json', headers=(), maximum=None):
         raw = body.encode('utf-8', 'backslashreplace') if isinstance(body, str) else body  # a lone surrogate the host echoed stays a JSON escape
@@ -692,6 +722,7 @@ class Handler(BaseHTTPRequestHandler):
     def fail(self, cls, message=None, hint=None, links=None, more=None, acts=None, headers=()):
         """The one error envelope: {status, class, message, hint?, _links} over the host's own fields, if any (`more`)."""
         code, status, when = ERRORS[cls]['code'], ERRORS[cls]['status'], ERRORS[cls]['when']
+        self.refusal = named(cls, next((v for v in (more.get(k) for k in ('stage', 'clause', 'class')) if named(v)), None) if cls == 'hostRequest' and more else None)
         body = {**(more or {}), 'status': status, 'class': cls, 'message': message or when, **({'hint': hint} if hint else {}),
                 '_links': {'self': link(self.path), 'api': link(PREFIX + '/api'), **(links or {})}, **({'_actions': acts} if acts else {})}
         if self.browser():  # the same envelope, as a page: a person reads a refusal as easily as a card
@@ -878,8 +909,10 @@ class Handler(BaseHTTPRequestHandler):
             self.route(method) if method != 'OPTIONS' else self.options()
         except (ConnectionError, TimeoutError):
             self.close_connection = True
-        except Exception:
-            traceback.print_exc()
+        except Exception as err:
+            where = traceback.extract_tb(err.__traceback__)[-1]
+            print(f"front: 500 {method} {urllib.parse.urlsplit(self.path).path} {type(err).__name__} {Path(where.filename).name}:{where.lineno}",
+                  file=sys.stderr, flush=True)
             if not self.replied:
                 self.fail('internal')
 
@@ -1250,6 +1283,7 @@ class Handler(BaseHTTPRequestHandler):
     def xrpc_reply(self, code, body, headers=()):
         """XRPC's {error, message}, with the envelope's status, class and links beside it. A record or a page is the
         AT Protocol's shape, verbatim: its `cursor` is its control."""
+        self.refusal = named(body['error'])
         error = {'status': 'refused' if code == 403 else 'error', 'class': body['error'],
                  '_links': {'self': link(self.path), 'api': link(PREFIX + '/api')}}
         if self.browser():
@@ -1550,11 +1584,16 @@ class Handler(BaseHTTPRequestHandler):
                                            **({'identity': data['intent']} if 'intent' in data else {})})
             return self.answer(reply, links={'receipt': link(f"{PREFIX}/receipt/{(reply.get('receipt') or {}).get('slug', '')}")}
                                if reply.get('status') == 'cited' else {'scratch': link(base + '/world')})
+        misfit = repl_misfit(kind, data)
+        if misfit:
+            return self.fail('badRequest', misfit)
         if kind == 'check':  # the verdict, against the scratch's sealed library; ?full=1 adds the compiled artifact
             checked = host.send({'op': 'world-check', 'principal': principal, **{k: data[k] for k in ('modules', 'source', 'entry') if k in data}})
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'},
                                links={'repl': link(base + '/repl')})
-        given = {k: data[k] for k in ('source', 'entry', 'object', 'arguments') if k in data}
+        given = {k: data[k] for k in ('source', 'entry', 'object') if k in data}
+        if 'arguments' in data:
+            given['arguments'] = arguments_of(data['arguments'])
         if any(k in data for k in ('spell', 'fields', 'argument')):
             given['argument'] = argument(data)
         reply = host.send({'op': 'world-repl', 'principal': principal, 'identity': data.get('intent') or f'repl-{secrets.token_hex(6)}', **given})
@@ -1938,6 +1977,7 @@ class Handler(BaseHTTPRequestHandler):
 def command(st, a, out):
     """`http`: the public front on the config's address."""
     front = Front(st, st.host(), Identity(st, Client(http_transport)))
+    print(f'front: started world={st.world} port={front.server_address[1]}', file=sys.stderr, flush=True)
     try:
         front.serve_forever()
     finally:

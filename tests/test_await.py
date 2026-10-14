@@ -270,7 +270,7 @@ class Suspend(Await):
             self.assertEqual(self.strike(ident=f"s{i}")["status"], "suspended")
         ninth = self.strike(ident="s8")
         out = ninth["receipt"]["outcome"]
-        self.assertEqual((ninth["status"], out["class"], out["reason"]), ("refused", "capacity", "the host's pendingActivitiesPerObject is full; try later."))
+        self.assertEqual((ninth["status"], out["class"], out["reason"]), ("refused", "capacity", "the host's pendingActivitiesPerObject is full; it drains as readings and waits settle: try later."))
 
     def test_a_tampered_checkpoint_digest_in_the_journal_breaks_open(self):
         self.bell()

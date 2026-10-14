@@ -13,6 +13,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.test_http import FrontCase, HANDLE
 from tests.town import Town
@@ -235,6 +236,47 @@ class Town_(unittest.TestCase):
     def test_a_short_hidden_word_is_hidden_only_where_it_stands_as_a_word(self):
         r = self.town.send(op='world-redact', principal=PUBLIC, items=[{'text': 'class'}])
         self.assertEqual(r['texts'], ['class'])
+
+
+class Logs(unittest.TestCase):
+    """The worker's container log: one line per batch and per error, never a text. Refuted by a batch with no line, a line with
+    a text, a key or a reason's words in it, an error repeated every step, or a start with no line."""
+
+    def run_batches(self, answers):
+        import contextlib
+        import io
+        import tempfile
+        from transport.state import State
+        err = io.StringIO()
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stderr(err):
+            host = type('H', (), {'send': lambda s, req: {'status': 'verdicts', 'acted': [], 'unanswered': []}, 'close': lambda s: None})()
+            replies = iter(answers)
+            w = automod.Worker(State(d), host, ask=lambda system, user: next(replies), clock=lambda: 100.0)
+            for _ in answers:
+                w.classify([{'key': 'secret-key', 'text': 'secret-text', 'source': 's', 'author': 'a', 'at': 1, 'seen': 0}])
+                w.wait_until = 0
+        return err.getvalue().splitlines()
+
+    def test_a_batch_is_one_line_and_an_error_one_line_until_it_changes(self):
+        down = {'status': 'failed', 'reason': 'secret-reason', 'detail': 'secret-detail', 'seconds': 0.5}
+        lines = self.run_batches([down, down, down, {'status': 'replied', 'model': 'm', 'usage': {}, 'seconds': 0.2, 'raw': '[]'}])
+        self.assertEqual([l.rsplit(' seconds=', 1)[0] for l in lines if 'batch' in l], ['automod: batch texts=1 status=failed'] * 3 + ['automod: batch texts=1 status=replied'])
+        self.assertEqual([l for l in lines if 'error' in l], ['automod: error classifier failed'])
+        for secret in ('secret-key', 'secret-text', 'secret-reason', 'secret-detail'):
+            self.assertNotIn(secret, '\n'.join(lines))
+
+    def test_the_worker_says_it_started(self):
+        import contextlib
+        import io
+        import tempfile
+        from transport.state import State
+        err = io.StringIO()
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stderr(err):
+            st = State(d, world='gsb')
+            with mock.patch.object(st, 'root_host', lambda: type('H', (), {'send': lambda s, r: {}, 'close': lambda s: None})()), \
+                    mock.patch.object(st, 'daemon', lambda *a, **k: None):
+                automod.command(st, type('A', (), {'once': False, 'backfill': False})(), io.StringIO())
+        self.assertEqual(err.getvalue().splitlines(), ['automod: started world=gsb'])
 
 
 class Wire(unittest.TestCase):

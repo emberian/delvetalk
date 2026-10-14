@@ -22,7 +22,7 @@ type State = Super.State
 form place:
   cell: natural 0..120
 form lines:
-  from: natural 1..1000000000
+  from: natural 0..1000000000
 form door:
   label: text 1..32
   to: text 1..128

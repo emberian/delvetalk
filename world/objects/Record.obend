@@ -218,9 +218,11 @@ def heard(maker: String, verb: String, context: Abi.Context) -> Activity<World.S
 def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = write {tended: set context.clock}
   Card.tell(Card.Replied.done({action: "tend"}), Document.concat(Document.text("Tended at clock {natText(context.clock)}, entry {natText(context.height)}.\n\n"), render(extend(state, {tended: context.clock}), context)))
-# The card's lines from a number on, for reading past the first eight.
+# The card's lines from a number on, for reading past the first eight; with no number (0), the newest eight.
 def lines(state: State, input: {from: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
-  Card.tell(Card.Replied.done({action: "lines"}), renderFrom(state, context, input.from, 0n))
+  Card.tell(Card.Replied.done({action: "lines"}), renderFrom(state, context, if input.from == 0n then newestPage(state) else input.from, 0n))
+def newestPage(state: State) -> Nat:
+  if state.next > 8n then state.next - 8n else 0n
 # admit {number}: the keeper's alone (refused by name to anyone else, and by the law).
 def admit(state: State, input: {number: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
   if state.keeper == "" || context.principal != state.keeper then refused({clause: "notKeeper", reading: keeperReading(state, context)}, context) else admitting(state, input.number, context)
@@ -423,7 +425,7 @@ form write:
 form admit:
   number: natural 1..1000000000
 form lines:
-  from: natural 1..1000000000
+  from: natural 0..1000000000
 form tend:
 form door:
   label: text 1..32

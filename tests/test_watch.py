@@ -16,7 +16,7 @@ from transport.state import State
 
 def probe(at=100000, **more):
     p = {'at': at, 'front': {'requests5m': 3, '5xx5m': 0, '5xxHour': 0}, 'hour': {'turns': 20, 'refused': {}},
-         'model': {'hour': {'calls': 4, 'dollars': 0.001}, 'day': {'calls': 9, 'dollars': 0.002}},
+         'model': {'hour': {'calls': 4, 'readings': 4, 'paints': 0, 'dollars': 0.001}, 'day': {'calls': 9, 'readings': 9, 'paints': 0, 'dollars': 0.002}, 'paintBudget': 400},
          'reservations': {'source': 'delve', 'used': 2, 'quota': 16}, 'interpretations': {'pending': 0, 'maxAttempts': 0},
          'journal': {'height': 900, 'bytes': 1 << 20, 'medianSuspendedBytes': 4000}, 'clock': {'world': 1, 'behindMinutes': 0},
          'observed': 50, 'backup': {'newest': 'delvetalk-x.tar.gz', 'ageSeconds': 600, 'verify': 'ok'}, 'freeFraction': {'/data': 0.6}}
@@ -29,12 +29,36 @@ class Watch(unittest.TestCase):
     def test_a_healthy_probe_crosses_nothing_and_each_threshold_names_its_condition(self):
         self.assertEqual(watch.conditions(probe(), []), [])
         crossed = probe(front={'5xx5m': 2}, hour={'turns': 20, 'refused': {'capacity': 1, 'quota': 6, 'staleRoot': 3}},
-                        model={'hour': {'calls': 121, 'dollars': 0.03}}, clock={'behindMinutes': 4},
+                        model={'hour': {'calls': 121, 'readings': 121, 'paints': 0, 'dollars': 0.03}}, clock={'behindMinutes': 4},
                         interpretations={'pending': 21, 'maxAttempts': 8}, backup={'verify': 'broken', 'ageSeconds': 8 * 3600},
                         journal={'bytes': 201 << 20, 'medianSuspendedBytes': 9000}, freeFraction={'/data': 0.1})
         keys = [k for k, _, _ in watch.conditions(crossed, [], ['delvetalk-bridge'])]
         self.assertEqual(keys, ['unhealthy', '5xx', 'capacity', 'quota', 'staleRoot', 'model', 'journal', 'suspension', 'clock',
                                 'interpretations', 'backup', 'disk:/data'])
+
+    def test_paints_are_not_readings_and_a_ledger_of_200_paints_and_5_readings_crosses_no_model_line(self):
+        """Refuted by a `model` line for 200 paints and 5 readings, by 121 readings giving none, or by paints counted in the readings."""
+        import json
+        import time
+        with tempfile.TemporaryDirectory() as d:
+            st = State(d)
+            now = time.time()
+            rows = [{'at': now - 60, 'inputTokens': 10, 'outputTokens': 1, 'use': 'paint'}] * 200 + [{'at': now - 60, 'inputTokens': 10, 'outputTokens': 1}] * 5
+            st.spend.write_text(''.join(json.dumps(r) + '\n' for r in rows))
+            host = type('H', (), {'send': lambda s, req: {}})()
+            p = watch.probe(st, host)
+            self.assertEqual((p['model']['hour']['paints'], p['model']['hour']['readings'], p['model']['hour']['calls']), (200, 5, 205))
+            modelled = lambda q: [k for k, _, _ in watch.conditions(q, []) if k in ('model', 'paints')]
+            self.assertEqual(modelled(p), [])
+            rows += [{'at': now - 60, 'inputTokens': 10, 'outputTokens': 1}] * 116  # 121 readings in the hour
+            st.spend.write_text(''.join(json.dumps(r) + '\n' for r in rows))
+            self.assertEqual(modelled(watch.probe(st, host)), ['model'])
+
+    def test_paints_are_held_to_twice_the_paint_budget_a_rolling_day_and_never_alert_an_hour(self):
+        """Refuted by an hour of 500 paints alerting, by a day at 2 x the budget alerting, or by 801 not."""
+        day = lambda n: {'hour': {'calls': 500, 'readings': 0, 'paints': 500, 'dollars': 1}, 'day': {'calls': n, 'readings': 0, 'paints': n, 'dollars': 1}}
+        self.assertEqual(watch.conditions(probe(model=day(800)), []), [])
+        self.assertEqual([k for k, _, _ in watch.conditions(probe(model=day(801)), [])], ['paints'])
 
     def test_the_hour_long_thresholds_read_the_history(self):
         full = {'reservations': {'used': 16}}

@@ -101,6 +101,94 @@ class HistoryBound(unittest.TestCase):
         self.assertEqual([r['limit'] for r in sent if r['op'] in ('world-history', 'world-entries')], [7, 7], sent)
 
 
+class StartLines(unittest.TestCase):
+    """The hand's and the front's containers say they started (docs/review/live-2026-10-14.md R5): one line, the world and the
+    port, no token. Refuted by an empty log, a second line, or the token in it."""
+
+    def started(self, run):
+        import contextlib
+        from transport.config import Config
+        from transport.state import State
+        err = io.StringIO()
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stderr(err), \
+                mock.patch.object(Front, 'serve_forever', lambda self: None):
+            Path(d, 'tok').write_text('secret-token\n')
+            st = State(d, world='gsb', config=Config(hand_port=0, http_port=0, hand_token_file=str(Path(d, 'tok'))))
+            host = mock.Mock()
+            st.host = lambda: host
+            run(st, host)
+        return err.getvalue().splitlines()
+
+    def test_the_hand_says_it_started_with_its_port(self):
+        lines = self.started(lambda st, host: hand.serve(st, host))
+        self.assertEqual(len(lines), 1, lines)
+        self.assertRegex(lines[0], r'^hand: started world=gsb port=\d+$')
+        self.assertNotIn('secret', lines[0])
+
+    def test_the_front_says_it_started_with_its_port(self):
+        from transport import http
+        lines = self.started(lambda st, host: http.command(st, None, io.StringIO()))
+        self.assertEqual(len(lines), 1, lines)
+        self.assertRegex(lines[0], r'^front: started world=gsb port=\d+$')
+
+
+class ModlogBound(unittest.TestCase):
+    """`hand modlog --tail N` on a town whose opener is the owner (gsb: 10.7 MB, 248,142 lines): the opener's refreshes are not
+    moderation, and a carried genesis is its height and receipt. Refuted by a refresh in the output, a carry whole, a carry
+    with no height or receipt, a moderation act missed behind a page of refreshes, or output past the bound asked."""
+
+    def journal(self, refreshes=250, acts=3, carry=True):
+        hexa = lambda n: 'bafy' + str(n).zfill(8)
+        entries = [{'turn': n, 'hash': hexa(n), 'identity': {'principal': 'did:plc:o', 'intent': f'refresh-{n}'}, 'outcome': {'tag': 'admitted'}}
+                   for n in range(500, 500 - refreshes, -1)]
+        entries += [{'turn': 200 - n, 'hash': hexa(200 - n), 'identity': {'principal': 'did:plc:o', 'intent': f'mod-{n}'},
+                     'outcome': {'tag': 'moderated', 'power': 'quiet', 'reading': 'flooding'}} for n in range(acts)]
+        entries += [{'turn': 150, 'hash': hexa(150), 'root': True, 'reason': 'a fix', 'outcome': {'tag': 'admitted', 'kind': 'set'}},
+                    {'turn': 140, 'hash': hexa(140), 'identity': {'principal': 'did:plc:x'}, 'outcome': {'tag': 'refused', 'class': 'quiet'}},
+                    {'turn': 130, 'hash': hexa(130), 'identity': {'principal': 'did:plc:x'}, 'outcome': {'tag': 'refused', 'class': 'typeMismatch'}}]
+        if carry:
+            entries.append({'turn': 31, 'hash': hexa(31), 'identity': {'principal': 'did:plc:o'}, 'outcome': {'tag': 'carried', 'objects': 'x' * 3_000_000}})
+        entries += [{'turn': n, 'hash': hexa(n), 'identity': {'principal': 'did:plc:o'}, 'outcome': {'tag': 'admitted'}} for n in range(30, 0, -1)]
+        sent = []
+
+        def send(req):
+            sent.append(req)
+            if req['op'] == 'bounds':
+                return {'status': 'bounds', 'host': {'maxHistoryLimit': 100}}
+            start = int(req.get('cursor') or 0)
+            page = entries[start:start + req['limit']]
+            more = start + req['limit'] < len(entries)
+            return {'status': 'entries', 'entries': page, **({'more': True, 'cursor': str(start + req['limit'])} if more else {})}
+        return type('H', (), {'send': staticmethod(send)})(), sent
+
+    def test_a_tail_of_thirty_is_moderation_only_and_the_carry_is_its_height(self):
+        from transport import root
+        host, sent = self.journal()
+        got = root.modlog(host, 'did:plc:o', tail=30)
+        text = json.dumps(got, indent=1)
+        self.assertLess(len(text.splitlines()), 100)
+        self.assertLess(len(text), 8000)
+        self.assertEqual([e.get('turn') or e.get('height') for e in got], [200, 199, 198, 150, 140, 31])
+        self.assertEqual(got[-1], {'carried': True, 'height': 31, 'receipt': root.slug('bafy00000031')})
+        self.assertNotIn('refresh', text)
+        self.assertNotIn('typeMismatch', text)
+        self.assertNotIn('xxxx', text)
+
+    def test_a_tail_stops_reading_back_once_it_has_enough_and_a_town_with_none_returns_nothing(self):
+        from transport import root
+        host, sent = self.journal()
+        self.assertEqual(len(root.modlog(host, 'did:plc:o', tail=2)), 2)
+        self.assertEqual(len([r for r in sent if r['op'] == 'world-entries']), 3)  # 250 refreshes ahead of the first act: pages of 100
+        host, _ = self.journal(refreshes=0, acts=0, carry=False)
+        self.assertEqual([e['turn'] for e in root.modlog(host, 'did:plc:o', tail=100)], [150, 140])
+
+    def test_a_carry_in_an_objects_history_is_elided_too(self):
+        from transport import root
+        big = {'turn': 31, 'hash': 'bafy00000031', 'outcome': {'tag': 'carried', 'objects': 'x' * 1_000_000}}
+        host = type('H', (), {'send': staticmethod(lambda r: {'status': 'bounds', 'host': {'maxHistoryLimit': 100}} if r['op'] == 'bounds' else {'entries': [big]})})()
+        self.assertEqual(root.modlog(host, 'did:plc:o', 'porch', tail=5), [{'carried': True, 'height': 31, 'receipt': root.slug('bafy00000031')}])
+
+
 class Poster:
     def __init__(self):
         self.calls = []

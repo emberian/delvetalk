@@ -1020,7 +1020,7 @@
     }
    ]
   },
-  "expected": "refused seed takes 1 to 80 characters.",
+  "expected": "refused seed takes 1 to 80 characters; this one is 0.",
   "parsed": "spell garden-1 plant seed=;colour=silver;"
  },
  {
@@ -1084,7 +1084,7 @@
     }
    ]
   },
-  "expected": "refused seed takes 1 to 80 characters.",
+  "expected": "refused seed takes 1 to 80 characters; this one is 81.",
   "parsed": "spell garden-1 plant seed=ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé;colour=silver;"
  },
  {

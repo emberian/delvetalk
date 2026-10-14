@@ -72,8 +72,10 @@ def maxViewNodes : Nat := 4096
     bounded clock and dependent-want transition prefixes, a journal-derived pending flip queue, and
     checked drain entries retaining each transition's triggering height and clock; 16: lane/automod (the
     moderated `screen` act and the `screened` index it derives, `Screen.lean`); 17: lane/playtest5 (laws judge
-    `!=`, `<` and `>`; a direct turn naming a grown verb or a host spell is that spell, `spellOfAction`). -/
-def replayEdition : Nat := 17
+    `!=`, `<` and `>`; a direct turn naming a grown verb or a host spell is that spell, `spellOfAction`); 18: lane/livefix
+    (a store names a made thing's lineage bodies by CID, `Snapshot.knownLineage`, and keeps only the libraries in use,
+    which a binary before it would misread; hob's prose is asked again, `attempted` reason `prose`). -/
+def replayEdition : Nat := 18
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -82,6 +84,8 @@ def maxReasonBytes : Nat := 256
 /-- Model results one interpretation takes before a transient failure is its verdict (HOST-HANDOFF
     5.107): the first `interpretAttempts - 1` transient failures are journaled `attempted`. -/
 def interpretAttempts : Nat := 8
+/-- The characters of hob's question a misfit spell's refusal shows as its hint (one line; past it, the fixed line). -/
+def askLine : Nat := 160
 /-- The longest backoff between model attempts, in clock units. -/
 def interpretBackoffMax : Nat := 60
 def maxSourceBytes : Nat := 64
@@ -141,6 +145,12 @@ def placedPerHand : Nat := 4
     alone): a stranger's lines never take the owner's room
     (docs/review/astra-2026-10-12 world 6). -/
 def placedByOthers : Nat := 24
+/-- Rules (and wants) on a thing the town's opener owns, its tide above all, where every hand's hourly rule lives: there
+    the others' pool is not `placedByOthers` but each hand's own `placedPerHand`, so the room grows with the hands that
+    use it and the town's own inhabitants (placed as the opener's things) are never crowded out; this bounds the whole.
+    At obend's first night (six residents' rules in four hours, four a hand at most) it fills past 128 hands, never
+    within a week (the live review of 2026-10-14, H1). -/
+def placedOnTownThing : Nat := 512
 /-- What judging one rule's or want's condition may read (`Law.work`), after the commit: past it the rule is
     `unfired budget`, the want does not pose; nothing of it is charged to the write (world 6). -/
 def clauseTicks : Nat := Delvetalk.Bounds.lawTicks / 8

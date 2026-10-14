@@ -101,7 +101,7 @@ def high(kind: String) -> Nat:
 def textFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
   if textLength(value) < low(spec.kind) || textLength(value) > high(spec.kind) then bad("{spec.name} is {natText(low(spec.kind))} to {natText(high(spec.kind))} characters; this one is {natText(textLength(value))}.") else Lists.Maybe.none({})
 def naturalFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
-  if textLength(value) == 0n || textSpan(value, "0123456789") != textLength(value) || Text.digits(value, 0n) < low(spec.kind) || Text.digits(value, 0n) > high(spec.kind) then bad("{spec.name} is a number from {natText(low(spec.kind))} to {natText(high(spec.kind))}.") else Lists.Maybe.none({})
+  if textLength(value) == 0n || textSpan(value, "0123456789") != textLength(value) || Text.digits(value, 0n) < low(spec.kind) || Text.digits(value, 0n) > high(spec.kind) then bad("{spec.name} is a number from {natText(low(spec.kind))} to {natText(high(spec.kind))}; this one is {textTake(value, 24n)}.") else Lists.Maybe.none({})
 # A layer as the workshop writes it around a body of forms and defs (docs/AUTHORING.md §3 (c)): the
 # edition, the imports a body over RECORD or THING reads (every module their State's fields name, so
 # `write {…}` derives its edits, and View for a body that draws its page: docs/VIEWS.md), `type State = Super.State`, the body, then

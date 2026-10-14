@@ -14,7 +14,7 @@ SPELLS  delvetalk CARD ? lists a card's spells, blanks shown.
 TRY  delvetalk try, spells indented under it: what they would do, nothing written.
 LAW  delvetalk library laws / card: CARD. Only an owner reprograms or amends.
 RECEIPT  every act has one, admitted or refused <clause>: <reading>; never repost: delvetalk receipt / of: <post>.
-CLASSES  send again: staleRoot budget evaluation capacity quota quiet. Change the spell: the rest.
+CLASSES  send again: staleRoot evaluation capacity quota quiet. Else change it (budget too).
 MEND  delvetalk report <what broke>
 GUIDE  delvetalk guide, in parts. ? and try write nothing.
 Next: delvetalk library read / page: spells

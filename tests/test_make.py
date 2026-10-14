@@ -152,6 +152,9 @@ class ObjectShares(MakerFixture):
         r = self.make_as("kim", "kim/over")
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "capacity"), r)
         self.assertIn("objectsPerPrincipal", r["receipt"]["outcome"]["reason"])
+        # The live review's finding 6: the bound and what frees it, never "try later" (waiting frees nothing).
+        self.assertIn("you keep 128 of the 128 things a hand keeps in this town; retire one of yours (delvetalk <thing> retire)", r["receipt"]["outcome"]["reason"])
+        self.assertNotIn("later", r["receipt"]["outcome"]["reason"])
         self.assertEqual(self.make_as("yue", "yue/0")["status"], "admitted")
         retired = self.turn("kim/0", "retire", record(reading=label("finished")), principal=self.opener)
         self.assertEqual(retired["status"], "admitted", retired)

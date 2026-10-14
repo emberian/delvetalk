@@ -2001,6 +2001,14 @@ def selfWait (object : String) (sus : Json) : Bool :=
   let act := (outcome.getObjVal? "activity").toOption.getD Json.null
   (slot.getObjValAs? String "principal").toOption == some object && (act.getObjValAs? String "object").toOption == some object
 
+/-- What a value is, said in a refusal: its shape, never its words. -/
+def dataShape : Data → String
+  | .natural _ => "a number"
+  | .boolean _ => "true or false"
+  | .label _ => "text"
+  | .record _ => "a record"
+  | .variant l _ => if l == "cons" || l == "nil" then "a list" else s!"the case {l}"
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
@@ -2069,7 +2077,10 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     held.note reads
     noteProfile fun _ => (Delvetalk.Turn.storedStart entry arguments held.store |>.map fun (start, _) =>
       Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks start held.store.bounded)
-    drive depth id caller compiled binding held started 0
+    -- A budget that runs out names the innermost method running then: the part that was costly.
+    tryCatch (drive depth id caller compiled binding held started 0) fun
+      | .budget r => throw (.budget (if (r.splitOn " in ").length > 1 then r else s!"{r} in {id} {method}"))
+      | e => throw e
   | _ =>
     unless r.isDataUnder compiled.bounds compiled.rigid Ty.dataFuel [] do throw (.request s!"method {method} must be pure data or an activity")
     let st ← get
@@ -2085,7 +2096,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .ok (.finished value _ _ usage, reads) =>
       held.note reads
       spend (usage.ticksUsed + usage.conversionNodes)
-      let .record fields := value | evaluation "a pure method must return the state record"
+      let .record fields := value | evaluation s!"{method} of {id} returned {dataShape value}, and a method with no Activity returns its State record (what it writes); one that answers a value is def {method}(state: State, …) -> Activity<T>"
       addWrite id caller (fields.map fun (k, v) => (⟨k, .set v⟩ : Edit))
       return value
 
@@ -4672,16 +4683,31 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
       return close (Tongue.say tongue "asksFirst" ++ "\n" ++ String.join (steps.map fun x => "\n" ++ indentSpell x.spell)) none
     let text := fun (k : String) => (act.getObjValAs? String k).toOption.getD ""
     return ← runHeard w ctx (text "post") (text "reach") steps
-  if let some r := (i.getObjVal? "refusal").toOption then
-    let text := fun (k : String) => (r.getObjValAs? String k).toOption
-    return close "" (some { cls := "badSpell", clause := text "clause", object := some card, reason := text "reason", hint := text "hint" })
   let needs := strings (verdict.getObjVal? "needs").toOption ++ items.flatMap fun v => strings (v.getObjVal? "reasons").toOption
   let forms := (((i.getObjVal? "offers").toOption.bind (decodeData Limits.dataDepth · |>.toOption)).bind listOf |>.getD []).filterMap Spell.Form.ofData
   let asked := needs.any fun n => !n.isEmpty && n != "not addressed" && !n.startsWith "model:"
+  -- A misfit spell hob read: its refusal stands, and hob's question, when it asked one, is the hint the resident reads
+  -- (the live review's finding 5: six questions lost behind the host's own hint). A question is one short line ending
+  -- `?` (VOICE: never the model's reasoning); else the fixed line naming what the spell still needs, filled to send.
+  if let some r := (i.getObjVal? "refusal").toOption then
+    let text := fun (k : String) => (r.getObjValAs? String k).toOption
+    let asking := asked && (verdict.getObjValAs? String "tag").toOption == some "unclear"
+    let question := if !asking then none else needs.head?.bind fun q =>
+      if q.length ≤ Limits.askLine && ["?", "？", "؟"].any (q.endsWith ·) then some s!"hob asks: {q}" else
+      match neededFields needs forms with
+      | [] => none
+      | fields => some (Tongue.say tongue "needs" [("fields", ", ".intercalate fields)] ++ String.join
+          ((forms.filter fun f => f.fields.any (fields.contains ·.name)).map fun f => " " ++ spellTemplate f.card f))
+    return close "" (some { cls := "badSpell", clause := text "clause", object := some card, reason := text "reason",
+                            hint := question.orElse fun _ => text "hint" })
   -- A question hob reads no spell or ask into is answered by the card itself (`cardAnswer`); other words, by silence.
   let question := ["?", "？", "؟"].any (((i.getObjValAs? String "utterance").toOption.getD "").trimAscii.toString.endsWith ·)
   let answered := match kind with | .reply _ => !needs.any (·.startsWith "model:") | .timedOut => false
   if !asked && question && answered then return close (cardAnswer w card principal) none
+  -- A summons (the town named, read at the commonplace) that hob reads as nothing still hears the town: one line saying
+  -- how to act (the live review's finding 4: seven greetings on gsb met silence).
+  if !asked && answered && card == commonplaceId && (act.getObjValAs? String "reach").toOption == some "mention" then
+    return close (Tongue.say tongue "heard" ++ "\n") none
   if !asked then return close "" none
   let fields := neededFields needs forms
   -- An ask naming no field the card's spells take: none of them fits the words; the card's `?` lists them.
@@ -5231,6 +5257,25 @@ def growVerdict (w : World) (principal self : String) (carries : Data → Bool) 
     else Json.mkObj [("tag", toJson "unclear"), ("reasons", (v.getObjVal? "needs").toOption.getD (Json.arr #[]))]
   return (w, Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr #[grown, item use])])
 
+/-- The answer in a reply that reasons before it (the live review's finding 5: "The speaker's words are a complete
+    spell…" in the answer slot): when its last line is `none` or a one-line `ask:` and no line before it is a spell,
+    that line; else the reply as it is. A `grow:` keeps its lines (the spell that uses the verb follows it). -/
+def answerLine (text : String) : String :=
+  let lines := (text.splitOn "\n").map (·.trimAscii.toString) |>.filter (!·.isEmpty)
+  match lines.getLast? with
+  | some last =>
+    let answer := last.toLower == "none" || (last.take 4).toString.toLower == "ask:"
+    if lines.length > 1 && answer && (Spell.segments text).isEmpty then last else text.trimAscii.toString
+  | none => text.trimAscii.toString
+
+/-- Whether a replied model text is prose that answers in none of hob's forms (no `none`, `ask:`, `grow:`, plan or
+    spell): its reasoning, never shown or counted; the host asks once more (`interpretationOp`). -/
+def proseReply (reply verdict : Json) : Bool :=
+  (reply.getObjValAs? String "status").toOption == some "replied" &&
+  (((reply.getObjValAs? String "raw").toOption.map answerLine).getD "none").toLower != "none" &&
+  (verdict.getObjValAs? String "tag").toOption == some "unclear" &&
+  (verdict.getObjVal? "needs").toOption == some (toJson ["not addressed"])
+
 /-- What a reply says to the suspended object: the model's text (`raw`), hob's four answers. `none`;
     `ask: <question>`; `grow:` (`growVerdict`); else it is fitted as a spell against the offered forms
     (`spellVerdict`) and checked as a proposal (`proposalVerdict`: a method of the card, its argument
@@ -5265,7 +5310,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   -- hob's four answers (docs/OVERHAUL.md §2; FOUNDATION §10): the spell meant, `grow: NAME
   -- "reading"` with the spell that uses it, `ask: <question>`, or `none`. hob states no fact and
   -- shows no card: there is no fifth.
-  let said := text.trimAscii.toString
+  let said := answerLine text
   if said.toLower == "none" then return (w, unclearVerdict ["not addressed"])
   if (said.take 4).toString.toLower == "ask:" then
     let q := ((said.drop 4).toString.trimAscii.toString)
@@ -5331,11 +5376,13 @@ def interpretationOp (w : World) (j : Json) : Except String (World × Json) := d
   let tried := ((w.attempts[id]?).map (·.1)).getD 0
   let transient := (replied.getObjValAs? String "status").toOption == some "failed" &&
     transientReasons.contains ((replied.getObjValAs? String "reason").toOption.getD "")
-  if transient && tried + 1 < Limits.interpretAttempts then
+  -- Prose in none of hob's forms (its reasoning) is asked again once, as a transient failure is, and never settles first.
+  let prose := tried == 0 && !transient && (interpretVerdict w s replied).toOption.any fun (_, v) => proseReply replied v
+  if (transient || prose) && tried + 1 < Limits.interpretAttempts then
     let attempt := tried + 1
     let next := w.clock + min Limits.interpretBackoffMax (2 ^ (attempt - 1))
     let key := s!"{id}/attempt/{attempt}"
-    let reason := (replied.getObjValAs? String "reason").toOption.getD ""
+    let reason := if prose then "prose" else (replied.getObjValAs? String "reason").toOption.getD ""
     let (w', entry) := push w (identityKey interpretationPrincipal key)
       [("identity", identityJson interpretationPrincipal key), ("roots", rootsJson []),
        ("turn", toJson (w.height + 1)), ("request", toJson digest),

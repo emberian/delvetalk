@@ -38,6 +38,9 @@ class Resumed(test_chain.Chain):
         """Settle the one pending interpretation with the model's text; the resumed turn."""
         [item] = self.host.send(op="world-interpretations")["pending"]
         settled = self.host.send(op="world-interpretation", id=item["id"], reply=self.text(raw))
+        if settled["status"] == "retrying":  # prose in none of hob's forms is asked again once (the live review's finding 5)
+            self.assertEqual(settled["receipt"]["outcome"]["reason"], "prose", settled)
+            settled = self.host.send(op="world-interpretation", id=item["id"], reply=self.text(raw))
         self.assertEqual(settled["status"], "interpreted", settled)
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return item, resumed

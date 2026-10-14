@@ -11,7 +11,9 @@ against the offered forms (the garden's plant) before resuming the commonplace's
 """
 import json
 import os
+import re
 import unittest
+from pathlib import Path
 
 from deploy import genesis
 from tests.host import ROOT, as_owner
@@ -270,12 +272,14 @@ class PolicyObject(Chain):
         self.assertEqual((silent["receipt"]["outcome"], silent["offers"]), ({"tag": "admitted", "writes": []}, []), silent)
         self.assertEqual(self.things(), [])
 
-    def test_hob_none_at_the_commonplace_is_silence(self):
+    def test_hob_none_at_the_commonplace_is_the_towns_one_line(self):
+        """A summons hob reads as nothing hears the town's one line, never silence (the live review's finding 4)."""
         self.policy()
         self.garden()
         self.say("my cat is called Pip, by the way")
-        silent = self.interpret(self.NONE)
-        self.assertEqual((silent["receipt"]["outcome"], silent["offers"]), ({"tag": "admitted", "writes": []}, []), silent)
+        heard = self.interpret(self.NONE)
+        self.assertEqual((heard["receipt"]["outcome"], [o["text"] for o in heard["offers"]]),
+                         ({"tag": "admitted", "writes": []}, ["hob: the town heard you. A spell acts here: delvetalk guide shows how, delvetalk commonplace ? lists what it takes.\n"]), heard)
         self.assertEqual(self.things(), [])
 
     def test_a_colour_the_form_does_not_take_comes_back_as_hobs_one_question_over_the_doors(self):
@@ -317,7 +321,10 @@ class PolicyObject(Chain):
         refused = self.interpret(self.hob_says("ask: Which card: the garden?"))
         out = refused["receipt"]["outcome"]
         self.assertEqual((out["tag"], out["clause"]), ("refused", "otherCard"), refused)
-        self.assertNotIn("Which card", json.dumps(refused))  # the model's words never reach the card
+        # hob's question, one short line, is the refusal's hint the resident reads (the live review's finding 5), and
+        # never a line of the card.
+        self.assertEqual(out["hint"], "hob asks: Which card: the garden?", refused)
+        self.assertNotIn("Which card", self.host.send(op="world-card", principal="glm", object="commonplace")["text"])
 
     def test_prose_with_no_stated_reach_is_not_addressed_at_once(self):
         # HOST-HANDOFF 118: no reach, no model, no suspension, no quota.
@@ -397,7 +404,16 @@ class PolicyObject(Chain):
         self.assertNotIn("✾ WORKSHOP", system)
         package = "".join(line + "\n" for line in genesis.page_body("object").splitlines()[1:] if not line.startswith(("METHODS", "Check:", "Next:")))
         self.assertIn("```obend\n" + package + "```\n", system)
-        self.assertTrue(system.endswith("Answer with one ```obend block holding the package, and nothing else.\n"), system)
+        self.assertTrue(system.endswith("Answer with one ```obend block holding the draft, and nothing else.\n"), system)
+        # The live review's finding 1: hob's four drafts guessed at imports and form grammar. The prompt shows the bend
+        # page's body (the workshop writes its header) and names the library's modules, each one there.
+        bend = Path(ROOT, "capsules", "pages", "bend.txt").read_text()
+        body = re.search(r"With a field; and a mark, which a card shows once made:\n```obend\n(.*?)```", bend, re.S)[1]
+        self.assertIn("```obend\n" + body + "```\n", system)
+        named = re.search(r"each as import ./NAME.obend as ALIAS: ([A-Za-z, ]+)\.", system)[1].split(", ")
+        library = {f.stem for f in Path(ROOT, "world", "lib").rglob("*.obend")}
+        self.assertEqual([m for m in named if m not in library], [])
+        self.assertIn("When the check refuses one, the words come back".lower(), system.lower())
         self.assertEqual(item["utterance"], "Write the Bend for a thing called lamp: a lamp anyone lights")
         self.assertEqual(item["user"], item["utterance"])  # no card to quote
         self.assertEqual([(o["card"], o["action"]) for o in item["offers"]], [("workshop", "check")])
@@ -444,7 +460,7 @@ class PolicyObject(Chain):
             self.assertEqual(r["status"], "suspended", (i, r))
         over = self.say("one more fern", identity="p64")
         out = over["receipt"]["outcome"]
-        self.assertEqual((out["class"], out["object"], out["reason"]), ("capacity", "commonplace", "the host's pendingInterpretationsPerObject is full; try later."))
+        self.assertEqual((out["class"], out["object"], out["reason"]), ("capacity", "commonplace", "the host's pendingInterpretationsPerObject is full; it drains as readings and waits settle: try later."))
         pending = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual(len(pending), 64)
         # A capacity refusal is transient: once the interpretations settle, the next reply is read.

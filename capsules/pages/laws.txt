@@ -8,6 +8,6 @@ EXPR  atoms with and, or, not, implies, ( ).
 ATOMS  A OP B, OP one of == != < <= > >=, terms A + B, REF, N, "text"; REF in [..], in new.F.COL; monotone writeOnce unchanged insertOnly appendOnly (F); changed(TERM); changed(new.F.COL) by REF; under "CARD"; "CARD" wants NAME.
 REF  new.F, old.F, "CARD".F, count(new.F), REF % N; request.subject caller clock height method verb kind (write reprogram amend proposed rule).
 METARULE  an amendment stands only if the new law admits it.
-CLASSES  send again: staleRoot budget evaluation capacity quota quiet. Change the spell: the rest.
+CLASSES  send again: staleRoot evaluation capacity quota quiet. Else change it (budget too).
 A card's own: delvetalk library laws / card: bell/1
 Next: delvetalk library read / page: object
