@@ -359,6 +359,8 @@ structure ExprEnv where
   /-- `byteAt[i]` = absolute byte offset of character `i` of the expression text. -/
   byteAt : Array Nat
   line : Nat
+  /-- The source line's column (0-based, in characters) of the text's first character, so a refusal points at its token. -/
+  column : Nat := 0
 
 abbrev EP := StateT Nat (Except String)
 
@@ -369,10 +371,26 @@ def tokenText (t : Token) : String := String.ofList t.text
 
 def peek (env : ExprEnv) : EP (Option String) := do return (env.tokens[← get]?).map tokenText
 
+/-- What stands at token `i`, for a refusal: "found `)` at column 14", or the end of the line. -/
+def ExprEnv.found (env : ExprEnv) (i : Nat) : String :=
+  match env.tokens[i]? with
+  | some t => s!"found `{tokenText t}` at column {env.column + t.start + 1}"
+  | none => "found the end of the line"
+
+/-- The ops of `write {field: op value}`. -/
+def writeOps : List String := ["add", "set", "append", "remove", "amend", "removeItem", "insert", "upsert", "retract"]
+
+/-- A name written straight against `<` (`Plans.Edit<Nat, D>`): type arguments, which an expression writes `::<…>`. -/
+def typeArgumentsBare (text : List Char) : Bool :=
+  (text.zip (text.drop 1)).any fun (a, b) => b == '<' && (a.isAlphanum || a == '_')
+
+/-- The expression forms, named where a token is not one. -/
+def atomForms : String := "a name, a number, a \"string\", ( … ), { … } or write { … }"
+
 def take (env : ExprEnv) (wanted : Option String := none) : EP Token := do
   let i ← get
   set (i + 1)
-  let message := "Error: expected " ++ wanted.getD "expression"
+  let message := "Error: expected " ++ (wanted.map (s!"`{·}`")).getD s!"an expression ({atomForms})" ++ ", " ++ env.found i
   match env.tokens[i]? with
   | some t => if wanted.all (· == tokenText t) then pure t else throw message
   | none => throw message
@@ -556,8 +574,12 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
         if !isIdent name.text then throw "Error: write {field: op value, ...} expects a field name"
         discard <| take env (some ":")
         let op ← take env
-        let (value, _) ← parseExpr env fuel 0
         let field := tokenText name
+        -- The op is judged before its value is read: `write {f: Plans.Edit.set(v)}` is told the ops, not the token after `Plans`.
+        unless writeOps.contains (tokenText op) do
+          throw ("Error: write {field: op value} takes " ++ ", ".intercalate writeOps ++ ", not " ++ tokenText op ++
+            (if tokenText op == "keep" then "; a field the write does not name is kept as it is" else "; write {" ++ field ++ ": set VALUE}"))
+        let (value, _) ← parseExpr env fuel 0
         if tokenText op == "remove" || tokenText op == "amend" then
           if let .record [("index", _)] _ := value then
             throw ("Error: write {" ++ field ++ ": " ++ tokenText op ++ " {index: ...}} names a position, and edits name items: " ++
@@ -578,12 +600,14 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
               | "insert" => pure ("Entries", "insert", "row")
               | "upsert" => pure ("Entries", "upsert", "row")
               | "retract" => pure ("Entries", "retract", "key")
-              | other => throw ("Error: write {field: op value} takes add, set, append, remove, amend, removeItem, insert, upsert or retract, not " ++ other)
+              | other => throw ("Error: write {field: op value} takes " ++ ", ".intercalate writeOps ++ ", not " ++ other)
             pure (Expr.call (lib type ctor) [.record [(payload, value)] span] span)
         edits := edits.push (field, edit)
         let next ← take env
         if tokenText next == "}" then break
-        if tokenText next != "," then throw "Error: expected , or } in write {...}"
+        if tokenText next != "," then
+          throw ("Error: expected , or } in write {...}, " ++ env.found ((← get) - 1) ++ "; each field takes one op and one value: " ++
+            "write {" ++ field ++ ": " ++ tokenText op ++ " VALUE, other: add 1n}")
       let changes := Expr.extend (.call (.var "keep" span) [] span) edits.toList span
       result := (.call (.member (.var "world" span) "write" span) [changes] span, span)
     else if firstText == "{" then
@@ -632,7 +656,7 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
             let base := env.byteAt[first.start + offset]!
             let byteAt := (code.foldl (fun (acc : Array Nat × Nat) c => (acc.1.push acc.2, acc.2 + c.utf8Size))
               (#[], base)) |> fun (acc, last) => acc.push last
-            let inner : ExprEnv := ⟨code, tokens, byteAt, env.line⟩
+            let inner : ExprEnv := ⟨code, tokens, byteAt, env.line, env.column + first.start + offset⟩
             let ((e, _), cursor) ← StateT.lift ((parseExpr inner fuel 0).run 0)
             if cursor != tokens.size then throw "Error: an interpolation in a string literal holds one expression"
             parts := parts ++ [e]
@@ -640,7 +664,7 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
     else if isIdent first.text then
       let span := env.location first.start first.stop
       result := (.var firstText span, span)
-    else throw "Error: expected expression atom"
+    else throw s!"Error: expected an expression ({atomForms}), {env.found ((← get) - 1)}"
     for _ in [0:env.tokens.size + 1] do
       let some next := (← peek env) | break
       if next == "::" then
@@ -702,13 +726,15 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
 
 /-- `expression(text, sourceSpan)`: the whole text is one expression. `start` is the absolute
 byte offset of the text's first character. -/
-def expression (text : List Char) (start line : Nat) : Except String Expr := do
+def expression (text : List Char) (start line : Nat) (column : Nat := 0) : Except String Expr := do
   let tokens ← tokenize text
   let byteAt := (text.foldl (fun (acc : Array Nat × Nat) c => (acc.1.push acc.2, acc.2 + c.utf8Size))
     (#[], start)) |> fun (acc, last) => acc.push last
-  let env : ExprEnv := ⟨text, tokens, byteAt, line⟩
+  let env : ExprEnv := ⟨text, tokens, byteAt, line, column⟩
   let ((expr, _), cursor) ← (parseExpr env (text.length + tokens.size + 1) 0).run 0
-  if cursor != tokens.size then throw "Error: unexpected trailing expression token"
+  if cursor != tokens.size then
+    throw (s!"Error: the expression is complete before its end, {env.found cursor}; one expression a line, or join them with an operator" ++
+      (if typeArgumentsBare text then "; type arguments in an expression are written NAME::<T, U>, as Plans.Edit::<Nat, {}>.set(...)" else ""))
   return expr
 
 /-! ## Lines and declarations -/
@@ -750,7 +776,8 @@ def lastIndexOf (hay needle : List Char) : Nat := Id.run do
 /-- `expr(text, line)`: an expression found at its last occurrence in the line; its errors
 become line diagnostics. -/
 def lineExpr (line : Line) (text : List Char) : PS Expr :=
-  liftAt line (expression text (line.start + utf8Length (line.text.take (lastIndexOf line.text text))) line.number)
+  let at_ := lastIndexOf line.text text
+  liftAt line (expression text (line.start + utf8Length (line.text.take at_)) line.number (line.indent + at_))
 
 /-- `^([A-Za-z_]\w*)\s*\((.*)\)(?:\s*->\s*(.+?))?\s*$` -/
 def signatureRe : Re := seqs [group 1 ident, many space, chr '(', group 2 (many dot), chr ')',
@@ -795,6 +822,12 @@ def twoNames (rest : List Char) : Option (List Char) :=
 def startsWith (s : List Char) (p : String) : Bool := p.toList.isPrefixOf s
 def endsWith (s : List Char) (p : String) : Bool := p.toList.reverse.isPrefixOf s.reverse
 
+/-- A `let` line's body is the next line at its indent; else the refusal says where that line is. -/
+def letFollowed (line : Line) : Option Line → PS Unit
+  | some next => if next.indent == line.indent then pure () else
+      fail line s!"a let must be followed by its body at the same indent (column {line.indent + 1}); line {next.number} is at column {next.indent + 1}"
+  | none => fail line s!"a let must be followed by its body at the same indent (column {line.indent + 1}); nothing follows it"
+
 /-- `body(indent)`: the indented method body after a header line. -/
 def body (lines : Array Line) : Nat → Nat → PS Body
   | 0, _ => bare "Error: body nesting capacity"
@@ -837,9 +870,7 @@ def body (lines : Array Line) : Nat → Nat → PS Body
       let binder := String.ofList ((capture line.text caps 2).getD ['_'])
       let valueText := (capture line.text caps 3).getD []
       let value ← lineExpr line valueText
-      match lines[i + 1]? with
-      | some next => if next.indent != line.indent then fail line "a let must be followed by its body at the same indent"
-      | none => fail line "a let must be followed by its body at the same indent"
+      letFollowed line lines[i + 1]?
       let rest ← body lines fuel (line.indent - 1)
       return .cases value [(.ctor label binder, rest, line.span),
         (.unexpected, .expr (.str ("unexpected response") line.span) line.span, line.span)] line.span
@@ -848,11 +879,12 @@ def body (lines : Array Line) : Nat → Nat → PS Body
       if name != "in".toList then
         let valueText := (capture line.text caps 3).getD []
         let value := expression valueText
-          (line.start + utf8Length (line.text.take (lastIndexOf line.text valueText))) line.number
+          (line.start + utf8Length (line.text.take (lastIndexOf line.text valueText))) line.number (line.indent + lastIndexOf line.text valueText)
+        -- A value that does not parse is the refusal, unless the whole line is one expression (`let x = a in b`).
+        if let .error e := value then
+          unless (expression line.text line.start line.number line.indent) matches .ok _ do fail line e
         if let .ok value := value then
-          match lines[i + 1]? with
-          | some next => if next.indent != line.indent then fail line "a let must be followed by its body at the same indent"
-          | none => fail line "a let must be followed by its body at the same indent"
+          letFollowed line lines[i + 1]?
           let rest ← body lines fuel (line.indent - 1)
           return .letB (String.ofList name) (String.ofList ((capture line.text caps 2).getD ['_'])) value rest
             line.span
@@ -940,6 +972,8 @@ def formKind (alias : String) (line : Line) (spec : List Char) : PS (Expr × For
   let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
   let trimmed := String.ofList spec |>.trimAscii |>.toString
   if trimmed == "source" then return (.call (lib "Kind" "source") [.record [] span] span, .source)
+  if trimmed == "text" || trimmed == "natural" then
+    fail line s!"a form field's {trimmed} names its bounds: `name: {trimmed} {if trimmed == "text" then "1..80" else "0..9"}` (0.. makes it optional)"
   if let some (_, caps) ← matchAt line rangeKindRe trimmed.toList then
     let kind := cap trimmed.toList caps 1
     let low := natValue ((capture trimmed.toList caps 2).getD [])

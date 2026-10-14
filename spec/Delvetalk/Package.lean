@@ -116,8 +116,9 @@ def modulesAndAsts (j : Json) :
     let mut imports : List LockedImport := []
     for edge in ast.imports do
       let some target := modules.zipIdx.find? (fun (m,_) => edge.path == "./" ++ m.name ++ ".obend")
-        | throw { stage := "package-request", message := s!"import must name an earlier supplied module: {edge.path}",
-                  sourceModule := some name }
+        | throw { stage := "package-request", sourceModule := some name, span := some edge.span,
+                  message := s!"import must name an earlier supplied module: {edge.path}; the modules before {name}: " ++
+                    ", ".intercalate (modules.map (·.name)) ++ " (each imported as import ./NAME.obend as ALIAS)" }
       imports := imports ++ [⟨edge.path, edge.importAlias, edge.span, target.2, target.1.name, target.1.sha256⟩]
     let module : SourceModule := ⟨name,source,sha,imports⟩
     checkImports module ast

@@ -163,9 +163,11 @@ def adoptWritten(held: Held, pin: String, context: Abi.Context) -> Activity<Verd
   let written(_) = write {held: retract heldKey(held)}
   Card.tell(Verdict.reprogrammed({pin: pin}), Document.text("✾ WORKSHOP\n\nAdopted #{natText(held.n)} from {Card.shown(held.proposer, held.proposerHandle, context)}: {held.target} is reprogrammed.\n"))
 # `make / name / description`: hob is asked for Bend from the description, offered `check` alone
-# (the world's policy's drafting prompt: a package, answered as one ```obend block that fills its source);
-# the draft it answers is checked and held, as a `draft` spell's is. Words that bring no Bend are
-# refused by name, with the spell that sends source directly.
+# (the world's policy's drafting prompt: a body or a package, answered as one ```obend block that fills
+# its source; a body is laid over kind/record). Before anything is offered, the workshop checks each
+# draft and hands a refused one back to hob with the checker's refusal, up to draftRounds() drafts in
+# all; the last is checked and held, or answered with its problems, as a `draft` spell's is. Words that
+# bring no Bend are refused by name, with the spell that sends source directly.
 form make:
   name: text 1..32
   description: text 1..1400
@@ -177,9 +179,37 @@ form draft:
 def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Verdict>:
   asked(input.name, input.description, context, state)
 def asked(name: String, description: String, context: Abi.Context, state: State) -> Activity<Verdict>:
-  match world.interpret::<{target: String, over: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(checkForm(), context.object), tail: Lists.List.nil()}), policy: {world: context.world, object: "policy"}, model: ""}):
-    case proposal(p): drafting(name, p.argument.over, p.argument.source, context, state)
+  redrafted(name, description, "", 1n, context, state)
+def draftRounds() -> Nat:
+  3n
+def redrafted(name: String, description: String, refused: String, round: Nat, context: Abi.Context, state: State) -> Activity<Verdict>:
+  match world.interpret::<{target: String, over: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}{refused}", offers: Lists.List.cons({head: Card.named(checkForm(), context.object), tail: Lists.List.nil()}), policy: {world: context.world, object: "policy"}, model: ""}):
+    case proposal(p): drafted(name, description, draftOver(p.argument.over, p.argument.source), p.argument.source, round, context, state)
     case _: refusing("noDraft", "hob drew no Bend from that. Say what it holds and what it does, or send the source: delvetalk workshop draft / name: {name} / source: <<BEND … BEND", context)
+# A draft that is not a whole package (no `edition` or `layer over` line) is a body over kind/record.
+def draftOver(over: String, source: String) -> String:
+  if over == "" && Forms.whole(source) == false then "kind/record" else over
+def drafted(name: String, description: String, over: String, source: String, round: Nat, context: Abi.Context, state: State) -> Activity<Verdict>:
+  if round >= draftRounds() then drafting(name, over, source, context, state) else redraftChecked(name, description, over, source, round, context, state)
+def redraftChecked(name: String, description: String, over: String, source: String, round: Nat, context: Abi.Context, state: State) -> Activity<Verdict>:
+  if over != "" then redraftOver(name, description, over, source, round, context, state) else redraftPackage(name, description, source, round, context, state)
+# A draft is checked as drafting would check it; one it refuses goes back to hob with its problems.
+def redraftOver(name: String, description: String, over: String, source: String, round: Nat, context: Abi.Context, state: State) -> Activity<Verdict>:
+  match overChecked(over, source, context):
+    case checked(c): redraftOf(name, description, over, source, round, c.diagnostics, context, state)
+    case refused(_): drafting(name, over, source, context, state)
+def redraftPackage(name: String, description: String, source: String, round: Nat, context: Abi.Context, state: State) -> Activity<Verdict>:
+  match world.check({package: source, layers: Lists.List.nil()}):
+    case checked(c): redraftOf(name, description, "", source, round, packageProblems(c.diagnostics, c.reaches), context, state)
+    case refused(_): drafting(name, "", source, context, state)
+def packageProblems(diagnostics: Form.Names, reaches: Bool) -> Form.Names:
+  if Lists.length(diagnostics) == 0n && reaches == false then Lists.List::<String>.cons({head: "No spell reaches it: it has no receive. Write a body (forms and defs, no header) instead.", tail: Lists.List::<String>.nil()}) else diagnostics
+def redraftOf(name: String, description: String, over: String, source: String, round: Nat, problems: Form.Names, context: Abi.Context, state: State) -> Activity<Verdict>:
+  if Lists.length(problems) == 0n then drafting(name, over, source, context, state) else redrafted(name, description, refusedNote(source, problems), round + 1n, context, state)
+def refusedNote(source: String, problems: Form.Names) -> String:
+  "\n\nYour draft:\n```obend\n{textTake(source, 2400n)}\n```\nThe workshop's check refused it:\n{textTake(lined(problems), 600n)}\nAnswer the whole draft again with that fixed."
+def lined(problems: Form.Names) -> String:
+  textJoin(problems, "\n")
 def draft(state: State, input: DraftInput, context: Abi.Context) -> Activity<Verdict>:
   if input.from != "" then forkHeld(input.name, input.from, input.source, context, state) else drafting(input.name, input.over, input.source, context, state)
 # A fork (`from:` a kind): its own body, or with none the kind's as it is, held for its describer to

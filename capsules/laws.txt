@@ -27,6 +27,6 @@ delvetalk library laws / card: <id> prints every line, following under.
 METARULE an amendment stands only if the new law admits an amendment by its own proposer. With no law:
 owner: request.kind == 0 or request.kind == rule or request.subject == "<creator>".
 PREDICATE (optional) def law(old, new, request) -> Abi.Verdict, pure, 100,000 ticks, after the text.
-CLASSES transient, send again: staleRoot budget evaluation capacity quota quiet. Binding: lawRefused
+CLASSES transient, send again: staleRoot evaluation capacity quota quiet (budget: the same spell runs out again; change it). Binding: lawRefused
 cardRefused typeMismatch absentItem unknownObject duplicateIdentity programRefused requiredAbsence
 budgetExhausted keyTaken duplicateKey badSpell noMethod. Nineteen; no other.

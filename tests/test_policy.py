@@ -11,7 +11,9 @@ against the offered forms (the garden's plant) before resuming the commonplace's
 """
 import json
 import os
+import re
 import unittest
+from pathlib import Path
 
 from deploy import genesis
 from tests.host import ROOT, as_owner
@@ -397,7 +399,16 @@ class PolicyObject(Chain):
         self.assertNotIn("✾ WORKSHOP", system)
         package = "".join(line + "\n" for line in genesis.page_body("object").splitlines()[1:] if not line.startswith(("METHODS", "Check:", "Next:")))
         self.assertIn("```obend\n" + package + "```\n", system)
-        self.assertTrue(system.endswith("Answer with one ```obend block holding the package, and nothing else.\n"), system)
+        self.assertTrue(system.endswith("Answer with one ```obend block holding the draft, and nothing else.\n"), system)
+        # The live review's finding 1: hob's four drafts guessed at imports and form grammar. The prompt shows the bend
+        # page's body (the workshop writes its header) and names the library's modules, each one there.
+        bend = Path(ROOT, "capsules", "pages", "bend.txt").read_text()
+        body = re.search(r"With a field; and a mark, which a card shows once made:\n```obend\n(.*?)```", bend, re.S)[1]
+        self.assertIn("```obend\n" + body + "```\n", system)
+        named = re.search(r"each as import ./NAME.obend as ALIAS: ([A-Za-z, ]+)\.", system)[1].split(", ")
+        library = {f.stem for f in Path(ROOT, "world", "lib").rglob("*.obend")}
+        self.assertEqual([m for m in named if m not in library], [])
+        self.assertIn("When the check refuses one, the words come back".lower(), system.lower())
         self.assertEqual(item["utterance"], "Write the Bend for a thing called lamp: a lamp anyone lights")
         self.assertEqual(item["user"], item["utterance"])  # no card to quote
         self.assertEqual([(o["card"], o["action"]) for o in item["offers"]], [("workshop", "check")])

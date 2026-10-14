@@ -705,7 +705,13 @@ def Refusal.voiced (r : Refusal) : Refusal :=
   let given := (r.reason.map fun t => if t.startsWith kernelPrefix then (t.drop kernelPrefix.length).toString else t)
   let reason := match r.cls with
     | "staleRoot" => some (given.getD s!"{obj} moved while you wrote; send the same spell again.")
-    | "budget" => some s!"the turn ran out of {given.getD "ticks"}; make it smaller, or send it again later."
+    | "budget" =>
+      -- A turn is deterministic: the same spell runs out again, so the reason names what ran and never says "later".
+      let (what, where_) := match (given.getD "ticks").splitOn " in " with
+        | [r, w] => (r, s!" while {w} ran")
+        | _ => (given.getD "ticks", if given == some "law ticks" && !obj.isEmpty then s!" judging {obj}'s law" else "")
+      some s!"the turn ran out of {what}{where_}; the same spell runs out the same way: make that part do less, or split it."
+
     | "evaluation" => given
     | "capacity" => match given with
       | some m => if m.any (· == ' ') then some m else some s!"the host's {m} is full; try later."

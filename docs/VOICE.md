@@ -399,7 +399,7 @@ Six, each with a line as the code renders it now.
 | verb | verb, spell | an action a card takes; a grown one is credited to whoever grew it |
 | clause | clause | a line's name; the stamp on a refusal |
 | reading | reading | the plain sentence beside a clause; the note under the stamp |
-| budget, ticks | ticks | a turn's allowance of steps; out is `budget`; send again |
+| budget, ticks | ticks | a turn's allowance of steps; out is `budget`, and the same spell runs out again |
 | interpretation | hob reads it | a small model turns words into a spell; proposes, never acts |
 | suspension | waiting | for hob, a reply or the clock |
 | quota | hob's hour | so many readings an hour; the refusal says when |
@@ -429,7 +429,7 @@ The reply line is `refused <clause>: <reading>` (`transport/http.py` `turn_line`
 | Class | reason |
 | --- | --- |
 | staleRoot | `{object} moved while you wrote; send the same spell again.` |
-| budget | `the turn ran out of {ticks, heap, stack, nodes, bytes or law ticks}; make it smaller, or send it again later.` |
+| budget | `the turn ran out of {ticks, heap, stack, nodes, bytes or law ticks} while {object} {method} ran (or judging {object}'s law); the same spell runs out the same way: make that part do less, or split it.` |
 | evaluation | the host's or kernel's words for a turn it could not run |
 | lawRefused, cardRefused | `refused {clause}: {reading}`; a card's own refusal (`refuse(line)`, `Card.refusing`) refuses its turn |
 | capacity | `the host's {limit} is full; try later.` |

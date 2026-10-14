@@ -2069,7 +2069,10 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     held.note reads
     noteProfile fun _ => (Delvetalk.Turn.storedStart entry arguments held.store |>.map fun (start, _) =>
       Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks start held.store.bounded)
-    drive depth id caller compiled binding held started 0
+    -- A budget that runs out names the innermost method running then: the part that was costly.
+    tryCatch (drive depth id caller compiled binding held started 0) fun
+      | .budget r => throw (.budget (if (r.splitOn " in ").length > 1 then r else s!"{r} in {id} {method}"))
+      | e => throw e
   | _ =>
     unless r.isDataUnder compiled.bounds compiled.rigid Ty.dataFuel [] do throw (.request s!"method {method} must be pure data or an activity")
     let st ← get
