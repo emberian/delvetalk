@@ -521,7 +521,7 @@ REFUSED = [
     (FORM_STATE + FORM_BLOCKS + "record PlantInput:\n  count: Nat\n", "plant", FORM_LIB, False, (),
      ["refused (form-input): form plant declares PlantInput, its method's input, and so does the module"]),
     (WRITE_SUGARED.replace("add 1n", "bump 1n"), "plant", ABI_LIB, False, (),
-     ["takes add, set, append, remove, amend, removeItem, insert, upsert or retract, not bump"]),
+     ["takes add, set, append, remove, amend, removeItem, insert, upsert, retract, not bump"]),
     (GARDEN + "  let written(_) = write {children: remove {index: 0n}}\n  state.planted\n", "plant", ABI_LIB, False, (),
      ["names a position, and edits name items", "children: remove ITEM"]),
     (DERIVED_HEAD + "record Edits:\n  planted: P.Edit<Nat, Nat>\n" + BUMP, "bump", REL_LIB, False, (),

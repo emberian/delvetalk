@@ -22,7 +22,7 @@ class ReplayEdition(HostCase):
                            modules=counter_modules(), entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
         edition = self.host.send(op="world-status")["replay"]
-        self.assertEqual(edition, 17)
+        self.assertEqual(edition, 18)
         [first] = journal_entries(self.path)
         self.assertEqual(first["replay"], edition)
         # An edition-1 journal: the field absent, the hash made again so the chain itself is sound.
