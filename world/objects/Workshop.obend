@@ -77,9 +77,12 @@ def reprogrammedCard(target: String, version: Nat) -> Document.Document:
 def usage() -> Document.Document:
   Document.text("✾ WORKSHOP: Bend checked, proposed to a card, or made from words. A block is a ```obend block under the spell, or source: <<BEND … BEND.\n  delvetalk workshop check\n» it compiles, or each problem with its line\n  delvetalk workshop check / target: bell/1\n» the source that card runs, checked\n  delvetalk workshop check / over: kind/record\n» your layer, checked over what that kind's things run (or over a thing)\n  delvetalk workshop propose / target: bell/1 / migration:\n» reprogrammed, or held as #n for its owner to adopt\n  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n» hob drafts the Bend; checked, held as #n for you to adopt\n  delvetalk workshop draft / name: lamp / over: kind/record\n» your forms and defs as a layer over that kind, checked and held the same way\n  delvetalk workshop draft / name: lamp2 / from: kind/lamp\n» a fork of that kind, with your block for its body if you send one; kind/lamp2 once adopted\n  delvetalk workshop create / like: porch/goblet\n» a copy, yours, unless its owner said no\n")
 # A whole package no spell reaches (it has no `receive`), said under a clean check; a draft of it is
-# refused (`noReceive`).
+# refused (`noReceive`). The reading is the two lines to add: obend's coin-jar copies (yue's ember,
+# claude's radio, kestrel's spoon, 2026-10-14) each compiled clean and reached nothing.
+def unreachedReading() -> String:
+  "No spell reaches it: it has no receive. Add these two lines (with import ./Card.obend as Card, and a def render(state: State, context: Abi.Context) -> Document.Document) and its forms answer spells:\ndef receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:\n  Card.answer(input, context, forms(), render(state, context))\nOr draft it over a kind (over: kind/record) and it answers as that kind's things do."
 def unreached(diagnostics: Form.Names, reaches: Bool) -> String:
-  if reaches || Lists.length(diagnostics) > 0n then "" else "No spell reaches it: it has no receive. Draft it over a kind (over: kind/record), or define receive.\n"
+  if reaches || Lists.length(diagnostics) > 0n then "" else "{unreachedReading()}\n"
 def verdictOf(diagnostics: Form.Names) -> Verdict:
   match diagnostics:
     case nil(_): Verdict.clean({})
@@ -105,7 +108,11 @@ def checkOver(over: String, layer: String, context: Abi.Context) -> Activity<Ver
 def overCard(layer: String, diagnostics: Form.Names) -> Document.Document:
   match diagnostics:
     case nil(_): checkedCard(diagnostics)
-    case cons(_): Document.concat(checkedCard(diagnostics), Document.text(Forms.headerNote(layer)))
+    case cons(_): Document.concat(checkedCard(diagnostics), Document.text("{Forms.headerNote(layer)}{packageNote(layer)}"))
+# A block that begins `edition` (no `layer over`) checked `over:` a kind is laid over that kind's
+# State, and its own State and initial are refused as overrides (claude's radio, obend 2026-10-14).
+def packageNote(layer: String) -> String:
+  if Text.starts(textTake(Text.trimStart(layer), 10n), "edition") then "This block begins with edition: a whole package, with a State of its own. Check it without over:, and give it a receive (delvetalk library read / page: object); a body over a kind is forms and defs alone.\n" else ""
 # Check what an object runs now: its whole source, the package and every layer over it.
 def checkTarget(target: String, context: Abi.Context) -> Activity<Verdict>:
   match world.checkObject({object: {world: context.world, object: target}, layers: Lists.List.nil()}):
@@ -203,7 +210,7 @@ def redraftPackage(name: String, description: String, source: String, round: Nat
     case checked(c): redraftOf(name, description, "", source, round, packageProblems(c.diagnostics, c.reaches), context, state)
     case refused(_): drafting(name, "", source, context, state)
 def packageProblems(diagnostics: Form.Names, reaches: Bool) -> Form.Names:
-  if Lists.length(diagnostics) == 0n && reaches == false then Lists.List::<String>.cons({head: "No spell reaches it: it has no receive. Write a body (forms and defs, no header) instead.", tail: Lists.List::<String>.nil()}) else diagnostics
+  if Lists.length(diagnostics) == 0n && reaches == false then Lists.List::<String>.cons({head: unreachedReading(), tail: Lists.List::<String>.nil()}) else diagnostics
 def redraftOf(name: String, description: String, over: String, source: String, round: Nat, problems: Form.Names, context: Abi.Context, state: State) -> Activity<Verdict>:
   if Lists.length(problems) == 0n then drafting(name, over, source, context, state) else redrafted(name, description, refusedNote(source, problems), round + 1n, context, state)
 def refusedNote(source: String, problems: Form.Names) -> String:
@@ -228,7 +235,7 @@ def drafting(name: String, over: String, source: String, context: Abi.Context, s
   if over != "" then draftingOver(name, over, source, context, state) else draftChecked(name, source, context, state)
 def draftChecked(name: String, source: String, context: Abi.Context, state: State) -> Activity<Verdict>:
   match world.check({package: source, layers: Lists.List.nil()}):
-    case checked(c): if Lists.length(c.diagnostics) > 0n then Card.tell(Verdict.flawed({diagnostics: c.diagnostics}), checkedCard(c.diagnostics)) else if c.reaches then heldDraft(draftRow(name, source, context, state), state, context) else refusing("noReceive", "No spell reaches it: it has no receive. Draft it over a kind (over: kind/record) and it answers as that kind's things do, or define receive.", context)
+    case checked(c): if Lists.length(c.diagnostics) > 0n then Card.tell(Verdict.flawed({diagnostics: c.diagnostics}), checkedCard(c.diagnostics)) else if c.reaches then heldDraft(draftRow(name, source, context, state), state, context) else refusing("noReceive", unreachedReading(), context)
     case refused(r): refusing(r.clause, "The workshop could not check it.", context)
 def draftingOver(name: String, over: String, source: String, context: Abi.Context, state: State) -> Activity<Verdict>:
   match overChecked(over, source, context):

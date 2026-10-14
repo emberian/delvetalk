@@ -20,11 +20,12 @@ sum Viewed<S>:
   viewed: {version: Nat, state: S}
   denied: {}
   refused: {clause: String}
-# A derived view (`viewDerived`): the value of the target's pure `view`, typed at the call site.
+# A derived view (`viewDerived`): the value of the target's pure `view`, typed at the call site; a refusal
+# says what the target lacks (`noView`: the views() line to write).
 sum Derived<T>:
   derived: {version: Nat, value: T}
   denied: {}
-  refused: {clause: String}
+  refused: {clause: String, reading: String}
 sum Written:
   written: {}
   refused: {clause: String}

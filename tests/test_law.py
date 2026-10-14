@@ -130,7 +130,7 @@ class TwoTier(Reflection):
         # codex host 14: a lawReads() out of ticks bound the identity as a permanent lawRefused.
         self.make("s", SPIN, record(count=nat(0)))
         r = self.turn("s", "bump", record(n=nat(1)))
-        self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["reason"]), ("budget", "the turn ran out of law ticks judging s's law; the same spell runs out the same way: make that part do less, or split it."), r)
+        self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["reason"]), ("budget", "the turn ran out of law ticks judging s's law; the same spell runs out the same way: make that part do less, or split it across turns."), r)
         spinning = GUARD.replace("def lawReads() -> Lists.List<String>:\n  Lists.List::<String>.cons",
                                  "def spun(n: Nat) -> Bool:\n  spun(n + 1n)\ndef lawReads() -> Lists.List<String>:\n"
                                  "  if spun(0n) then Lists.List::<String>.nil({}) else Lists.List::<String>.cons")

@@ -1896,6 +1896,26 @@ def canonicalComparator (t : PTy) : M ATerm := do
   let body ← cmpTerm t (atLevel 0) (atLevel 1) 2 []
   return cmpLam t (arrowTy t .natural) (cmpLam t .natural body)
 
+/-- What to write for `Alias.name` when the module `alias` names declares no `name` (obend 2026-10-14:
+kestrel's `Lists.Decls`, yue's `Form.value`): the modules that do, by the alias this module gives them
+(or the import to add); else the names `imported` declares. -/
+def missingImportHint (c : Ctx) (m : Module) (imported name : String) : String :=
+  let keys := c.decls.map (·.1) ++ c.records.map (·.1) ++ c.sums.map (·.1)
+  let homes := (keys.filterMap fun k => match k.splitOn "." with
+    | [home, n] => if n == name && home != imported then some home else none
+    | _ => none).eraseDups
+  let aliasOf := fun (home : String) => match (m.imports.find? (·.2 == home)) with
+    | some (a, _) => a ++ "." ++ name
+    | none => home ++ "." ++ name ++ " (import ./" ++ home ++ ".obend as " ++ home ++ ")"
+  if !homes.isEmpty then
+    "; " ++ name ++ " is declared in " ++ ", ".intercalate homes ++ ": write " ++ " or ".intercalate (homes.map aliasOf)
+  else
+    let own := (keys.filterMap fun k => match k.splitOn "." with
+      | [home, n] => if home == imported && !n.startsWith "__" then some n else none
+      | _ => none).eraseDups
+    if own.isEmpty then "" else
+      "; " ++ imported ++ " declares " ++ ", ".intercalate (own.take 24) ++ (if own.length > 24 then ", …" else "")
+
 mutual
 def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
   | 0, _, _, _ => fail "elaboration fuel"
@@ -1915,7 +1935,7 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
         if !env.any (·.name == alias) then
           if let some importedModule := importOf m alias then
             let (field, key) := c.resolve m.name importedModule name
-            if (declOf c key).isNone then fail ("missing imported declaration " ++ importedModule ++ "." ++ name)
+            if (declOf c key).isNone then fail ("missing imported declaration " ++ importedModule ++ "." ++ name ++ missingImportHint c m importedModule name)
             return ← globalRef env field
       if let .var "self" := target then
         if let some b := env.find? (·.name == "self") then
@@ -2414,7 +2434,12 @@ def body (c : Ctx) : Nat → Body → List Binding → Module → M ATerm
       if !defaults.isEmpty && !(branches.getLast?.map (fun b => b.1 == .wildcard || b.1 == .unexpected)).getD false then
         fail "sum wildcard must be the final case"
       let row := variantRowOf (← get) (← synth c fuel scrutinee env m)
-      let some r := row | fail "sum match needs a resolved variant type"
+      let some r := row | fail ("sum match needs a resolved variant type" ++ (match scrutinee with
+        -- obend 2026-10-14: yue's `match World.viewDerived({…}):`, a generic call whose answer's type nothing named.
+        | .call (.member (.var w) call) _ => if w == "World" || w == "world" then
+            "; the type of what world." ++ call ++ " answers is named at the call: world." ++ call ++ "::<T>(…)" else
+            "; name the type of what it answers at the call: " ++ w ++ "." ++ call ++ "::<T>(…)"
+        | _ => "; name the type of the matched value: a generic call takes NAME::<T>(…), a let takes let x: T = …"))
       let rowLabels := rowNames r
       let missing := rowLabels.filter (fun l => !labels.contains l)
       let extra := labels.filter (fun l => !rowLabels.contains l)
@@ -2427,7 +2452,13 @@ def body (c : Ctx) : Nat → Body → List Binding → Module → M ATerm
         let loc := match arm, here with
           | some (_, span), some h => some { h with span }
           | _, h => h
-        failAt loc ("sum match is not exhaustive: missing [" ++ String.intercalate ", " missing ++ "], unknown [" ++ String.intercalate ", " extra ++ "]")
+        -- `let warm(_) = write {...}` (obend 2026-10-14): the let names a case, and the name is not one of the call's.
+        let letCase := branches.any (·.1 == .unexpected)
+        failAt loc ((if letCase then
+            "let " ++ ", ".intercalate extra ++ "(…) names a case its call does not answer; write let " ++ rowLabels.headD "" ++
+              "(_) = …, the case it goes on with; the others refuse the turn. "
+          else "") ++
+          "sum match is not exhaustive: missing [" ++ String.intercalate ", " missing ++ "], unknown [" ++ String.intercalate ", " extra ++ "]")
           (some ("the cases of this sum are " ++ String.intercalate ", " rowLabels ++
             (if extra.isEmpty then "; add the missing ones or a final `case _:`" else "")))
           (some ("(" ++ " | ".intercalate rowLabels ++ ")")) (if extra.isEmpty then none else some (", ".intercalate extra))

@@ -150,7 +150,10 @@ def argument(data):
 
 
 def arguments_of(items):
-    """A REPL's `arguments` as typed data: an element already `{tag, ...}` stays, plain JSON (21, "text", true, {..}) is `typed`."""
+    """A REPL's `arguments` as typed data: an element already `{tag, ...}` stays, plain JSON (21, "text", true, {..}) is `typed`;
+    one typed datum sent bare (yue's `{"tag": "natural", "value": "0"}`, obend 2026-10-14) is the list of it."""
+    if isinstance(items, dict) and 'tag' in items:
+        items = [items]
     return [i if isinstance(i, dict) and 'tag' in i else typed(i) for i in items] if isinstance(items, list) else items
 
 
@@ -163,7 +166,7 @@ def repl_misfit(kind, data):
         return 'a check needs source (the Bend text) or modules'
     if kind == 'repl' and 'entry' not in data:
         return 'a repl needs entry, the name of the def to run (and source, unless the object already holds it)'
-    if 'arguments' in data and not isinstance(data['arguments'], list):
+    if 'arguments' in data and not isinstance(data['arguments'], list) and not (isinstance(data['arguments'], dict) and 'tag' in data['arguments']):
         return 'arguments must be a list, one element per parameter of entry'
 
 

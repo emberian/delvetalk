@@ -163,7 +163,15 @@ partial def explain (a : Assumptions) (ann : Annotations) (ctx : Context) (pos :
             if row.lookup a.bounds (fuel + 1) tag != some an.domain then
               at_ pos pos ("the sum has no case `" ++ tag ++ "`") (.unknownArm tag) none (some an.codomain)
             else if !agree a v.type an.domain then
-              mismatch pos (child 0) ("case `" ++ tag ++ "` carries another type") an.domain v.type
+              -- obend 2026-10-14, yue's `Plans.Edit.set(3n)` and `Plans.Edit.add({value: 1n})`: a case's payload is
+              -- a record, and its one field's name is the one to write.
+              let one := match an.domain, v.type with
+                | .field f fty .emptyRow, .field g gty .emptyRow =>
+                  if g != f && agree a gty fty then "; it takes {" ++ f ++ ": …}, not {" ++ g ++ ": …}: " ++ tag ++ "({" ++ f ++ ": …})" else ""
+                | .field f fty .emptyRow, found =>
+                  if agree a found fty then "; it takes a record: " ++ tag ++ "({" ++ f ++ ": …})" else ""
+                | _, _ => ""
+              mismatch pos (child 0) ("case `" ++ tag ++ "` carries another type" ++ one) an.domain v.type
             else at_ pos pos ("case `" ++ tag ++ "` carries an Activity")
     | .case scrutinee arms =>
       match sub ctx 0 scrutinee with
