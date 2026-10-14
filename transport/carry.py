@@ -98,8 +98,8 @@ def reader(row, opener):
 
 
 def check(obend, old_journal, new_journal, moved=(), renamed=()):
-    """The carried world against the snapshot it was carried from, in a throwaway copy: {objects, rendered, receipts,
-    turn, problems}. An object the carry moved to the image's packages (`moved`) is at its migrated state; one whose
+    """The carried world against the snapshot it was carried from, in a throwaway copy: {objects, rendered, cardless,
+    receipts, turn, problems}; `cardless` the objects whose module declares no card (`noCard`, as before the carry). An object the carry moved to the image's packages (`moved`) is at its migrated state; one whose
     state the new edition names otherwise (`renamed`) at the same state under its new name."""
     after = {m['object']: m['after'] for m in renamed}
     after.update({m['object']: m['after'] for m in moved})
@@ -107,7 +107,7 @@ def check(obend, old_journal, new_journal, moved=(), renamed=()):
     body = journal.snapshot(dict(journal.snapshots(old_journal))[links[-1]['height']])
     opener = (body.get('settings') or {}).get('opener') or ''
     clock = (body.get('settings') or {}).get('clock') or opener
-    problems, rendered, resolved, turn = [], 0, 0, {}
+    problems, rendered, resolved, turn, cardless = [], 0, 0, {}, []
     # Beside the new journal, not in /tmp: the ops container's /tmp is a small tmpfs.
     with tempfile.TemporaryDirectory(prefix='.carry-check-', dir=os.path.dirname(os.path.abspath(new_journal))) as tmp:
         copy = os.path.join(tmp, 'w.journal')
@@ -126,6 +126,8 @@ def check(obend, old_journal, new_journal, moved=(), renamed=()):
                 card = host.send(op='world-card', principal=who, object=row['id'])
                 if card.get('status') == 'card':
                     rendered += 1
+                elif card.get('clause') == 'noCard':  # a module that declares no card has none under any binary: named, not a problem
+                    cardless.append(row['id'])
                 else:
                     problems.append(f"{row['id']} does not render for {who}: {card.get('message') or card.get('status')}")
             for link in links:
@@ -142,7 +144,8 @@ def check(obend, old_journal, new_journal, moved=(), renamed=()):
                 problems.append(f'the carried world does not take a turn: {turn}')
         finally:
             host.close()
-    return {'objects': len(body['objects']), 'rendered': rendered, 'receipts': resolved, 'turn': turn.get('status'), 'problems': problems}
+    return {'objects': len(body['objects']), 'rendered': rendered, 'cardless': cardless, 'receipts': resolved, 'turn': turn.get('status'),
+            'problems': problems}
 
 
 def lock_free(old):

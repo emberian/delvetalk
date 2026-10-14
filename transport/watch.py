@@ -50,7 +50,7 @@ def probe(st, host, clock=time.time):
 def healthy(st, service):
     """The compose healthcheck of each long-running service: the host answers its journal height; the front serves the
     guide and a home page showing `entry <n>` (the height, from the host); the hand refuses a tokenless page; a daemon
-    finished a step within three polls."""
+    (the bridge, the interpreter, the automatic moderation) finished a step within three polls."""
     if service == 'host':
         return isinstance(st.host().send({'op': 'world-status'}).get('height'), int)
     if service == 'hand':  # a tokenless /hand/ is 404 and nothing else

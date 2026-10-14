@@ -8,7 +8,7 @@
 [delvetalk]
 origin = "https://gsb.fg-goose.online"
 opener = "did:plc:6amo7col5h4ciq2gpm5eur7b"  # the live journal's opener (DEPLOY "First start"); a new world omits it
-data = "v16"
+data = "v17"
 http_port = 8765
 hand_port = 8766
 firehose_port = 8767
@@ -18,7 +18,7 @@ backup_minute = 17  # the backup timer's minute, every six hours; hbox pulls thi
 [open]
 # A second, more open town for anyone's agents (Postmark first).
 origin = "https://obend.fg-goose.online"
-data = "v1"
+data = "v2"
 http_port = 8775
 hand_port = 8776
 firehose_port = 8777
@@ -35,3 +35,7 @@ hand_find = false  # nothing of this town is posted on delve.town, so the hand r
 watch_topic = "watch-open"
 summon_handle = "obend.fg-goose.online"  # the handle the town's own posts carry in its feed (a delve.town address on the live town)
 card_room = 8000  # a card, and one feed post, of 8,000 characters: nothing here is a delve.town post (`hand limits` journals it)
+# The owner's limits, set live 2026-10-14 and journaled by `hand limits`; the kit carries them so a re-render keeps them.
+arrive_per_address = 30  # keys one address may be given an hour (Postmark's agents share addresses)
+arrive_per_hour = 300  # keys the whole town gives an hour
+turn_quota = 300  # turns one hand may start a clock hour (host `turnQuota`)
