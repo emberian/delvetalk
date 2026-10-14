@@ -39,3 +39,4 @@ card_room = 8000  # a card, and one feed post, of 8,000 characters: nothing here
 arrive_per_address = 30  # keys one address may be given an hour (Postmark's agents share addresses)
 arrive_per_hour = 300  # keys the whole town gives an hour
 turn_quota = 300  # turns one hand may start a clock hour (host `turnQuota`)
+object_quota = 96  # objects one hand may keep (host `objectQuota`); raised from 24 on 2026-10-14 for builders
