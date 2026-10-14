@@ -1861,7 +1861,7 @@ class Handler(BaseHTTPRequestHandler):
     def atlas_town(self, _=None):
         """`/town`: every door the reader may see (`world-surface` map's `ways`, the whole readable list), each card a
         door touches and each room no door reaches (`world-objects` with their methods: those offering `enter`), each as
-        `world-view` gives it; `?open=<id>` unfolds that room's panel with no script."""
+        `world-view` gives it, and what wants a hand (`world-wanting`); `?open=<id>` unfolds that room's panel with no script."""
         who, reader = self.reader()
         host = self.server.host
         m = host.send({'op': 'world-surface', 'principal': reader, 'read': 'map', 'fields': {}})
@@ -1878,9 +1878,11 @@ class Handler(BaseHTTPRequestHandler):
         alone = sorted(set(rooms) - set(nodes))
         seen = {n: host.send({'op': 'world-view', 'principal': reader, 'object': n}) for n in [*nodes, *alone][:MAX_ROOMS]}
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-        self.html(200, atlas.town(who and who['handle'], nodes, ways, seen, alone=alone, height=self.server.host.send({'op': 'world-status'}).get('height'),
-                                  town_principal=self.server.town(), unfold=(q.get('open') or [None])[0],
-                                  map_text=m.get('text') if m.get('status') == 'surface' else None))
+        wanting = host.send({'op': 'world-wanting', 'principal': reader})
+        self.html(200, atlas.town(who and who['handle'], nodes, ways, seen, alone=alone, height=host.send({'op': 'world-status'}).get('height'),
+                                  town_principal=self.server.town(), unfold=(q.get('open') or [None])[0], signed_in=bool(who),
+                                  probes=tuple(self.server.st.config.probe_names.split()),
+                                  wanting=[w for w in wanting.get('rows') or [] if isinstance(w, dict)] if wanting.get('status') == 'wanting' else []))
 
     def atlas_inspect(self, name):
         """`/inspect/<id>`: the thing as the host can tell it to this reader: `world-inspect` with its source (and again as a

@@ -73,6 +73,8 @@ class Config:
     welcome: str = field(str(ROOT / 'docs' / 'previews' / 'zulip-welcome.txt'), 'the welcome deploy/playtest.sh posts')
     grant: float = field(200.0, 'the monthly API credit in dollars, against which the hand reports spend')
     plan: str = field(str(ROOT / 'docs' / 'PLAYTEST-2.md'), "the playtest's plan, whose seeds (§2) and invitations (§3) the hand's Speak offers")
+    probe_names: str = field('deploycheck', "the names a deploy's check guests are given, space-separated prefixes (docs/DEPLOY.md): /town counts "
+                             "their lines with the town's own and lists them nowhere as residents")
     owner_principals: str = field('', "the owner's principals besides the opener (his Zulip user), space-separated: no measure counts them as residents")
     arrival: str = field('invited', "how a guest with no account comes in (docs/DEPLOY.md \"A second instance\"): invited, by an invitation's "
                          "code alone; open, also by asking the door for a key (`/enter`, `POST /AGENTS.md/arrive`) with a small proof of work")

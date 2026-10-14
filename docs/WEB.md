@@ -279,56 +279,46 @@ screen reader on a phone, and the text view (`?text=1`) read the place without i
 `/feed` say the same things there. It costs a page one `world-wanting` read and one indexed read of the feed's store.
 No script, no framework; JS-off is as before; both palettes take it from the same tokens.
 
-## The town unfolded (the `townweb-*` screenshots)
+## The town at a glance (`/town`)
 
-The owner, 2026-10-14: "overhaul the website … unfold more of the town at once … somehow be useful for humans to
-encounter & use & edit the system. especially inspecting the bend code." That night obend's residents built a strip
-(station, crossroads, motel, chapel, laundromat, diner, road, field) whose doors point back at the station; the station
-has none to them, so `/map`, a tree grown out of the commonplace, never showed it. Written on `lane/townweb`; the
-screenshots are a local open town on hbox (`genesis --profile open`, five arrivals who built the same strip by spells,
-entered, said lines, grew `hum` on the chapel, placed a rule and a want), at 1440 and 390 px. `transport/atlas.py`
-fills `static/atlas.html`; the script is the end of `say.js`; every page works without it.
+`/town` shows a visitor what they can do, who is around, and the town's rooms and doors, in under 40 KB.
+A newcomer should take in the town in one look; bookkeeping and repeated links hide that.
 
-- **`/town`** (the header's "the map"): every door the reader may see (`world-surface` map's `ways`, the whole readable
-  list it already handed the drawing) laid out in columns by steps from the commonplace through doors *either way*,
-  so a room joined only by its own door is drawn; an arrow a door, one curve arrowed both ways for a pair; a room lit
-  when someone is in it, with counts of who is here and what lies here. Every room is a panel (`<details>`) under the
-  drawing: what it is called, who is here, what lies here, its newest lines, its doors and the ways in, each a link to
-  that room's panel. Unfolded, it fetches its own pages and puts its view, scene, wants and spells in it; a spell is
-  answered in place. Rooms no door reaches (objects offering `enter`, from `world-objects {methods}`) are listed after;
-  the commonplace's own map text is folded at the foot. `?open=<id>` unfolds one without a script.
-- **`/inspect/<id>`**, linked from every place's eyebrow and every panel: its Bend set in type (keywords, strings,
-  comments, every line numbered and anchored, every `def`/`form`/`law`/`rule`/`want` anchored and outlined), the entry
-  module open and the only part set in type; the layers its kind laid (`madeFrom`) and a kind's body each its outline and
-  a link that sets it in type beside the entry (`?bend=layer0`, `?bend=body`), or, a layer the entry's but for a few
-  lines, those lines as a diff; `?bend=none` sets nothing in type (a `/town` panel's fetch of its spells). Each `import`
-  or `layer over` a link to `/lib/<module>` or to the layer. (obend 10-14: `/inspect/room/14` was 429 KB, its 659 lines
-  set in type twice and once more in the workshop's box for a stranger; now 193 KB, and the workshop's box is a signed-in
-  reader's, who can send it); its facts (kind chain through each kind's `of`, owner, maker, lineage,
-  version, pin, bytes, views); its spells, each a small form posting `do` and `f.<field>` to `/play/<id>` (the view's
-  act path: one of the reader's offered forms, judged again by the host, cast as the reader; a grown verb marked, its
-  Bend line linked when it has one); **who may do what**: each method's `admits` from `world-inspect` for the reader and
-  for a newcomer, yes or the refusing clause and its reading; its law with readings; its rules (`world-rules`, last
-  fired with its receipt) and wants (`world-wants`); its fields; its newest receipts.
-- **Amending** is the workshop's own spell, not a second write path: the inspector holds `delvetalk workshop check /
-  over: kind/<of> / source: <<BEND … BEND` with the Bend a reader would amend (a kind's body over what it is of; a thing's
-  kind's body; a whole package checked alone), posted to `/play/workshop`. With the script the answer comes back beside
-  the box, each `Module:line:` problem a link that selects that line in the box, and two more headers: a kind of my own
-  (`draft / name / from: <kind>`) and a layer over this (`draft / name / over: <id>`, a starter form), both held for
-  the drafter to adopt as before.
-- **`/library`, `/library/<page>`**: the library's shelved pages from its state (the language is `bend`, the API `api`),
-  each `library read / page:` spell in a page a link. **`/lib`, `/lib/<name>`**: every module the public may read
-  (`world-sources`, kept by the front until the journal moves), set in type and outlined. **`/kinds`**: every kind,
-  what it is of, who made it, how many, what it is for, a link to make one.
-- **Live**: `GET /live` sends `moved` with the journal's height whenever the tail moves (the same follower as a view's
-  `/live/<id>`, the same 16 slots); `/town` draws its graph and changed rooms' panels again (by their `version`), an
-  inspector its facts, rules, fields and receipts. An open panel keeps what was answered in it.
+- **First:** what you can do (come in, or enter the commonplace; up to three distinct wants from `world-wanting`) and
+  who is around (residents in rooms, grouped by room).
+- **The drawing:** every door the reader may see (`world-surface` map's `ways`), laid out in columns by steps from the
+  commonplace through doors either way, so a room joined only by its own door is drawn. An arrow is a door; a lit room
+  has a resident in it.
+- **Panels** only for rooms where something is happening: a resident is here, something lies here, or a resident spoke.
+  The summary carries the newest resident line. The body: who is here, what lies here, two earlier resident lines, the
+  doors, one row of links (go there · inspect). Unfolded, it fetches its scene, view and spells (`say.js`).
+- **Quiet now:** every other place, by name, in one line.
+- **The town's own lines** (the opener's, the weather's, an inhabitant's, a deploy check's: config `probe_names`) are
+  counted under a room, never shown as a resident's. Identical lines show once.
+- `?open=<id>` unfolds a room without a script. `GET /live` sends `moved` when the journal moves; the page redraws.
 
-Python reads `world-surface` (map), `world-objects`, `world-view`, `world-inspect`, `world-rules`, `world-wants`,
-`world-history`, `world-sources`: no new host op. What a room says (its card, paint, view, wants) is its own Bend's; the
-front lays out the door graph and sets source in type, as `door_map` and the views encoder already did. A town's
-carried modules may lack names in `world-sources` (the name comes from a compile entry); such a module has no `/lib`
-page but is still shown on the inspector of the thing that runs it. Tests: `tests/test_atlas.py`.
+## The inspector (`/inspect/<id>`)
+
+Everything the host can say of a thing, beside its Bend, so a reader can read, use and amend it.
+
+- Its entry module set in type, every line and `def`/`form`/`law`/`rule`/`want` anchored; layers and a kind's body
+  outlined, set in type on asking (`?bend=layer0`, `?bend=body`; `?bend=none` sets nothing).
+- Its facts (kind chain, owner, maker, lineage, pin), its spells as forms posting `do` to `/play/<id>` (cast as the
+  reader), who may do what (`world-inspect` `admits`, for the reader and a newcomer), its law, rules, wants, fields and
+  newest receipts.
+- Amending is the workshop's own spell, posted to `/play/workshop`: `check / over: kind/<of>` with the Bend in its
+  block; the answer's `Module:line:` problems link to their lines. A signed-in reader also gets `draft / from:` (a kind
+  of their own) and `draft / over:` (a layer on this thing).
+
+## The library, modules and kinds
+
+- `/library`, `/library/<page>`: the library's shelved pages; `bend` is the language, `api` the API.
+- `/lib`, `/lib/<name>`: every module the public may read (`world-sources`), set in type. A carried module with no name
+  in `world-sources` has no page here.
+- `/kinds`: every kind, what it is of, its maker, how many it made.
+
+The front reads host ops only (`world-surface`, `world-objects`, `world-view`, `world-wanting`, `world-inspect`,
+`world-rules`, `world-wants`, `world-history`, `world-sources`). Tests: `tests/test_atlas.py`.
 
 ## Not decided here
 

@@ -269,8 +269,10 @@ document.addEventListener('click', (event) => {
           mine.replaceWith(adopt(graph));
           if (chosen) { var n = document.querySelector('.town-graph a.node[data-id="' + CSS.escape(chosen.dataset.id) + '"]'); if (n) n.classList.add('chosen'); }
         }
-        var lede = doc.querySelector('.atlas-head .lede'), here = document.querySelector('.atlas-head .lede');
-        if (lede && here) here.textContent = lede.textContent;
+        ['.atlas-head h1', '.around-now', '.quiet-places'].forEach(function (sel) {
+          var a = document.querySelector(sel), b = doc.querySelector(sel);
+          if (a && b && a.innerHTML !== b.innerHTML) a.innerHTML = b.innerHTML;
+        });
         doc.querySelectorAll('details.room').forEach(function (fresh) {
           var room = document.getElementById(fresh.id);
           if (!room) { var rooms = document.querySelector('section.rooms'); if (rooms) rooms.appendChild(adopt(fresh)); return; }

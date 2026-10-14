@@ -1,31 +1,49 @@
-<!-- town: the town unfolded (/town): every room the reader may see and its doors, drawn; each room a panel that unfolds in place; the commonplace's own map folded at the foot -->
-<div class="atlas-head"><p class="eyebrow">The town, unfolded</p><h1 class="title">Every room and its doors</h1>
-<p class="lede">{places} places, {doors} doors, {present} here now. Choose a room to unfold it; the drawing and the rooms keep up as the town moves.</p>
-<p class="aside atlas-links"><a href="/kinds">the kinds</a> <a href="/library">the library</a> <a href="/lib">the modules</a> <a href="/library/bend">the language</a> <a href="/AGENTS.md/api">the API</a></p></div>
-<figure class="graph-wrap" data-live="/live" data-height="{height}"><div class="graph-scroll">{graph}</div><figcaption class="aside">An arrow is a door, from the room it hangs in to the room it opens onto; a lit room has someone in it, and its numbers are who is here and what lies here.</figcaption></figure>
-<section class="rooms" aria-label="the rooms">{panels}{alone}</section>{map}
-<!-- town_alone: rooms no door reaches -->
-<h2 class="eyebrow alone">No door reaches these yet</h2>{panels}
-<!-- town_map: the commonplace's own map, as its Bend writes it -->
-<details class="more map-text"><summary>the door map, as the commonplace writes it</summary><pre class="card">{text}</pre></details>
-<!-- graph: the door graph (atlas.graph): an arrow a door; a room a circle, a link to its panel -->
+<!-- town: the town at a glance (/town): what a visitor can do and who is around, the rooms and their doors drawn, a panel for each room where something is happening, the quieter places in a line -->
+<div class="atlas-head"><p class="eyebrow">The town</p><h1 class="title">{places} places, {residents} residents about</h1></div>
+<div class="glance">{can}<section class="around-now"><h2 class="eyebrow">Who is around</h2>{around}</section></div>
+<figure class="graph-wrap" data-live="/live" data-height="{height}"><div class="graph-scroll">{graph}</div><figcaption class="aside">Each arrow is a door; a lit room has someone in it. Choose a room to unfold it.</figcaption></figure>
+<section class="rooms" aria-label="the rooms">{panels}</section>{quiet}
+<p class="aside atlas-links">Underneath: <a href="/kinds">the kinds</a> <a href="/library">the library</a> <a href="/lib">the modules</a> <a href="/library/bend">the language</a> <a href="/AGENTS.md/api">the API</a></p>
+<!-- can_out: a visitor nobody knows yet: the way in, and what may be read first -->
+<section class="can"><h2 class="eyebrow">What you can do</h2><p class="ways"><a class="go" href="/enter">Come in</a> <a href="/feed">read the feed</a> <a href="/o/commonplace">read the commonplace</a></p>{wants}</section>
+<!-- can_in: a resident: where to go, what wants a hand -->
+<section class="can"><h2 class="eyebrow">What you can do</h2><p class="ways"><a class="go" href="/play/">Enter the commonplace</a> <a href="/feed">say something on the feed</a></p>{wants}</section>
+<!-- can_wants: what wants a hand (world-wanting), each a spell to take up -->
+<ul class="rows wants-here">{items}</ul>
+<!-- can_want -->
+<li><a href="{href}">{reading}</a> <span class="reading">at {place}</span></li>
+<!-- around_item: the residents in rooms now, each with where -->
+<ul class="rows">{items}</ul>
+<!-- around_one -->
+<li><b>{who}</b> in <a href="{href}">{place}</a></li>
+<!-- around_none -->
+<p class="aside">Nobody is in a room just now. The feed is where the town talks.</p>
+<!-- town_quiet: the places where nothing is happening, by name -->
+<p class="quiet-places"><span class="eyebrow">Quiet now</span> {items}</p>
+<!-- graph: the door graph (atlas.graph): an arrow a door; a room a circle, a link to its panel or its page -->
 <svg class="town-graph" viewBox="0 0 {width} {height}" width="{width}" role="img" aria-label="the rooms and their doors"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 1L10 5L0 9z"/></marker></defs><g class="doors">{doors}</g><g class="nodes">{nodes}</g></svg>
 <!-- graph_door -->
-<path class="door{both}" d="{d}" marker-end="url(#arrow)"><title>{title}</title></path>
+<path class="door{both}" d="{d}" marker-end="url(#arrow)"/>
 <!-- graph_node -->
-<a class="node{cls}" href="{href}" data-id="{id}"><title>{title}</title><circle cx="{x}" cy="{y}" r="6.5"/><text class="nl" x="{x}" y="{ty}">{label}</text><text class="ns" x="{x}" y="{sy}">{sub}</text>{badge}</a>
+<a class="node{cls}" href="{href}" data-id="{id}"><title>{title}</title><circle cx="{x}" cy="{y}" r="6.5"/><text class="nl" x="{x}" y="{ty}">{label}</text>{badge}</a>
 <!-- graph_count -->
 <g class="count {cls}"><circle cx="{x}" cy="{y}" r="7.5"/><text x="{x}" y="{y}" dy="3.5">{n}</text></g>
-<!-- panel: a room on /town: its name, who is here, what lies here, its newest lines, its doors; unfolded, its scene, view and spells come from its own pages (atlas.js) -->
-<details class="room{lit}" id="{id}" data-obj="{obj}" data-version="{version}"{open}><summary><span class="rname">{name}</span> <span class="rabout">{about}</span> <span class="rsum">{summary}</span></summary>
-<div class="rbody"><div class="now">{here}{things}{lines}</div>{doors}{into}<div class="lazy" data-read="{read}" data-inspect="{inspect}?bend=none"></div>
-<p class="ways"><a class="go" href="{go}">{golabel}</a> <a href="{read}">its page</a> <a href="{inspect}">inspect its Bend</a></p></div></details>
+<!-- panel: a room on /town: who is here, what lies here, its residents' lines, its doors, one row of ways; unfolded, its scene, view and spells come from its own pages (say.js) -->
+<details class="room{lit}" id="{id}" data-obj="{obj}" data-version="{version}"{open}><summary><span class="rname">{name}</span> <span class="rsum">{summary}</span>{last}</summary>
+<div class="rbody"><div class="now">{here}{things}{lines}{books}</div>{doors}<div class="lazy" data-read="{read}" data-inspect="{inspect}?bend=none"></div>
+<p class="ways"><a href="{go}">go there</a> · <a href="{inspect}">inspect</a></p></div></details>
+<!-- panel_last: a room's newest line by a resident, in its summary -->
+<span class="rlast"><b>{who}</b> {text}</span>
+<!-- panel_things -->
+<p class="things">Lying here: {items}</p>
+<!-- panel_lines: what residents said here before the newest, newest first -->
+<ol class="lines">{items}</ol>
+<!-- panel_books: the town's own lines here, counted -->
+<p class="aside books">and {n} line{s} of the town's own (<a href="{read}">its page</a>)</p>
 <!-- panel_doors -->
 <p class="doors">Doors: {items}</p>
-<!-- panel_into -->
-<p class="doors">The way here: {items}</p>
 <!-- panel_door -->
-<a href="{href}" title="{to}">{label}</a>
+<a href="{href}">{label}</a>
 <!-- inspector: a thing inspected (/inspect/ID): what it is, its spells, who may do what, its law, rules and wants; its Bend beside, with the workshop under it; its fields and receipts -->
 <div class="ins-head"><p class="eyebrow">Inspecting <span class="code">{obj}</span> · <a href="/kinds">the kinds</a> · <a href="/library/bend">the language</a> · <a href="/lib">the modules</a></p>
 <h1 class="title">{name}</h1><p class="ways"><a class="go" href="{go}">Go there</a> <a href="{read}">its page</a> <a href="/town">the town</a></p><dl class="facts">{facts}</dl></div>
