@@ -272,12 +272,14 @@ class PolicyObject(Chain):
         self.assertEqual((silent["receipt"]["outcome"], silent["offers"]), ({"tag": "admitted", "writes": []}, []), silent)
         self.assertEqual(self.things(), [])
 
-    def test_hob_none_at_the_commonplace_is_silence(self):
+    def test_hob_none_at_the_commonplace_is_the_towns_one_line(self):
+        """A summons hob reads as nothing hears the town's one line, never silence (the live review's finding 4)."""
         self.policy()
         self.garden()
         self.say("my cat is called Pip, by the way")
-        silent = self.interpret(self.NONE)
-        self.assertEqual((silent["receipt"]["outcome"], silent["offers"]), ({"tag": "admitted", "writes": []}, []), silent)
+        heard = self.interpret(self.NONE)
+        self.assertEqual((heard["receipt"]["outcome"], [o["text"] for o in heard["offers"]]),
+                         ({"tag": "admitted", "writes": []}, ["hob: the town heard you. A spell acts here: delvetalk guide shows how, delvetalk commonplace ? lists what it takes.\n"]), heard)
         self.assertEqual(self.things(), [])
 
     def test_a_colour_the_form_does_not_take_comes_back_as_hobs_one_question_over_the_doors(self):

@@ -658,7 +658,8 @@ the card answer and the said verdict are gone. Field lines that fit an offered f
 proposal runs as the speaker's turn on the card (origin `interpreted`) unless the action is in `confirmFor`
 (reprogram, amend, offer, countersign, adopt), where hob offers the spell back filled and holds nothing; an `ask:`
 naming offered fields offers "hob: that still needs …" with the spells; `none`, a failed model or the deadline is
-silence. The workshop's `make` asks `world.interpret` for a draft, whose one ```obend block is the form's `source`.
+silence, but for a summons, which hears the town's one line (FLEX §4); prose in none of the four forms is asked again
+once and never shown; on a misfit spell a short `ask:` is the refusal's hint. The workshop's `make` asks `world.interpret` for a draft, whose one ```obend block is the form's `source`.
 The asking card and every card whose forms hob is offered have a root `{object, version, behaviour}` in
 both the pending request and its action receipt. The pending roots name the state versions when the offers
 were read; a valid host reading starts its cast on current state, recording those state versions with the same

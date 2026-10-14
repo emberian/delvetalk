@@ -76,7 +76,12 @@ library's pages (`world-interpretations`); the prompt does not print them yet (O
 | the spell meant, up to three | each runs as the speaker's turn (origin `interpreted`) on the card it names; an action in `confirmFor` (reprogram, amend, offer, countersign, adopt) is offered back, `hob: that asks first; send it filled:`, and runs only when sent |
 | `grow: NAME "reading"` and the spell using it | one turn grows the verb on the card under the speaker and casts it: `I water mimo's bell` grows `water` |
 | `ask: <question>` | naming offered fields: `hob: that still needs <fields>; send it filled:` with their spells; naming none: `hob: no spell of <card> takes that as said: delvetalk <card> ?` |
-| `none` | silence: talk near a card is not addressed to it. A failed model and the deadline (`interpretationPatience`, 64 clock units) are silence too |
+| `none` | silence: talk near a card is not addressed to it. A failed model and the deadline (`interpretationPatience`, 64 clock units) are silence too. A summons (the town named, read at the commonplace) hears the town's one line instead: `hob: the town heard you. A spell acts here: …` |
+
+Reasoning before an answer is set aside: a reply whose last line is `none` or a one-line `ask:` is that line. Prose in none of
+the four forms is asked again once (journaled `attempted`, reason `prose`), then read as `none`; it is never shown. On a
+misfit spell hob read, the refusal stands and an `ask:` that is one short line ending `?` (`Limits.askLine`) is its hint,
+`hob asks: …`; a longer one is the fixed line naming what the spell still needs.
 
 hob composes no sentence of its own and states no fact: there is no `say:` and no `card` answer. A question a card
 answers is answered by the card the speaker reads; what an act did is the host's revealed lines. A misread is corrected

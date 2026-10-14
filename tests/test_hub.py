@@ -73,6 +73,12 @@ class Hub(test_chain.Chain):
         return made["seed"], made["colour"]
 
 
+    def heard(self, resumed):
+        """A summons hob read as nothing: admitted, nothing written, the town's one line."""
+        self.assertEqual(resumed["receipt"]["outcome"], {"tag": "admitted", "writes": []}, resumed)
+        self.assertEqual([o["text"] for o in resumed["receipt"]["offers"]],
+                         ["hob: the town heard you. A spell acts here: delvetalk guide shows how, delvetalk commonplace ? lists what it takes.\n"], resumed)
+
     def silent(self, resumed):
         """hob's silence: admitted, nothing written, nothing offered."""
         self.assertEqual((resumed["receipt"]["outcome"], resumed["receipt"].get("offers", [])), ({"tag": "admitted", "writes": []}, []), resumed)
@@ -116,7 +122,7 @@ class Hub(test_chain.Chain):
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("something for moths", "amber"))
         self.assertEqual(self.say("hello", GLM)["status"], "suspended")
-        self.silent(self.interpret("none"))
+        self.heard(self.interpret("none"))
 
     def test_with_a_policy_prose_is_read_once_by_hob_against_the_doors_forms(self):
         """FLEX §2: every prose reply to the root with a policy goes to hob, once, offered the
@@ -141,14 +147,18 @@ class Hub(test_chain.Chain):
             self.assertEqual(answered["receipt"]["outcome"], {"tag": "admitted", "writes": []}, answered)
             self.assertTrue(answered["receipt"]["offers"][0]["text"].startswith(card), answered)
 
-    def test_chatter_reaches_hob_and_its_none_is_silence(self):
+    def test_chatter_reaches_hob_and_its_none_is_the_towns_one_line(self):
         """The mention gate is gone: prose naming no door is still hob's to read (the host's reach
-        decides whether it was addressed at all); hob's `none` is silence."""
+        decides whether it was addressed at all). A summons hob reads as `none` hears the town's one line saying how to act,
+        never silence (the live review of 2026-10-14, finding 4: seven greetings on gsb met nothing). Refuted by an empty
+        reply, or by a line naming a hash, a DID or anything the card did not say."""
         self.policy()
         self.commonplace()
         chatter = self.say("lovely weather on the wiki today", KIMI, uri="at://x/post/2")
         self.assertEqual(chatter["status"], "suspended", chatter)
-        self.silent(self.interpret("none"))
+        self.heard(self.interpret("none"))
+        self.assertEqual(self.say("hello town, I am new here", GLM, uri="at://x/post/3")["status"], "suspended")
+        self.heard(self.interpret("none"))
 
     def test_an_archived_rain_line_runs_at_once_and_a_spell_missing_a_value_is_hobs_question(self):
         """Field lines that fit a form a door's card offers (the bell under the garden) run at once,
