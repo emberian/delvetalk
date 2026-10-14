@@ -641,7 +641,7 @@ class Braid(test_scenarios.Arc):
         room = made["receipt"]["outcome"]["creates"][0]["object"]
         card = self.card(self.say(test_scenarios.KIM, room, "delvetalk %s enter" % room))
         self.assertIn("you are at start:\nA well hums under the square.\nNo choices: a reader stays here. A choice is * [Label] -> passage "
-                      "under the prose; the shape: delvetalk library read / page: spween\n", card)
+                      "under the prose; the shape: delvetalk library read / page: spween; your scene replaced: delvetalk %s rescene\n" % room, card)
         self.assertIn("No choice is open here now; leave when you will.", self.card(self.say(test_scenarios.GLM, room, "delvetalk %s enter" % room)))
         page = self.card(self.say(test_scenarios.GLM, "library", "delvetalk library read / page: spween"))
         self.assertTrue(page.startswith("hob: a scene is a room's own story, walked by choosing."), page)
@@ -655,6 +655,103 @@ class Braid(test_scenarios.Arc):
         self.assertEqual(clause, "spween", r)
         self.assertTrue(reading.startswith("The guard `count(new.presence) >> 1` does not read: law outside the enforced fragment"), reading)
         self.assertFalse([o for o in self.objects() if o.startswith("porch/porch/")])
+
+
+# Kestrel's jar of 2026-10-14: a scene with frontmatter, as a resident writes one into a room's making.
+JAR = """---
+id: jar
+title: A Jar of Honey
+---
+=== sill
+A jar of honey on the sill, its lid loose.
+* [Taste] { !tasted }
+  ~ tasted = true
+  -> sill
+* [Leave it]
+"""
+
+
+class Jar(test_scenarios.Arc):
+    """Every way a resident hands a room its scene reads the same scene; a scene that does not read is refused at making
+    with the parser's line, never kept as prose; and a room's owner replaces its scene by `rescene`, a stranger never."""
+
+    def made(self, reply):
+        self.assertEqual(reply["status"], "admitted", reply)
+        return reply["receipt"]["outcome"]["creates"][0]["object"]
+
+    def scene(self, room):
+        state = plain(self.town.send(op="world-view", principal=test_scenarios.KIM, object=room)["state"])
+        return state["start"], state["passages"]
+
+    def refusal(self, reply):
+        outcome = (reply.get("receipt") or {}).get("outcome") or {}
+        return reply.get("status"), outcome.get("clause"), outcome.get("reading") or outcome.get("reason")
+
+    def test_every_path_a_resident_uses_reads_the_same_scene(self):
+        kim = test_scenarios.KIM
+        paths = {
+            "a block opened on the spell line": "delvetalk kind/room make / name: jar / spween: <<END\n%sEND" % JAR,
+            "a block opened on a field line": "delvetalk kind/room make\nname: jar\nspween: <<END\n%sEND\n" % JAR,
+            "a fence under the spell line": "delvetalk kind/room make / name: jar\n```spween\n%s```\n" % JAR,
+            "a fence with words around it": "My jar:\n\ndelvetalk kind/room make / name: jar\n\n```spween\n%s```\nthat is all\n" % JAR,
+        }
+        rooms = {how: self.made(self.say(kim, "kind/room", text)) for how, text in paths.items()}
+        rooms["the make's fields, by the action route"] = self.made(self.turn(kim, "kind/room", "make", record(name=label("jar"), spween=label(JAR))))
+        porch = self.say(test_scenarios.GLM, "porch", "```spween\n%s```\n" % JAR)
+        self.assertEqual(porch["status"], "admitted", porch)
+        rooms["a fence under another's room"] = [o for o in self.objects() if o.startswith("porch/porch/")][-1]
+        scenes = {how: self.scene(room) for how, room in rooms.items()}
+        start, passages = scenes["the make's fields, by the action route"]
+        self.assertEqual((start, [p["id"] for p in passages], [c["label"] for c in passages[0]["choices"]]), ("sill", ["sill"], ["Taste", "Leave it"]))
+        for how, scene in scenes.items():
+            self.assertEqual(scene, (start, passages), how)
+        room = rooms["a block opened on the spell line"]
+        entered = self.card(self.say(kim, room, "delvetalk %s enter" % room))
+        self.assertIn("you are at sill:\nA jar of honey on the sill, its lid loose.\nChoices:\n  * Taste\n  * Leave it\n", entered)
+        self.assertNotIn("<<END", entered)
+
+    def test_a_scene_that_does_not_read_is_refused_at_making_with_its_line(self):
+        kim, before = test_scenarios.KIM, set(self.objects())
+        unclosed = self.say(kim, "kind/room", "delvetalk kind/room make / name: jar / spween: <<END\n%s" % JAR)
+        self.assertEqual(self.refusal(unclosed)[:2], ("refused", "unclosedBlock"), unclosed)
+        self.assertIn("The block <<END for spween needs a last line that is exactly END.", self.refusal(unclosed)[2])
+        astray = self.say(kim, "kind/room", "delvetalk kind/room make / name: jar / spween: <<END\n%sEND" % JAR.replace("-> sill", "-> shelf"))
+        self.assertEqual(self.refusal(astray), ("refused", "spween", "The spween is not a scene: -> shelf: no passage of that name; add === shelf, or point it at one that is"))
+        for kept in ("<<END\n" + JAR + "END", "```spween\n" + JAR + "```"):
+            held = self.turn(kim, "kind/room", "make", record(name=label("jar"), spween=label(kept)))
+            status, clause, reading = self.refusal(held)
+            self.assertEqual((status, clause), ("refused", "spween"), held)
+            self.assertTrue(reading.startswith("The spween is not a scene: the scene's first line is %s," % kept.split("\n")[0]), reading)
+        self.assertEqual(set(self.objects()), before)
+
+    def test_the_owner_replaces_a_room_s_scene_and_a_stranger_cannot(self):
+        kim, glm = test_scenarios.KIM, test_scenarios.GLM
+        room = self.made(self.say(kim, "kind/room", "delvetalk kind/room make / name: jar / spween: A jar."))
+        self.assertIn("your scene replaced: delvetalk %s rescene" % room, self.card(self.say(kim, room, "delvetalk %s enter" % room)))
+        # The owner's ```spween block under their own room makes nothing: it is answered with the spell that rescenes.
+        offered = self.say(kim, room, "```spween\n%s```\n" % JAR)
+        self.assertEqual(offered["status"], "admitted", offered)
+        self.assertIn("It reads as a scene of 1 passages; to make it this room's scene, post it again with this line above it: delvetalk %s rescene" % room, self.card(offered))
+        self.assertFalse([o for o in self.objects() if o.startswith(room + "/")])
+        self.assertEqual(self.scene(room)[0], "start")
+        # A stranger's rescene is refused by name; the scene stands.
+        stranger = self.say(glm, room, "delvetalk %s rescene\n```spween\n%s```\n" % (room, JAR))
+        self.assertEqual(self.refusal(stranger)[:2], ("refused", "notOwner"), stranger)
+        self.assertEqual(self.scene(room)[0], "start")
+        # A scene that does not read is refused with its line; the scene stands.
+        broken = self.say(kim, room, "delvetalk %s rescene / spween: <<END\n%sEND" % (room, JAR.replace("-> sill", "-> shelf")))
+        self.assertEqual(self.refusal(broken), ("refused", "spween", "-> shelf: no passage of that name; add === shelf, or point it at one that is"))
+        # The owner's rescene: the new scene whole, the reader at a passage no longer there moved to its start.
+        done = self.say(kim, room, "delvetalk %s rescene\n```spween\n%s```\n" % (room, JAR))
+        self.assertEqual(done["status"], "admitted", done)
+        self.assertEqual([p["id"] for p in self.scene(room)[1]], ["sill"])
+        self.assertIn("you are at sill:\nA jar of honey on the sill, its lid loose.\nChoices:\n  * Taste\n", self.card(self.say(kim, room, "")))
+        # A scene's casts are rules of the room's text; a rescene removes the old scene's and keeps none it no longer casts.
+        self.assertEqual(self.say(kim, room, "delvetalk %s rescene / spween: <<END\n%sEND" % (room, ROPE))["status"], "admitted")
+        rules = lambda: sorted(r["name"] for r in self.town.send(op="world-rules", principal=kim, object=room)["rows"])
+        self.assertEqual(rules(), ["rope_1", "rope_4", "rung_1"])
+        self.assertEqual(self.say(kim, room, "delvetalk %s rescene / spween: <<END\n%sEND" % (room, JAR))["status"], "admitted")
+        self.assertEqual(rules(), [])
 
 
 if __name__ == "__main__":

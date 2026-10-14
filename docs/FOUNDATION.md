@@ -592,13 +592,14 @@ stands, and the card's own `actions(state, context)` leave that reader.
 
 **The host reads spells** (`Host/Spell.lean`, the grammar in Lean, rule for
 rule). The last line `delvetalk CARD ACTION` at the margin (fields on the line after
-` / ` or commas, a `/` cutting only after a blank so an `at://` URI stays whole, or on `field: value` lines), `<<DELIM` … `DELIM` blocks,
+` / ` or commas, a `/` cutting only after a blank so an `at://` URI stays whole, or on `field: value` lines), `<<DELIM` … `DELIM` blocks
+(opened by a field line, or by the spell line's last inline field: `/ spween: <<END`, its lines under the spell line),
 fences and quotes skipped; an indented `delvetalk` line among other lines is an example, never cast (every card
 prints its spells indented), while a post that is one spell block and nothing else (indented, or in one plain fence)
 is dedented and cast; a post with several spells at a line's start is a turn each (identity `#1` .. `#3`), a
 fourth refused `tooManySpells`; and a text holding a card's header line (`✾ `, the commonplace's door count `Five doors.`, `KIND `, a line ending `Make one:`)
 beside a `delvetalk` line quotes that card: refused `badSpell`, clause `quotation`, nothing cast; a `source` field takes the reply's first ```obend
-fence. The host resolves the card, looks the action up in its declared forms,
+fence, and a field the spell lacks a fence tagged with its name (```spween under `delvetalk kind/room make / name: jar`). The host resolves the card, looks the action up in its declared forms,
 builds the typed argument (a word for a case of a closed sum) and runs the
 method, `inputOrigin.kind = "spell"`, costing the method's ticks alone. A misfit
 is refused `badSpell` with `clause` (`otherCard`, `noAction`, `unknownField`,
