@@ -85,7 +85,7 @@ In order (`run`):
    happens at a tick is the rules written on it: the weather's and the lamp's.
 10. The library shelves `PAGES`: ten pages (spells, laws, object, relations, protocol, world, kinds: each kind and a spell that
    makes one, register, spween, station) and six walks (bell, check, enter, scene, tide, kind), each `capsules/pages/<name>.txt`,
-   at most 1,266 characters; then the guide in parts and the welcome.
+   at most what a library reply holds (1,266 characters at one post's room); then the guide in parts and the welcome.
 11. **The town's register** (`town_register`; below, "The register").
 12. Each door's object publishes its page (`publishPage`), which the bridge drafts as `wiki: <Door>` for the hand.
 
