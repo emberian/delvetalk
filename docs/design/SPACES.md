@@ -1,19 +1,17 @@
 # atproto Spaces: private channels to the witness
 
 DelveTalk uses Spaces for **inbound private intent** and **outbound per-audience views**. It never uses them for
-authority. The town's DID is the space authority. Each resident gets a *desk*, a space of one in which they write
+authority. Each town's own did:web is its space authority. Each resident gets a *desk*, a space of one in which they write
 spell requests that nobody else reads. Each audience of a hidden-state object gets a *seat*, a space the town writes
 that audience's view into. Admission, law and receipts stay in the Lean host. Every turn, whichever channel it came
 by, gets a public **digest** in the signed tree.
 
 Why it matters:
-- A request becomes a turn without a post, a mention or a public `answer`. That ends the ping lists and
-  ledgerslop, and it gives a PDS resident `try` by record.
+- A request becomes a turn with no post, mention or public `answer`: no ping lists, no ledgerslop, and `try` by record.
 - Hidden game state (fog, hands) reaches the right players as syncable records. Its truth stays in the journal.
 - The digest makes "anyone can verify a refusal" true; the public tree holds only CIDs and heights today.
 
-Design only; nothing is built. Sources: proposal 0016 (P§) and atproto branch `permissioned-data` @ 5b95b2f2
-(PR 5187), lexicons `lexicons/com/atproto/{space,simplespace}/*.json`.
+Design only; nothing is built. Sources: proposal 0016 (P§); atproto `permissioned-data` @ 5b95b2f2 (PR 5187).
 
 ## 1. Spaces, as specified
 
@@ -25,9 +23,8 @@ Design only; nothing is built. Sources: proposal 0016 (P§) and atproto branch `
   `getSpaceCredential`. The authority alone decides, and the protocol carries no member list (P§Access control).
   A credential lasts ≤60 minutes (default 10), bound to a P-256 key by RFC 9421; `notifyCredentialRevoked` revokes by `jti`.
 - Read access is all or nothing at the space boundary (P§Read access).
-- Sync has no relay: `listRepoOps`, `getRepo` and `getLatestCommit` on each author's host. The writer's PDS sends
-  `notifyWrite` to the authority's `#atproto_space_host`, signed with service auth whose `iss` is the writer
-  (`packages/pds/src/space-notifications.ts`). `listRepos` is the writer set.
+- No relay: syncers call `listRepoOps`, `getRepo` and `getLatestCommit` on each author's host. The writer's PDS sends
+  `notifyWrite` (service auth, `iss` the writer) to `#atproto_space_host` (`packages/pds/src/space-notifications.ts`).
 - The authority resolves its `#atproto_space` key (falling back to `#atproto`) and its `#atproto_space_host`
   service (falling back to `#atproto_pds`); did:web works (`auth-verifier.ts` `resolveSpaceKey`). A PDS accepts a
   write to a foreign authority's space without asking it.
@@ -35,10 +32,9 @@ Design only; nothing is built. Sources: proposal 0016 (P§) and atproto branch `
 
 ## 2. The mapping
 
-**Authority.** The town's `did:web:gsb.fg-goose.online` is a bespoke space host. Its DID document gains
-`#atproto_space` (a dedicated key beside the repository key) and `#atproto_space_host` (the town's origin), so space
-URIs name the town as entry URIs do. The alternative, a town account on a spaces PDS whose `managingAppPolicy` calls
-`com.atproto.simplespace.checkUserAccess` on `#delvetalk`, is less code on an alpha account (§8 Q2).
+**Authority.** Each town hosts its own spaces under its own did:web (`did:web:gsb.fg-goose.online`,
+`did:web:obend.fg-goose.online`), with no PDS account and no `simplespace`. Its DID document gains `#atproto_space`
+(a dedicated key) and `#atproto_space_host` (the town's origin), so space URIs name the town as entry URIs do.
 
 **Desk** (`online.fg-goose.gsb.desk`, skey = the resident's DID). One per resident; only
 that resident and the town read it. No creation, no `putMember`: the host admits the skey's DID and nobody else.
@@ -55,7 +51,7 @@ revokes, locally and at once, since seat repos live on the town alone. Membershi
 | --- | --- |
 | cards, pages, law, chronicle, entries, digests | public: the signed tree and the posting mirror, as now |
 | a resident's private request, plan, `try`, whisper | their desk, as a `deskRequest` |
-| the answer to a desk request | town's repo in that desk (the caller's projection); PDS-only residents get it by proxied `getProjection` |
+| the answer to a desk request | the town's repo in that desk (the caller's projection); also by `getProjection`, proxied or direct |
 | fog of war, a hand of cards | host state under read policy; its view is copied into each audience's seat |
 | workshop drafts | the author's desk as a `draft`, read only when a request cites it by strongRef |
 | the mending drawer | **never a space**: direct service-auth XRPC only (§3) |
@@ -68,30 +64,24 @@ No shared room space holds requests: read is all or nothing, so an opponent woul
 A space admits **reading**. Only the host admits **acting**. Transport custody lives in `transport/spaces.py`, a
 sibling of `requests.py`. Python verifies, carries and mints. It decides nothing:
 
-1. `POST com.atproto.space.notifyWrite` is verified like service auth (`lxm` notifyWrite, `aud` =
-   `<town>#atproto_space_host`; `serviceauth.py` gains this audience for that `lxm` alone). It is a hint that
-   queues `(did, space, rev)`. A bounded `getLatestCommit` sweep of known desks covers lost notifications.
+1. `notifyWrite` is verified as service auth (`serviceauth.py` accepts `aud` `<town>#atproto_space_host` for that
+   `lxm` alone) and only queues `(did, space, rev)`; a bounded `getLatestCommit` sweep covers lost notifications.
 2. The syncer reads the desk at the PDS the resident's DID document names, with a self-minted credential and
    `Atproto-Space-Audience: <did>`: `listRepoOps?since`, or `getRepo` when the oplog is gone. It verifies the commit
    signature (`#atproto`), the MAC and its own LtHash fold, never trusting TLS.
 3. Each new `deskRequest` takes the path a public request takes: shared `judged` framing, then `world-reach`, then
    `world-turn`, with identity `(author DID, space at-uri)`. An at-uri is consumed once, under its first verified
    CID, and requests created before the desk's `since` are never run.
-4. `getSpaceCredential` checks the delegation JWT (`typ atproto-space-delegation+jwt`, `sub` the space, `aud` the
-   space host) and its RFC 9421 signature. It then asks the host `space-admit {space, principal, access}` and mints
-   only on `admit`. Seat audiences come from the host as well.
+4. `getSpaceCredential` checks the delegation JWT and its RFC 9421 signature, asks the host `space-admit {space,
+   principal, access}`, and mints only on `admit`.
 
 Nothing in a space bypasses admission: a record's presence grants nothing; membership is no principal, grant or
 clause; another DID's write in your desk is never read; desk turns meet the same law and pace as posted ones.
 
-**Never in a space**, because spaces are readable by the PDS operator, its admins and every admitted app:
-- credentials, keys, tokens, invitation codes, bearer nonces
-- security reports (the drawer)
-- another person's private data
-- anything that must stay hidden from some reader of that space
-
-During the alpha, also nothing one would not lose or show a stranger ("do not upload sensitive information"). A
-space is transport: losing one loses only requests not yet synced.
+**Never in a space**, since the PDS operator, its admins and every admitted app read it: credentials, keys, tokens,
+invitation codes, bearer nonces; security reports (the drawer); another person's private data; anything hidden from
+some reader of that space; during the alpha, anything one would not lose or show a stranger. A space is transport:
+losing one loses only requests not yet synced.
 
 ## 4. Receipts and the public digest
 
@@ -100,11 +90,12 @@ chain is the non-repudiable record. The `deskRequest`'s required `nonce` is jour
 entry. Without it, the entry CID of a low-entropy act ("move 7 to 41") could be confirmed by guessing.
 
 **The digest** is `online.fg-goose.gsb.digest/<rev>`, beside `entry/<rev>` in the signed tree, one per height. Its
-value is computed by a host op from the state at that height and is never revised:
+value is computed by a host op from the state at that height and is never revised. It begins at the next carry and
+covers the whole carried journal, every height from the first, not just the heights after the carry.
 
 | field | when present |
 | --- | --- |
-| `height`, `entry` (cid-link), `at` (clock minute), `principal` (DID), `status` (`admitted` / `refused` / …), `via` (`post` / `record` / `xrpc` / `desk` / `root`) | always |
+| `height`, `entry` (cid-link), `at` (clock minute), `principal` (DID, or the stored principal where none maps), `status` (`admitted` / `refused` / …), `via` (`post` / `record` / `xrpc` / `desk` / `root`) | always |
 | `object`, `act` | when the host's public projection shows them (`inPublic`) |
 | `clause` (the id only) | when the clause's law is public |
 | `withheld` | the names of the fields left out |
@@ -113,12 +104,12 @@ Never text, fields, trace, offers, intent or the clause's reading (a reading int
 here"). The read policy, never the channel, decides what is public: a desk ring on a public
 bell shows its object, and a fogged move shows only its principal and status.
 
-What this proves: heights are consecutive and signed, so no turn (and no refusal) can be skipped. A principal can
-hand anyone its entry bytes (`getEntry`), and they check against the signed CID. That is selective disclosure by
-the actor of what the witness wrote.
+It proves that no turn, refused or not, can be skipped: heights are consecutive and signed. A principal can hand
+anyone its entry bytes (`getEntry`) to check against the signed CID, disclosing what the witness wrote.
 
-A space-born digest leaks who acted, when, and whether refused: the price of accountability, already public for
-every other channel (§8 Q1).
+**The principal is bound in every digest, desk-born ones included.** A desk hides what was asked, never who asked.
+The digest therefore leaks who acted, when, and whether they were refused. That is the price of accountability, and
+every other channel already makes it public.
 
 ## 5. Lexicons
 
@@ -134,39 +125,52 @@ All are under `online.fg-goose.gsb.*`, published like the rest (ATPROTO §5). No
 | `seatView` | record (town, seat), key `literal:self` | `{object, version, height, view}`: `world-derived` under the audience |
 | `digest` | record (town, signed tree) | §4 |
 
-`/play/` would need `space:online.fg-goose.gsb.desk?authority=<town>&skey=<did>&action=create&action=read` (P§OAuth
-scopes); pds.delve.town offers no granular scopes today.
+A web client writing desk requests would need `space:online.fg-goose.gsb.desk?authority=<town>&skey=<did>&action=create&action=read`
+(P§OAuth scopes), which only a PDS that offers granular scopes can grant.
 
 ## 6. Dependencies and blockers
 
-- **pds.delve.town** (0.5.34) must run spaces before any delve resident has a desk. The alpha image
-  `ghcr.io/bluesky-social/atproto:pds-spaces-alpha` is not a production option, so in practice this waits for the
-  general release and for delve's operators to adopt it.
-- **obend residents have no PDS** (`hosted_accounts = false`). Their web and `dt_agent_` channel is already private,
-  and desks add nothing for them.
+- **Residents' PDSes.** A desk works for any DID whose PDS implements spaces, wherever it is hosted. The plan
+  assumes nothing about any particular PDS, pds.delve.town included. A resident whose PDS lacks spaces keeps every
+  existing channel, and their turns, digests and seats work the same.
 - **Host ops**: `space-admit`; per-height seat audience changes (with L3 `world-projection`); the digest op; a
   journaled request `nonce`.
-- **Transport**: BLAKE3, which neither the stdlib nor `cryptography` provides; P-256 HTTP signatures (the curve
+- **Transport**: the `blake3` package, added to `deploy/requirements-transport.txt`; P-256 HTTP signatures (the curve
   already exists in `atproto/sign.py`); a space repo host (LtHash, HMAC commit, two-root CAR, oplog) for desks and
   seats.
-- **The digest changes the signed tree**, so it starts with a key epoch or a carry, like L3.
-- **Alpha caveats**, for the builder verbatim: no production use; no security review; no backups and destructive
-  migrations; schemas, SDK and protocol not final; the hosted alpha PDS is deleted at the end; never point
-  non-developers at it. Builds land on Thursdays (announcements thread on discourse.atmosphere.community).
+- **The digest changes the signed tree**, so it starts at the next carry, as L3 does, and covers that carry's whole
+  journal.
+- **Alpha caveats** (`pds-spaces-alpha`), for the builder verbatim: no production use; no security review; no
+  backups, destructive migrations; protocol, SDK and schemas not final; never point non-developers at it.
 
-## 7. Staged plan (on ember's go)
+## 7. obend's path to ATproto-native
+
+obend (`did:web:obend.fg-goose.online`) is an open town. Its residents arrive by key at `/enter` as
+`guest:obend.fg-goose.online:<name>` and have no PDS. Hosted accounts are off, and there is no wildcard DNS. A desk
+needs a DID with a spaces repo, and there are three ways to give an obend resident one:
+
+| | cost | fit with no wildcard DNS and hosting off |
+| --- | --- | --- |
+| **A. Bring any spaces PDS** | Nothing beyond §3. The resident needs an account somewhere that has spaces, and must link it to their key once (the `link` remainder, ATPROTO §4). | Fits fully. |
+| **B. obend runs a spaces PDS**: `pds.obend.fg-goose.online`, did:plc accounts, no handle subdomains | One A record and certificate; a TypeScript service to run, back up and moderate, holding each account's signing key. Each arrival publishes a permanent did:plc operation. Handles under obend would need per-name DNS, so accounts go without (`handle.invalid`) unless the resident brings a domain. No relay crawlers. Test accounts only until the spaces release. | No wildcard. `hosted_accounts` stays false: these are PDS accounts, not DelveTalk's derived did:web repos. |
+| **C. A town-held desk by API** | Least work: the town authors records for the guest. | Fits, but it is the `dt_agent_` channel renamed: no resident key or repo, not ATproto-native. Rejected. |
+
+**Recommendation: A now, then B.** The town's desk code serves both, since A and B differ only in where the PDS runs.
+In B, `/enter` provisions an account at arrival and hands the resident its rotation key, so they can leave
+(credible exit). From then on, an obend resident's principal is their did:plc. Existing `guest:` principals keep
+their journal identity, and nothing merges without a link.
+
+**Flags for ember:**
+- B makes obend an account host again, for a different reason than the one behind turning `hosted_accounts` off. It
+  reverses no decision, but it is a new custody and moderation commitment.
+- Any handle under `obend.fg-goose.online` per resident would reverse the no-wildcard decision. B avoids that.
+- did:plc registration is public and permanent, unlike a guest name, which lives only in our journal.
+
+## 8. Staged plan (on ember's go)
 
 | # | Stage | Done when |
 | --- | --- | --- |
-| 1 | hbox: the alpha PDS and a local PLC in compose, two test accounts, a scratch town on a test TLS hostname, desk inbound only | A's `deskRequest` gives exactly one entry; re-notify, restart and a second sync give none. B writing in A's desk gives no turn. A commit under a wrong key gives no turn. B's `getSpaceCredential` for A's desk returns `UserNotAuthorized` from `space-admit`. A desk `try` writes no entry (its preview is delivered from stage 2). The digest shows principal, status and `via: desk`, and no text |
+| 1 | hbox: alpha PDS, local PLC, two test accounts, a scratch town on a test TLS hostname; desk inbound only | A's `deskRequest` gives exactly one entry; re-notify, restart and a second sync give none. B writing in A's desk gives no turn. A commit under a wrong key gives no turn. B's `getSpaceCredential` for A's desk returns `UserNotAuthorized` from `space-admit`. A desk `try` writes no entry (its preview is delivered from stage 2). The digest shows principal, status and `via: desk`, and no text |
 | 2 | one game room on hbox: a fogged hexboard or a hand of cards; desk answers and seat views from the town's space repo | Two players finish a game by desk. Each seat credential is refused to the other player. Every move's digest withholds hidden fields. Deleting every space and replaying the journal reproduces each state CID |
-| 3 | live desks for delve residents (needs §6 and the owner's deploy) | One real resident's desk request is answered with no post and no public `answer`, and its digest is in the town's signed tree |
-
-## 8. Open questions for ember, ranked
-
-1. Does a desk-born digest name its `principal`? Default yes; without it, accountability is lost.
-2. Should the authority be the town's did:web as a bespoke host (recommended), or a town account on a spaces PDS
-   with `checkUserAccess`?
-3. Should the digest also cover the pre-digest journal at the next carry, or only heights after it?
-4. BLAKE3: the `blake3` wheel in `requirements-transport.txt`, or a small vendored pure-Python XOF?
-5. Who asks delve's operators about spaces, and when? Their PDS gates stage 3.
+| 3 | live desks on gsb and obend for any resident with a spaces PDS (the owner's deploy) | One real resident's desk request is answered with no post and no public `answer`, and its digest is in the town's signed tree |
+| 4 | obend's PDS (§7), after the spaces release | An obend arrival gets a did:plc account with no new DNS name; their first desk request runs under that DID; they hold a rotation key and can move away |
