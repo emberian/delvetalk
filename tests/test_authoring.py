@@ -282,6 +282,35 @@ class Authoring(unittest.TestCase):
         self.assertEqual(outcome(pure).get("class"), "evaluation", pure)
         self.assertIn("hum of pad/1 returned a number, and a method with no Activity returns its State record", outcome(pure).get("reason"))
 
+    # The live review's H2 and H5: every made thing's lineage carried its kind's whole body (44 KB a room, 45% of obend's
+    # object bytes) into every snapshot and carry, and the snapshot kept every library the world ever had. Now a body the
+    # journal carries is named by its CID, and only the libraries in use are kept; a reopened town reads it back whole.
+    # Refuted by a made thing's lineage holding its body in the snapshot, an unused library kept, or a reopened town
+    # whose lineage differs.
+    def test_a_snapshot_names_a_made_things_body_by_cid_and_keeps_only_the_libraries_in_use(self):
+        from tests.test_snapshot import read_snapshot
+        import glob
+        body = "form hum:\ndef hum(state: State, context: Abi.Context) -> Activity<Nat>:\n  Super.inscribe(state, \"hum\", \"hm\", context)\n" + "# a long note\n" * 60
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: hummock / of: record / head: a hummock\nbody: <<BEND\n%sBEND\n" % body)
+        for _ in range(3):
+            self.admitted(YUE, "kind/hummock", "delvetalk kind/hummock make")
+        before = {o: self.town.send(op="world-inspect", principal=YUE, object=o) for o in ("hummock/1", "hummock/3")}
+        self.assertEqual(self.town.send(op="world-snapshot")["status"], "snapshot")
+        [newest] = sorted(glob.glob(self.town.journal + ".snapshot.*.cbor"), key=lambda f: int(f.rsplit(".", 2)[1]))[-1:]
+        snap = read_snapshot(newest)
+        made = [o for o in snap["objects"] if o["id"].startswith("hummock/")]
+        self.assertEqual(len(made), 3)
+        for o in made:
+            lineage = json.dumps(o["madeFrom"])
+            self.assertNotIn("a long note", lineage)
+            self.assertIn("bodyCid", lineage)
+            self.assertLess(len(lineage), 2048, lineage)
+        used = {o["compile"].get("library") for o in snap["objects"]} | {snap["library"]}
+        self.assertEqual({l["pin"] for l in snap["libraries"]}, used - {None, ""})
+        self.town.reopen()
+        self.assertEqual({o: self.town.send(op="world-inspect", principal=YUE, object=o) for o in ("hummock/1", "hummock/3")}, before)
+        self.admitted(KES, "hummock/3", "delvetalk hummock/3 hum")
+
     # §5 step 2: a layer checked over what it would be laid on.
     def test_a_layer_is_checked_over_a_kinds_things_or_over_a_thing(self):
         self.assertIn("Checked: it compiles.", self.check_over("kind/record", CLICKER))

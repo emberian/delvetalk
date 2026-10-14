@@ -72,8 +72,10 @@ def maxViewNodes : Nat := 4096
     bounded clock and dependent-want transition prefixes, a journal-derived pending flip queue, and
     checked drain entries retaining each transition's triggering height and clock; 16: lane/automod (the
     moderated `screen` act and the `screened` index it derives, `Screen.lean`); 17: lane/playtest5 (laws judge
-    `!=`, `<` and `>`; a direct turn naming a grown verb or a host spell is that spell, `spellOfAction`). -/
-def replayEdition : Nat := 17
+    `!=`, `<` and `>`; a direct turn naming a grown verb or a host spell is that spell, `spellOfAction`); 18: lane/livefix
+    (a store names a made thing's lineage bodies by CID, `Snapshot.knownLineage`, and keeps only the libraries in use,
+    which a binary before it would misread; hob's prose is asked again, `attempted` reason `prose`). -/
+def replayEdition : Nat := 18
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000

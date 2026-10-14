@@ -68,6 +68,30 @@ def knownByCid (w : World) (inputs : Json) : Json :=
     | .ok src => if w.modules.contains (sourceCid src) then compact else inputs
     | .error _ => compact
 
+/-- A made thing's lineage as a store holds it: each component's body that the journal carries as a source, named by
+    its CID (`bodyCid`), so the things of one kind hold its body once, in the journal (the live review's H2: 44 KB a
+    room, 45% of obend's object bytes); a body no entry carries stays whole. `wholeLineage` reads it back. -/
+def knownLineage (w : World) (m : Json) : Json :=
+  match (m.getObjVal? "components").toOption.bind (·.getArr?.toOption) with
+  | none => m
+  | some cs => m.setObjVal! "components" (.arr (cs.map fun c =>
+      match c.getObjValAs? String "body" with
+      | .ok body =>
+        if body.isEmpty || !w.modules.contains (sourceCid body) then c else
+          Json.mkObj ((((c.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "body")) ++ [("bodyCid", toJson (sourceCid body))])
+      | .error _ => c))
+
+/-- A lineage `knownLineage` wrote, each `bodyCid` its source again, read from the entry that carries it. -/
+def wholeLineage (w : World) (m : Json) : Except String Json := do
+  let some cs := (m.getObjVal? "components").toOption.bind (·.getArr?.toOption) | return m
+  let whole ← cs.mapM fun c => do
+    match c.getObjValAs? String "bodyCid" with
+    | .ok cid =>
+      let some body := sourceText w cid | throw s!"a lineage names source {cid}, which no entry carries"
+      pure (Json.mkObj ((((c.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "bodyCid")) ++ [("body", toJson body)]))
+    | .error _ => pure c
+  return m.setObjVal! "components" (.arr whole)
+
 /-! ### The indexes -/
 
 def mapJson {α : Type} (m : Std.HashMap String α) (f : α → Json) : Json :=
@@ -211,8 +235,14 @@ def storeJson (w : World) : Except String Json := do
       (if o.rules.isEmpty then [] else [("rules", Json.arr (o.rules.toArray.map (·.json)))]) ++
       (if o.wants.isEmpty then [] else [("wants", Json.arr (o.wants.toArray.map (·.json)))]) ++
       (if o.verbs.isEmpty then [] else [("verbs", Json.arr (o.verbs.toArray.map (·.json)))]) ++
-      (match o.madeFrom with | some m => [("madeFrom", m)] | none => [])))
-  let libraries := sortedBy w.libraries.toList (·.1)
+      (match o.madeFrom with | some m => [("madeFrom", knownLineage w m)] | none => [])))
+  -- Only the libraries in use: the current one and those its objects compile under (the live review's H5: gsb's snapshot
+  -- kept 10, its objects used 2, 1.35 MB of 5.0). A later entry names a library through an object or a library update.
+  let used := w.objects.fold (fun (acc : Std.HashSet String) _ o =>
+    match (o.inputs.getObjValAs? String "library").toOption with
+    | some pin => acc.insert pin
+    | none => acc) (((w.library.map (·.pin)).toList).foldl (·.insert ·) {})
+  let libraries := sortedBy (w.libraries.toList.filter fun (pin, _) => used.contains pin) (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
   return Json.mkObj [("clock", toJson w.clock),
@@ -395,7 +425,7 @@ def install (b : Json) (base : World) (naming : Naming := .cells) : Except Strin
         rules := ← placedOf "rules"
         wants := ← placedOf "wants"
         verbs := ← (((o.getObjVal? "verbs").toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Verb.ofJson
-        madeFrom := (o.getObjVal? "madeFrom").toOption }
+        madeFrom := ← ((o.getObjVal? "madeFrom").toOption.mapM (wholeLineage w)) }
     unless cid == naming.state obj do throw s!"the state of {id} is not its CID's"
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}

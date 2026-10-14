@@ -74,8 +74,10 @@ class Inhabitants(test_scenarios.Arc):
         at = self.clock() + 61
         self.assertEqual(self.town.send(op="world-advance", principal="transport", height=at)["status"], "advanced")
         self.deliver()
-        self.assertEqual(self.clock(), at)
-        return at % 1440 // 60
+        # The tick stands for the clock its wait was set for, a gap after the last, though the wait ends the minute
+        # after it: ticks are 60 minutes apart, never 61 (the live review's H6).
+        self.assertEqual(self.clock(), at - 1)
+        return (at - 1) % 1440 // 60
 
     def until(self, hour):
         """Ticks until the clock's hour of the day is `hour`."""
@@ -190,7 +192,7 @@ class Inhabitants(test_scenarios.Arc):
         before = {o: self.town.send(op="world-view", principal=OPENER, object=o)["state"] for o in objects}
         self.town.reopen()
         self.assertEqual({o: self.town.send(op="world-view", principal=OPENER, object=o)["state"] for o in objects}, before)
-        self.assertEqual(self.clock(), start + 26 * 61)
+        self.assertEqual(self.clock(), start + 26 * 60)  # 26 ticks, each 60 minutes after the last
 
     def test_three_of_her_coins_lie_in_the_till_at_most(self):
         """She lays a coin each day while fewer than three of hers lie untaken; then she pays with one already there,
