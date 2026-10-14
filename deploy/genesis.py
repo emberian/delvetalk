@@ -85,6 +85,7 @@ EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make
             ('what is a front?', 'delvetalk library read / page: kinds'),
             ('how does this work?', 'delvetalk library read / page: guide'),
             ('how do I write a scene for a room, with choices?', 'delvetalk library read / page: spween'),
+            ('the bell refused my rain twice and I think it is a bug', 'delvetalk report the bell refused my rain twice; I expected it to ring'),
             ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/FOUNDATION.md §5)
 
 
@@ -98,6 +99,7 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
          ('world', 'page', "the doors, every card's spells, the classes of refusal"),
          ('kinds', 'page', 'every kind: what it is, and a spell that makes one'),
          ('register', 'page', 'the town\'s questions: ask, add, dispute; the witness'),
+         ('mending', 'page', 'something broken: report it, confide it, read the answer'),
          ('spween', 'page', "a room's scene: passages, choices, guards and casts, one whole"),
          ('station', 'page', 'an example scene: the all-night station at the edge of the town'),
          ('bell', 'walk', 'make a bell, rain on it, rule on it, hear it ring'),
@@ -653,6 +655,39 @@ def register_door(host, opener, prefix):
     return [row]
 
 
+# The mending basket (world/objects/Mending.obend; docs/MENDING.md): where a resident reports what is broken, rough or
+# wrong, by `delvetalk report <words>` from anywhere, and the town's hands answer it in the reporter's inbox. Its drawer,
+# `mending/drawer`, is the same package made with a read policy of the opener alone: what a resident confides (a way in,
+# a leak) is filed there by the basket's call, so no public reply or card carries it. Made in genesis, and on a carried
+# town by its refresh (`placed_mending`).
+MENDING, MENDING_DRAWER = 'mending', 'mending/drawer'
+
+
+def town_mending(host, opener, prefix='genesis'):
+    """The drawer, then the basket, each made where the town lacks it; -> made rows. Stops (Stopped) at a refusal."""
+    made, have = [], set(existing(host, opener))
+    for obj, seed, readers in ((MENDING_DRAWER, rec(owner=lab(opener), ownerHandle=lab(TOWN), front=lab(MENDING)), [opener]),
+                               (MENDING, rec(owner=lab(opener), ownerHandle=lab(TOWN), drawer=lab(MENDING_DRAWER)), None)):
+        if obj in have:
+            continue
+        reply = create(host, opener, obj, 'Mending', f'{prefix}-{obj.replace("/", "-")}', seed, readers=readers)
+        made.append({'object': obj, 'module': 'Mending', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
+        turned('create ' + obj, reply, 'created')
+    return made
+
+
+def placed_mending(host, opener):
+    """The mending basket and its drawer on a carried town (`town_mending` under `refresh-*` identities): made once,
+    `current` after; a refused step is named and fails the refresh."""
+    if {MENDING, MENDING_DRAWER} <= set(existing(host, opener)):
+        return [{'object': MENDING, 'slot': 'placed', 'status': 'current'}]
+    try:
+        return [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
+                for m in town_mending(host, opener, 'refresh')]
+    except Stopped as e:
+        return [{'object': MENDING, 'slot': 'placed', 'status': 'refused', 'reading': str(e)}]
+
+
 # yla's parlour (world/kinds/parlour.kind, world/bodies/parlour.obend and parlour.spween), off the station's night hall,
 # made with the station: yla.delve.town's séance at a ouija board of 2026-10-13 (`YLA_SEANCE`), its scene her prose,
 # placed from her post so its card cites it; a room of the station's kind (no clock is kept there either), its scene
@@ -911,6 +946,7 @@ def run(host, opener=OPENER, gas_station=False, origin=None, arrival='invited', 
                                                                       body=lab(pages[name])), 'genesis-shelve-' + name))
             for name, kind, title, _ in shelf(origin, arrival, feed_only, room)]
         made += town_register(host, opener)
+        made += town_mending(host, opener)
         # One card per door: each door's object publishes its page, which the bridge drafts as `wiki: <Door>` for the hand to post.
         for label, to, _ in DOORS if publish else ():
             page = turn(to, 'publishPage', rec(page=lab(label.capitalize())), 'genesis-page-' + to)
@@ -1112,6 +1148,7 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
     out += harmonic(host, opener, have)
     out += placed_register(host, opener)
+    out += placed_mending(host, opener)
     out += first_lined(host, opener)
     out += placed_playthings(host, opener, config)
     whole, installed = True, False

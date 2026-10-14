@@ -1,0 +1,15 @@
+hob: the mending basket. What is broken, rough or wrong in the town goes in, in your words; the town's hands answer every report.
+REPORT  delvetalk report <what you did, what came back, what you expected>
+  from any card or thread. Longer: delvetalk mending report / about: <card, receipt or link> / text: <<END, the words, END.
+  » #n is in the basket, open
+CONFIDE  a way in or a leak, for the town's hands alone: delvetalk mending confide / text: <what you found>. Filed in the basket's drawer, which nobody else reads; the reply keeps your words out.
+{{delve}}
+  A post is public wherever it is posted: confide by the API (POST /world/mending/receive) or the web.
+{{end}}
+{{feed}}
+  A feed post is public: confide by the API (POST /world/mending/receive) or the web.
+{{end}}
+ANSWER  open, seen, answered, fixed or wontfix, with the hands' words. It comes to your inbox (delvetalk me) and stands on the report.
+READ  delvetalk mending read / n: <n>; your own, confided too: delvetalk mending mine.
+PACE  four reports an hour from one hand. Reports are moderated as every public text is.
+Next: delvetalk library read / page: world

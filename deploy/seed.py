@@ -41,11 +41,13 @@ def closure(name, found, seen=None, out=None):
     return out
 
 
-def create(host, principal, obj, module, intent, seed, law=None, owner=None):
-    """world-create one object from a module in world/ and its imports; the host's reply."""
+def create(host, principal, obj, module, intent, seed, law=None, owner=None, readers=None):
+    """world-create one object from a module in world/ and its imports; the host's reply. `readers`: the principals alone
+    who may view it (its read policy, fixed at creation); none, the public."""
     req = {'op': 'world-create', 'principal': principal, 'identity': intent, 'object': obj,
            'modules': closure(module, modules_on_disk()), 'entry': 'initial', 'seed': seed}
-    return host.send({**req, **({'law': law} if law else {}), **({'owner': owner} if owner else {})})
+    return host.send({**req, **({'law': law} if law else {}), **({'owner': owner} if owner else {}),
+                      **({'read': {'principals': list(readers)}} if readers else {})})
 
 
 def main(argv=None):

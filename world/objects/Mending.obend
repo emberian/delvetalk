@@ -1,0 +1,233 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Text.obend as Text
+# The mending basket (docs/MENDING.md): where a resident puts what is broken, rough or wrong in the town, in their
+# own words, and where the town's hands answer it. A report is a row: who put it in and their handle then, the entry
+# and the clock minute, the words, what it is `about` (cards, receipts, links; as written), the post it came by when
+# it came by one, and its status, which only the owner moves: `open` as it comes, `seen`, `answered`, `fixed` or
+# `wontfix`, with the answer's words and who gave them. An answer is told to the reporter's avatar as a note (their
+# inbox, `delvetalk me`), and stands on the report.
+#
+# Reports are public: residents learn from each other's. One is not: a way in, a leak, a thing that should not be
+# said where everyone reads it is confided (`confide`) and filed in the basket's drawer, an object of this package
+# that only the town's hands may read (genesis makes it with that read policy, deploy/genesis.py `town_mending`); the
+# basket files it there by a call, so the reporter needs no sight of the drawer, and reads back their own with `mine`.
+# The drawer takes a filing from its basket alone (`front`), and the basket knows its drawer (`drawer`).
+#
+# One hand puts at most `hourly()` reports in an hour of the clock, the town's hands excepted. The basket keeps the
+# newest `kept()` reports; an older one stays in the journal, its receipt intact.
+sum Status:
+  open: {}
+  seen: {}
+  answered: {}
+  fixed: {}
+  wontfix: {}
+record Report:
+  n: Nat
+  reporter: String
+  handle: String
+  at: Nat
+  clock: Nat
+  text: String
+  about: String
+  post: String
+  status: Status
+  answer: String
+  by: String
+  byHandle: String
+  moved: Nat
+# What a helper that asks the world says back, for its caller to go on with.
+sum Said:
+  said: {text: String}
+record State:
+  owner: String
+  ownerHandle: String
+  drawer: String
+  front: String
+  reports: Relations.Relation<Report>
+  next: Nat
+law owner "only the owner answers, and alone reprograms or amends it; anyone reports by its spells, and places rules, wants and verbs on it": unchanged(owner) and unchanged(drawer) and unchanged(front) and (request.subject == new.owner or request.kind == 0 or request.kind == rule)
+law authored "a report is written in its reporter's own name; only the owner moves another's": request.subject == new.owner or changed(new.reports.reporter) by request.subject
+law counted "its numbers only count up": monotone(next)
+law methods "only its own methods write it; a proposed write is refused": not (request.kind == proposed)
+def initial() -> State:
+  {owner: "", ownerHandle: "", drawer: "", front: "", reports: Relations.empty(), next: 1n}
+def relations() -> Relations.Decls:
+  Lists.append(Relations.Decls.nil(), {field: "reports", key: Text.words("n"), limit: kept()})
+def kept() -> Nat:
+  512n
+# Reports one hand puts in an hour of the clock.
+def hourly() -> Nat:
+  4n
+form report:
+  text: text 1..2000
+  about: text 0..300
+form confide:
+  text: text 1..2000
+  about: text 0..300
+form read:
+  n: natural 1..1000000000
+form mine:
+form answer:
+  n: natural 1..1000000000
+  status: open | seen | answered | fixed | wontfix
+  text: text 0..1000
+def methods() -> Lists.List<String>:
+  Text.words("~file ~yours")
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  if context.principal == state.owner then Text.words("report confide read mine answer") else if state.front != "" then Text.words("") else Text.words("report confide read mine")
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
+def refusing(clause: String, reading: String, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.refusing(Card.Replied.refused({clause: clause, reading: reading}), {clause: clause, reading: reading}, context)
+def statusWord(s: Status) -> String:
+  match s:
+    case open(_): "open"
+    case seen(_): "seen"
+    case answered(_): "answered"
+    case fixed(_): "fixed"
+    case wontfix(_): "wontfix"
+def isOpen(r: Report) -> Bool:
+  match r.status:
+    case open(_): true
+    case _: false
+# The post a turn came by: the transport's input origin, else an identity that is one (the bridge turns a post under
+# its at:// URI).
+def postOf(context: Abi.Context) -> String:
+  if context.inputOrigin.post != "" then context.inputOrigin.post else if Text.starts(context.intent, "at://") then context.intent else ""
+def reportOf(state: State, input: {text: String, about: String}, context: Abi.Context) -> Report:
+  {n: state.next, reporter: context.principal, handle: context.handle, at: context.height, clock: context.clock, text: input.text, about: Text.trim(input.about), post: postOf(context), status: Status.open({}), answer: "", by: "", byHandle: "", moved: context.height}
+def reportKey(r: Report) -> {n: Nat}:
+  {n: r.n}
+def recent(state: State, context: Abi.Context) -> Nat:
+  Lists.length(Lists.filter(Relations.rows(state.reports), fn(r: Report) -> Bool: r.reporter == context.principal && r.clock + 60n > context.clock))
+# The minute the hand's next report is taken: an hour after the oldest of its last hour's.
+def nextMinute(state: State, context: Abi.Context) -> Nat:
+  Lists.fold(Relations.rows(state.reports), context.clock + 60n, fn(r: Report) -> Nat -> Nat: fn(least: Nat) -> Nat: if r.reporter == context.principal && r.clock + 60n > context.clock && r.clock + 60n < least then r.clock + 60n else least)
+def paced(state: State, context: Abi.Context) -> Bool:
+  context.principal == state.owner || recent(state, context) < hourly()
+def tooMany(state: State, context: Abi.Context) -> Activity<Card.Replied>:
+  refusing("tooMany", "{Text.countWord(hourly())} reports an hour from one hand; your next is taken from clock {natText(nextMinute(state, context))}", context)
+# --- putting a report in -------------------------------------------------------------------------
+def report(state: State, input: {text: String, about: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  if state.front != "" then refusing("confided", "This drawer takes what its basket files; confide at delvetalk {state.front} confide", context) else if paced(state, context) == false then tooMany(state, context) else put(state, reportOf(state, input, context), context)
+def put(state: State, r: Report, context: Abi.Context) -> Activity<Card.Replied>:
+  let written(_) = write {reports: insert r, next: add 1n}
+  let id = Card.called(context, "mending")
+  Card.tell(Card.Replied.done({action: "report"}), Document.text("#{natText(r.n)} is in the basket, open: {Card.cut(firstLine(r.text), 200n)}\nThe town's hands read every report; their answer comes to your inbox (delvetalk me) and stands on it: delvetalk {id} read / n: {natText(r.n)}\n"))
+# A confidence: filed in the drawer by a call, so the reply says nothing of its words and no public reply carries them.
+def confide(state: State, input: {text: String, about: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  if state.drawer == "" then refusing("noDrawer", "This basket has no drawer; nothing said here is kept from other readers", context) else if paced(state, context) == false then tooMany(state, context) else confiding(state, input, context)
+def confiding(state: State, input: {text: String, about: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.call::<Nat>({object: {world: context.world, object: state.drawer}, method: "file", argument: {text: input.text, about: input.about, post: postOf(context)}}):
+    case returned(r): Card.tell(Card.Replied.done({action: "confide"}), Document.text(confided(r.result, Card.called(context, "mending"))))
+    case refused(f): refusing(f.clause, f.reading, context)
+    case denied(_): refusing("noDrawer", "The drawer did not take it", context)
+def confided(n: Nat, id: String) -> String:
+  "Confided as drawer #{natText(n)}. Only the town's hands read it; their answer comes to your inbox (delvetalk me), and `delvetalk {id} mine` reads your own back.\n"
+# The drawer's side: a filing from its basket alone, in the reporter's name, paced as the basket paces.
+def file(state: State, input: {text: String, about: String, post: String}, context: Abi.Context) -> Activity<Nat>:
+  if state.front == "" || context.caller != state.front then refuse("refused notFront: only its basket files here") else if paced(state, context) == false then refuse("refused tooMany: {Text.countWord(hourly())} reports an hour from one hand") else filed(state, extend(reportOf(state, {text: input.text, about: input.about}, context), {post: input.post}))
+def filed(state: State, r: Report) -> Activity<Nat>:
+  let written(_) = write {reports: insert r, next: add 1n}
+  r.n
+# --- reading ---------------------------------------------------------------------------------------
+def numbered(state: State, n: Nat) -> Lists.Maybe<Report>:
+  Relations.lookup(state.reports, {n: n})
+def mayRead(state: State, r: Report, context: Abi.Context) -> Bool:
+  state.front == "" || context.principal == state.owner || r.reporter == context.principal
+def read(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
+  match numbered(state, input.n):
+    case some(r): if mayRead(state, r.value, context) then Card.tell(Card.Replied.done({action: "read"}), Document.text(whole(state, r.value, context))) else missing(state, input.n, context)
+    case none(_): missing(state, input.n, context)
+def missing(state: State, n: Nat, context: Abi.Context) -> Activity<Card.Replied>:
+  refusing("noReport", "No report #{natText(n)} here; the basket keeps its newest {natText(kept())}, numbered as they came", context)
+def whole(state: State, r: Report, context: Abi.Context) -> String:
+  let about = if r.about == "" then "" else "About: {r.about}\n"
+  let answered = if r.answer == "" then "" else "Answer, {Card.shown(r.by, r.byHandle, context)}: {r.answer}\n"
+  "{label(state)} #{natText(r.n)}, {statusWord(r.status)}; put in by {Card.shown(r.reporter, r.handle, context)}{Card.mine(r.reporter, context)} at clock {natText(r.clock)}, entry {natText(r.at)}.\n{r.text}\n{about}{answered}"
+def label(state: State) -> String:
+  if state.front == "" then "Report" else "Confided report"
+def mine(state: State, context: Abi.Context) -> Activity<Card.Replied>:
+  let own = Lists.reverse(Lists.filter(Relations.rows(state.reports), fn(r: Report) -> Bool: r.reporter == context.principal))
+  let here = textJoin(Lists.map(Lists.take(own, 12n), fn(r: Report) -> String: listLine(r, context)), "")
+  match yoursIn(state, context):
+    case said(c): Card.tell(Card.Replied.done({action: "mine"}), Document.text(Card.cut(mineText(here, c.text), Card.limit(context))))
+def mineText(here: String, confided: String) -> String:
+  let first = if here == "" then "Nothing of yours in the basket.\n" else "Yours in the basket, newest first:\n{here}"
+  if confided == "" then first else "{first}Confided:\n{confided}"
+def yoursIn(state: State, context: Abi.Context) -> Activity<Said>:
+  if state.drawer == "" then Said.said({text: ""}) else drawerYours(state, context)
+def drawerYours(state: State, context: Abi.Context) -> Activity<Said>:
+  match world.call::<String>({object: {world: context.world, object: state.drawer}, method: "yours", argument: Plans.nothing()}):
+    case returned(r): Said.said({text: r.result})
+    case _: Said.said({text: ""})
+# The drawer's side of `mine`: the caller's principal's own confided reports, and nobody else's.
+def yours(state: State, context: Abi.Context) -> Activity<String>:
+  textJoin(Lists.map(Lists.take(Lists.reverse(Lists.filter(Relations.rows(state.reports), fn(r: Report) -> Bool: r.reporter == context.principal)), 12n), fn(r: Report) -> String: listLine(r, context)), "")
+def firstLine(text: String) -> String:
+  textTake(text, textBreak(text, "\n"))
+def listLine(r: Report, context: Abi.Context) -> String:
+  "  #{natText(r.n)} {statusWord(r.status)} · {Card.shown(r.reporter, r.handle, context)}: {Card.cut(firstLine(r.text), 90n)}\n"
+# --- answering -------------------------------------------------------------------------------------
+def answer(state: State, input: {n: Nat, status: Status, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  if context.principal != state.owner then refusing("notOwner", "Only the town's hands answer a report; yours stands as you wrote it", context) else answering(state, input, context)
+def answering(state: State, input: {n: Nat, status: Status, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  match numbered(state, input.n):
+    case some(r): answered(state, extend(r.value, {status: input.status, answer: if Text.blank(input.text) then r.value.answer else Text.trim(input.text), by: context.principal, byHandle: context.handle, moved: context.height}), context)
+    case none(_): missing(state, input.n, context)
+def answered(state: State, r: Report, context: Abi.Context) -> Activity<Card.Replied>:
+  let written(_) = write {reports: upsert r}
+  match told(state, r, context):
+    case said(h): Card.tell(Card.Replied.done({action: "answer"}), Document.text(answerText(state, r, h.text, context)))
+def answerText(state: State, r: Report, heard: String, context: Abi.Context) -> String:
+  let words = if r.answer == "" then "" else " {r.answer}"
+  if state.front == "" then "{Card.shown(r.reporter, r.handle, context)}: your report #{natText(r.n)} is {statusWord(r.status)}.{words}\n> {Card.cut(firstLine(r.text), 200n)}\n{heard}" else "Drawer #{natText(r.n)} is {statusWord(r.status)}; {heard}"
+# The answer told to the reporter's avatar, a note in their inbox: the words of a confided report's answer stay out of it,
+# since an avatar's inbox is the resident's own but a note's line is clipped and shown on their card.
+def told(state: State, r: Report, context: Abi.Context) -> Activity<Said>:
+  if r.reporter == context.principal then Said.said({text: ""}) else reached(state, r, context)
+def reached(state: State, r: Report, context: Abi.Context) -> Activity<Said>:
+  match world.viewField::<String>({object: {world: context.world, object: r.reporter}, field: "handle"}):
+    case viewed(_): telling(state, r, context)
+    case _: Said.said({text: "No avatar to tell; the answer stands on the report.\n"})
+def telling(state: State, r: Report, context: Abi.Context) -> Activity<Said>:
+  match world.send({object: {world: context.world, object: r.reporter}, method: "note", argument: {text: noteText(state, r, context)}}):
+    case delivery(_): Said.said({text: "Told in their inbox.\n"})
+    case refused(f): Said.said({text: "Not told ({f.clause}); the answer stands on the report.\n"})
+def noteText(state: State, r: Report, context: Abi.Context) -> String:
+  let where = if state.front == "" then "the basket's #{natText(r.n)}" else "your confided report #{natText(r.n)}"
+  let words = if r.answer == "" then "" else ": {r.answer}"
+  let id = Card.called(context, "mending")
+  let spell = if state.front == "" then "{id} read / n: {natText(r.n)}" else "{state.front} mine"
+  Card.cut("{where} is {statusWord(r.status)}{words} · delvetalk {spell}", 280n)
+# --- the card --------------------------------------------------------------------------------------
+def counts(state: State) -> String:
+  let all = Relations.count(state.reports)
+  let open = Lists.length(Lists.filter(Relations.rows(state.reports), isOpen))
+  let word = if all == 1n then "report" else "reports"
+  "{natText(all)} {word} kept, {natText(open)} open"
+def render(state: State, context: Abi.Context) -> Document.Document:
+  if state.front != "" then drawerCard(state, context) else basketCard(state, context)
+def drawerCard(state: State, context: Abi.Context) -> Document.Document:
+  let id = Card.called(context, "mending/drawer")
+  let head = Document.text("THE MENDING BASKET'S DRAWER: what residents confided, read by the town's hands alone; {counts(state)}. Answer one:\n  delvetalk {id} answer / n: <n> / status: seen | answered | fixed | wontfix | open / text: <the answer>\n")
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: newest(state, context, Document.size(head))})})
+def basketCard(state: State, context: Abi.Context) -> Document.Document:
+  let id = Card.called(context, "mending")
+  let head = Document.text("THE MENDING BASKET. What is broken, rough or wrong in the town goes in here, in your own words: what you did, what came back, what you expected. The town's hands read every report and answer it in your inbox.\n  delvetalk report <what happened>\n  delvetalk {id} report / text: <what happened> / about: <the card, receipt or link it concerns>\n» #n is in the basket, open\nA way in or a leak, for the town's hands alone (by the API or the web; a post is public wherever it is posted):\n  delvetalk {id} confide / text: <what you found>\n")
+  let tail = Document.text("Read one: delvetalk {id} read / n: <n> · yours: delvetalk {id} mine\n")
+  let owner = Document.text(if context.principal == state.owner then "Answer: delvetalk {id} answer / n: <n> / status: seen | answered | fixed | wontfix | open / text: <the answer>\n" else "")
+  let fixed = Document.size(head) + Document.size(tail) + Document.size(owner)
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Document.Documents.cons({head: Document.Document.sequence({items: newest(state, context, fixed)}), tail: Document.Documents.cons({head: tail, tail: Document.Documents.cons({head: owner, tail: Document.Documents.nil()})})})})})
+def newest(state: State, context: Abi.Context, used: Nat) -> Document.Documents:
+  let lines = Lists.map(Lists.take(Lists.reverse(Relations.rows(state.reports)), 8n), fn(r: Report) -> Document.Document: Document.text(listLine(r, context)))
+  let heading = Document.text("{counts(state)}; the newest:\n")
+  if Relations.count(state.reports) == 0n then Document.Documents.cons({head: Document.text("Nothing in it yet.\n"), tail: Document.Documents.nil()}) else Document.Documents.cons({head: heading, tail: Card.clippedWithin(lines, 8n, Card.left(context, used + Document.size(heading)))})

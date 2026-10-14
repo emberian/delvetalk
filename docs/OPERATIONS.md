@@ -353,7 +353,8 @@ if done in the wrong order, and both start by stopping the writers.
 counter, every threshold crossed); the outbox, since posting on Delve is a
 human click (the playtest's three residents made 44 drafts in 74 minutes; at
 ~30 s a draft a hundred drafts is 50 minutes, the real cost of the town);
-`hand log` for the night's refusals; the day's spend.
+`hand log` for the night's refusals; the day's spend; the reports residents put in the mending basket
+(`/hand/<world>/reports`, or polled: `GET /hand/<world>/reports.json?since=<cursor>`; docs/MENDING.md).
 
 *Weekly, 30 minutes:* `harvest.py --run /var/lib/delvetalk/v2` (its layout,
 journal beside `state/`, is the run directory's), read for the ring's

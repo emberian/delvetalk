@@ -18,7 +18,7 @@ import urllib.parse
 from html import escape as e
 from pathlib import Path
 
-from transport import bridge, byhand, measure, model, overview, post, pages, root
+from transport import bridge, byhand, mending, measure, model, overview, post, pages, root
 from transport.bridge import awaiting_path, uri_hash
 from transport import observe
 from transport.delve import Failure, canonical
@@ -1047,16 +1047,22 @@ class Hand:
             if done is not None:
                 note = ' '.join(str(v) for v in done.values() if isinstance(v, (str, list)))
                 back = {'root': '/root/?', 'mod': '/root/?', 'newcomers': '/root/?', 'vacate': '/root/?', 'speak': '/speak?', 'invite': '/speak?',
-                        'morning': '/speak?', 'welcome': '/speak?', 'automod': '/automod?', 'requests': '/requests?'}.get(rest.partition('/')[0], '/?')
+                        'morning': '/speak?', 'welcome': '/speak?', 'automod': '/automod?', 'requests': '/requests?', 'reports': '/reports?'}.get(rest.partition('/')[0], '/?')
                 anchor = '#outbox' if back == '/?' else ''
                 back = '/hand/?' if rest == 'root/expire' else base + back  # a scratch world is expired from the worlds
                 more = {'came': done['intent']} if rest == 'speak' and done.get('intent') else {}
                 return 303, '', [('Location', back + urllib.parse.urlencode({'note': note, **more}) + anchor)]
         page = None
+        if method == 'GET' and rest == 'reports.json':  # the poll: the reports moved past `since`, newest first, and the cursor to send next
+            try:
+                got = self.reports_read(h, query)
+            except (HandError, ValueError) as err:
+                return 400, json.dumps({'status': 'error', 'message': str(err)}), [('Content-Type', 'application/json')]
+            return 200, json.dumps(got, sort_keys=True), [('Content-Type', 'application/json')]
         if method == 'GET':
             page = (lambda query: h.read_page(rest, query)) if rest in READ_FORMS else {
                 '': h.page, 'speak': h.speak_page, 'plan': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page,
-                'overview': h.overview_page, 'automod': h.automod_page, 'requests': h.requests_page}.get(rest)
+                'overview': h.overview_page, 'automod': h.automod_page, 'requests': h.requests_page, 'reports': h.reports_page}.get(rest)
         if page is None:
             return 404, shell('not here', world, H['missing'].format(text=e(f'no page {rest} in the hand'))), []
         try:
@@ -1072,6 +1078,9 @@ class Hand:
         if face == 'requests' and verb in ('admit', 'adopt', 'decline'):
             got = self.request(form.get('kind', ''), verb, form.get('object', ''), integer(form, 'n', 0), form.get('reading', '').strip())
             return {'done': f"{verb} {got['object']} #{got['n']}: {got['line']}"}
+        if rest == 'reports/answer':
+            got = self.answer_report(form.get('card', ''), integer(form, 'n', 0), form.get('status', ''), (form.get('text') or '').replace('\r\n', '\n'))
+            return {'done': f"{got['card']} #{got['n']} {got['status']}: {got['line']}" + ('; drafted for Post' if got.get('drafted') else '')}
         if face == 'automod' and verb in ('restore', 'confirm', 'hide'):
             got = self.automod_review(form.get('key', ''), verb, form.get('reading', '').strip())
             return {'done': f"{verb}: {got['state']}" + (', the quiet lifted' if got.get('unquieted') else '')}
@@ -1341,6 +1350,68 @@ class Hand:
                      review=rows(('review',)) or none('nothing waits for review'), hidden=rows(('hidden',)) or none('nothing hidden'),
                      settled=rows(('confirmed', 'restored')) or none('nothing settled')))
 
+    # ---- the mending basket (docs/MENDING.md): residents' reports, and the town's answers
+
+    @staticmethod
+    def reports_read(h, query):
+        """`reports.json`'s query: `since` (an entry; 0 for all), `status`, `limit`."""
+        status = query.get('status') or None
+        if status and status not in mending.STATUSES:
+            raise HandError(f"status is one of {', '.join(mending.STATUSES)}")
+        return h.reports(integer(query, 'since', 0), status, min(max(integer(query, 'limit', 200), 1), 512))
+
+    def reports(self, since=0, status=None, limit=200):
+        """The basket's reports and the drawer's confided ones moved after entry `since`, newest first, with the cursor."""
+        return mending.reports(self.host, self.owner, since or 0, status, limit)
+
+    def answer_report(self, card, n, status, text=''):
+        """Answer a report as the town: the basket's `answer`, which moves its status and tells the reporter's inbox. A
+        public report's is cast as any spell of the hand's, drafted for Post under the post it came by when it came by one
+        (on delve.town, ember posts it by hand); a confided one's is a turn alone, never drafted, its words in no post."""
+        if card not in (mending.BASKET, mending.DRAWER):
+            raise HandError(f'a report is on {mending.BASKET} or {mending.DRAWER}, not {card}')
+        found = next((r for r in mending.rows_of(self.host, self.owner, card) if r['n'] == int(n)), None)
+        if found is None:
+            raise HandError(f'no report {card} #{n}')
+        try:
+            spell = mending.answer_spell(card, n, status, text)
+        except ValueError as err:
+            raise HandError(str(err)) from None
+        intent = mending.answer_intent(card, n, status, text)
+        if card == mending.BASKET:
+            post = found.get('post') or ''
+            reply_to = post if post.startswith('at://') and self.st.bridge()['transport'] != 'zulip' else None
+            came = self.cast(spell, reply_to=reply_to, intent=intent)
+            return {'card': card, 'n': int(n), 'status': status, **{k: came.get(k) for k in ('outcome', 'height', 'slug', 'line', 'drafted', 'text')}}
+        reply = self.receive(card, spell, intent)
+        receipt = reply.get('receipt') or {}
+        if not receipt:
+            raise HandError(f"{card} answer: {reply.get('message') or reply.get('status')}")
+        outcome = outcome_of(receipt)
+        self.log('mend:answer', None, card=card, n=int(n), status=status, intent=intent, height=receipt.get('height'), slug=receipt.get('slug'), outcome=outcome)
+        return {'card': card, 'n': int(n), 'status': status, 'outcome': outcome, 'height': receipt.get('height'), 'slug': receipt.get('slug'),
+                'line': bridge.receipt_line(receipt, None, card).strip(), 'drafted': None}
+
+    def report_row(self, r, base, q):
+        fate = {'open': 'suspended', 'wontfix': 'refused'}.get(r['status'], 'admitted')
+        options = ''.join(f'<option{" selected" if s == ("seen" if r["status"] == "open" else r["status"]) else ""}>{s}</option>' for s in mending.STATUSES)
+        about = f"about {r['about']} · " if r.get('about') else ''
+        post = f" · came by {r['post']}" if r.get('post') else ''
+        answer = f" · answered by {self.handle_of(r.get('by') or '') or r.get('byHandle') or r.get('by')}: {r['answer']}" if r.get('answer') else ''
+        return H['report'].format(fate=fate, status=q(r['status']), id=q(r['id']) + (' (confided)' if r['confided'] else ''), who=q(r.get('handle') or self.handle_of(r.get('reporter') or '') or r.get('reporter')),
+                                  text=q(clip(r.get('text') or '', 1200)), by=q(f"{about}entry {r.get('at')} · clock {r.get('clock')} · {r.get('reporter')}{post}{answer}"),
+                                  base=base, card=q(r['card']), n=q(r['n']), options=options)
+
+    def reports_page(self, query):
+        q, base = lambda t: e(str(t)), f'/hand/{e(self.st.world)}'
+        got = self.reports(0, None, 512)
+        none = lambda what: f'<li class="quiet">— {what} —</li>'
+        rows = lambda states: ''.join(self.report_row(r, base, q) for r in got['reports'] if r['status'] in states)
+        return shell('reports', self.st.world, H['reports'].format(world=q(self.st.world), note=self.note(query), base=base, cursor=q(got['cursor']),
+                     codes=self.codes([f"{k} {v}" for k, v in got['counts'].items()] + [f"cursor {got['cursor']}"]),
+                     open=rows(('open',)) or none('nothing open'), moving=rows(('seen', 'answered')) or none('nothing seen and unsettled'),
+                     settled=rows(('fixed', 'wontfix')) or none('nothing settled')))
+
     def overview_page(self, query):
         """The town at a glance (transport/overview.py), read only."""
         q, o = lambda t: e(str(t)), self.overview()
@@ -1373,10 +1444,13 @@ class Hand:
                                    [f"{k} {v}" for k, v in am['counts'].items()])
         screened = ''.join(self.screened_row(i, f'/hand/{q(self.st.world)}', q) for i in am['newest']) or none('nothing screened has been flagged')
         requests = self.request_rows(o['requests'][:overview.REQUESTS], f'/hand/{q(self.st.world)}', q) or none('nothing waits for the town')
+        mended = self.reports(0, 'open', overview.REQUESTS)
+        reports = ''.join(self.report_row(r, f'/hand/{q(self.st.world)}', q) for r in mended['reports']) or none('no report is open')
         return shell('overview', self.st.world, H['overview'].format(
             world=q(self.st.world), height=q(o['height']), codes=self.codes(overview.summary(o)), arrivals=arrivals, busiest=busiest,
             refusals=refusals, budgets=budgets, state=state, quiets=quiets, acts=acts, feed=feed, base=f'/hand/{q(self.st.world)}',
-            automod=automod_codes, screened=screened, requests=requests))
+            automod=automod_codes, screened=screened, requests=requests, reports=reports,
+            reportCodes=self.codes([f"{k} {v}" for k, v in mended['counts'].items()])))
 
     def measure_page(self, query):
         """The playtest's measures (docs/PLAYTEST-2.md §4) as transport/measure.py counts them from the journal."""
@@ -1496,6 +1570,15 @@ def cli_invite(h, a):
     return got if a.json else [g['code'] for g in got]
 
 
+def cli_reports(h, a):
+    """`reports`: what moved since `--since`, newest first, and the cursor; `reports answer CARD N --status S [--text T]`."""
+    if a.verb != 'answer':
+        return h.reports(a.since, a.status, a.limit)
+    if not a.card or a.n is None or not a.status:
+        raise HandError('reports answer CARD N --status STATUS [--text WORDS | --text-file PATH]')
+    return h.answer_report(a.card, a.n, a.status, Path(a.text_file).read_text() if a.text_file else a.text)
+
+
 def cli_speak(h, a):
     """`speak`: the spell given (or the plan's seed N, cast under its own intent), or the plan's invitation at a minute."""
     if a.invitation is not None:
@@ -1549,6 +1632,13 @@ def parser(p, common):
                          ('object', dict(nargs='?', help='the record a line waits on, or the thing a proposal is for')),
                          ('n', dict(nargs='?', type=int, help="the line's number, or the held proposal's")),
                          ('--kind', dict(choices=('line', 'proposal'), default='line')), ('--reading', dict(default=''))],
+            'reports': [('verb', dict(nargs='?', choices=('answer',), help='none: the reports moved since --since, newest first')),
+                        ('card', dict(nargs='?', choices=(mending.BASKET, mending.DRAWER), help='the basket, or its drawer for a confided report')),
+                        ('n', dict(nargs='?', type=int, help="the report's number on that card")),
+                        ('--since', dict(type=int, default=0, metavar='ENTRY', help='only reports moved after this entry (the cursor a read gives back)')),
+                        ('--status', dict(choices=mending.STATUSES, help='answer: the status it moves to; a read: only reports in it')),
+                        ('--text', dict(default='', help='answer: the words, told to the reporter')), ('--text-file', {}),
+                        ('--limit', dict(type=int, default=200))],
             'automod': [('verdict', dict(nargs='?', choices=('restore', 'confirm', 'hide'), help='none: list the screened texts')),
                         ('key', dict(nargs='?', help='the screened text, by its key (from the list)')), ('--only', dict(choices=('hidden', 'review', 'confirmed', 'restored'), help='one state of screened texts')),
                         ('--reading', dict(default=''))],
@@ -1597,6 +1687,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'overview': h.overview, 'vacate': lambda: h.vacate(a.who, a.reading),
                 'requests': lambda: h.request(a.kind, a.verb, a.object, a.n, a.reading) if a.verb else h.requests(),
                 'automod': lambda: h.automod_review(a.key, a.verdict, a.reading) if a.verdict else h.automod(a.only),
+                'reports': lambda: cli_reports(h, a),
                 'speak': lambda: cli_speak(h, a), 'morning': lambda: h.morning(a.day, a.topic, a.reply_to), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
                 'root': lambda: cli_root(h, a), 'invite': lambda: cli_invite(h, a), 'invites': h.guests,
                 'revoke-invite': lambda: h.revoke_guest(a.name), 'limits': lambda: h.limits(a.reading), 'slow': lambda: h.slow(a.switch == 'on', a.reading),
