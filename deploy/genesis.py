@@ -275,11 +275,12 @@ def guide_tongues(pages):
 def shelf(origin=None, arrival='invited', feed_only=False, room=1400):
     """Every page genesis shelves, in order: the capsules' (PAGES), the guide's, its contents in each tongue, the welcome in
     each; an open town's (`arrival`) its guide with the door, and the page for one who arrives cold (ARRIVE); a feed-only
-    town's (`feed_only`, its bridge row) each as it tells it, `room` the characters its cards hold."""
+    town's (`feed_only`, its bridge row) each as it tells it, `room` the characters its cards hold, and with more room
+    than one post's its pages from inside (`inside`)."""
     guide = guide_pages(origin, arrival, feed_only, room)
     return [(name, kind, title, page_body(name, feed_only)) for name, kind, title in PAGES] + guide + guide_tongues(guide) + \
         [(name, kind, title, page_body(name, feed_only)) for name, kind, title in WELCOME + (ARRIVE if arrival == 'open' else [])] + \
-        (inside(arrival, room) if feed_only else [])
+        (inside(arrival, room) if feed_only and room > Config().room else [])  # pages of kilobytes: only where a page holds them
 
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
@@ -1129,6 +1130,15 @@ def harmonic(host, opener, have):
     return out
 
 
+def roomed(host, opener, config):
+    """The world's room as its config gives it (`card_room`, the host's `cardRoom`), journaled before the library shelves
+    within it, when the config gives more than the world holds; a world given none, or as much, is left. -> its row."""
+    if not config.card_room or config.card_room <= (host.send({'op': 'world-status'}).get('cardRoom') or 1400):
+        return []
+    reply = host.send({'op': 'world-settings', 'principal': opener, 'reading': "the room its config gives (card_room)", 'cardRoom': config.card_room})
+    return [{'object': 'world', 'slot': 'cardRoom', **({'status': 'refreshed'} if reply.get('status') == 'settings' else {'status': reply.get('status'), 'reply': reply})}]
+
+
 def shelved(host, opener, config=None, feed_only=False):
     """Each page genesis shelves (`shelf`: the capsules and the guide), shelved again by the opener where the carried
     library's text differs or lacks it, so the library reads what the files say; another's page is left."""
@@ -1136,6 +1146,7 @@ def shelved(host, opener, config=None, feed_only=False):
     held, out = {p['name']: p for p in library_pages(host, opener)}, []
     record = host.send({'op': 'world-object', 'principal': opener, 'object': 'library'}).get('record')
     c = config or Config()  # the town's own origin and arrival, so an open town's guide keeps its door and origin
+    out += roomed(host, opener, c)
     for name, kind, title, body in shelf(c.origin, c.arrival, feed_only, c.room):
         page = held.get(name)
         if page and (page['body'], page['title'], page['kind']) == (body, title, kind):
@@ -1157,7 +1168,16 @@ def shelved(host, opener, config=None, feed_only=False):
                             'reading': 'the library does not hold the requested page after shelving', 'reply': reply})
                 continue
         out.append({'object': 'library', 'slot': f'page {name}', **done(reply), 'reading': 'shelved' if page is None else 'the file changed'})
+    # A guide (or another of genesis's parted texts) shelved in fewer parts than before leaves no part behind.
+    shelved_now = {name for name, _, _, _ in shelf(c.origin, c.arrival, feed_only, c.room)}
+    for name in sorted(n for n in held if PART.fullmatch(n) and n not in shelved_now and PART.fullmatch(n)[1] in shelved_now):
+        reply = host.send({'op': 'world-turn', 'principal': opener, 'object': 'library', 'method': 'unshelve',
+                           'identity': f'refresh-unshelve-{name}-{record["version"] if record else 0}', 'argument': rec(name=lab(name))})
+        out.append({'object': 'library', 'slot': f'page {name}', **done(reply), 'reading': 'unshelved: no longer a part'})
     return out
+
+
+PART = re.compile(r'([a-z]+)-(\d+)')  # a part of a parted page (`guide-3`, `authoring-2`), whose head page is its name
 
 
 # A thing a kind made before its owner's protections were its own (docs/review/astra-2026-10-12 world 2, 3) holds
@@ -1234,17 +1254,17 @@ def opener_of(path):
     return (first.get('state') or {}).get('settings', first).get('opener') or OPENER
 
 
-def carried(obend, path, station=False, config=None):
+def carried(obend, path, station=False, config=None, feed_only=False):
     """The refresh of the journal a carry just wrote at `path`, opened by the host binary `obend` as `python3 -m
-    transport carry` leaves it (serve not yet started on it), as the world's opener; `station` as `refresh`'s. -> refresh's
-    rows."""
+    transport carry` leaves it (serve not yet started on it), as the world's opener; `station` and `feed_only` as
+    `refresh`'s. -> refresh's rows."""
     from transport.host import HostProcess
     host = HostProcess(obend)
     try:
         opened = host.send(op='world-open', path=path)
         if opened.get('status') != 'opened':
             raise RuntimeError(f'the carried journal does not open: {opened}')
-        return refresh(host, opener_of(path), ancestry(path), station, config)
+        return refresh(host, opener_of(path), ancestry(path), station, config, feed_only)
     finally:
         host.close()
 

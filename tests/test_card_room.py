@@ -156,3 +156,29 @@ class LibraryRoom(unittest.TestCase):
         read = town.send(op='world-turn', principal='guest:t:wren', object='library', method='read', identity='read-3',
                          argument=record(page=label('long-3')))
         self.assertIn('x' * genesis.page_limit(8000), json.dumps(read))
+
+
+class RefreshedRoom(unittest.TestCase):
+    """A carried town that lives in its own feed is refreshed as one (transport/carry.py passes its bridge row): its
+    room from the config is journaled first (`genesis.roomed`), then the library shelves the feed's guide, whole
+    pages within that room."""
+
+    def test_a_refresh_journals_the_room_then_shelves_the_feeds_guide(self):
+        from deploy import genesis
+        from tests.town import Town
+        from transport.mirror import library_pages
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        town = Town(tmp.name, cleanup=self.addCleanup, furnished=False)
+        config = Config(origin='https://obend.example', arrival='open', card_room=8000)
+        rows = genesis.shelved(town.client, town.opener, config, feed_only=True)
+        self.assertEqual(rows[0], {'object': 'world', 'slot': 'cardRoom', 'status': 'refreshed'})
+        self.assertTrue(all(r['status'] in ('refreshed', 'current') for r in rows), [r for r in rows if r['status'] not in ('refreshed', 'current')])
+        self.assertEqual(town.send(op='world-status')['cardRoom'], 8000)
+        pages = {p['name']: p['body'] for p in library_pages(town.client, town.opener)}
+        self.assertIn('## The ladder: four receipts, each one call', ''.join(b for n, b in pages.items() if n.startswith('guide-')))
+        self.assertIn('bend', pages)
+        self.assertEqual(genesis.shelved(town.client, town.opener, config, feed_only=True)[0]['slot'], 'page spells')  # the room stands
+        unshelved = [r['slot'] for r in rows if r.get('reading') == 'unshelved: no longer a part']
+        self.assertIn('page guide-5', unshelved)  # the post-sized guide's parts past the feed's four are taken off
+        self.assertFalse([n for n in pages if n.startswith('guide-') and int(n.split('-')[1]) > 4], sorted(pages))

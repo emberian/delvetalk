@@ -37,6 +37,8 @@ form read:
   page: text 1..120
 form laws:
   card: text 1..128
+form unshelve:
+  name: text 1..32
 form shelve:
   name: text 1..32
   kind: Kind
@@ -140,6 +142,12 @@ def readRow(name: String, after: String) -> World.LawRow:
 # A page holds what one reply of it shows here (`Card.limit`): a page past it is refused, never cut.
 def shelve(state: State, input: {name: String, kind: Kind, title: String, body: String}, context: Abi.Context) -> Activity<Card.Replied>:
   if context.principal != state.owner then refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page"}, context) else if textLength(input.body) > Card.limit(context) then refused({clause: "tooLong", reading: "A page here holds {natText(Card.limit(context))} characters, what one reply shows; this one is {natText(textLength(input.body))}"}, context) else shelved(extend(input, {place: placeOf(input.name, state)}))
+# Only the owner takes a page off the shelf (a guide shelved in fewer parts than before leaves none behind).
+def unshelve(state: State, input: {name: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  if context.principal != state.owner then refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} takes a page off the shelf"}, context) else if shelvedName(state, input.name) == false then refused({clause: "noPage", reading: "No page called {input.name}. {shelfLine(state)}"}, context) else unshelved(input.name)
+def unshelved(name: String) -> Activity<Card.Replied>:
+  let written(_) = write {pages: retract {name: name}}
+  Card.tell(Card.Replied.done({action: "unshelve"}), Document.text("Took {name} off the shelf.\n"))
 def placeOf(name: String, state: State) -> Nat:
   match Relations.lookup(state.pages, {name: name}):
     case some(p): p.value.place

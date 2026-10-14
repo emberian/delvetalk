@@ -216,7 +216,8 @@ def command(a, out):
         # Then genesis's own laws and kinds as the image stands (`deploy.genesis refresh`, as the opener): after the
         # check, which compares the carried states with the carry's own `moved`.
         from deploy import genesis
-        for row in genesis.carried(obend, str(new / f'{w}.journal'), config.station and w == 'town', config):
+        from transport.state import State  # its bridge row came across with its transport: a feed-only town shelves as one
+        for row in genesis.carried(obend, str(new / f'{w}.journal'), config.station and w == 'town', config, State(new, w).feed_only()):
             out.write(json.dumps({'world': w, 'refresh': row}, sort_keys=True) + '\n')
             failed = failed or row.get('status') not in ('refreshed', 'current', 'left')
     town = carried['town']
