@@ -1,0 +1,158 @@
+<!-- town: the town unfolded (/town): every room the reader may see and its doors, drawn; each room a panel that unfolds in place; the commonplace's own map folded at the foot -->
+<div class="atlas-head"><p class="eyebrow">The town, unfolded</p><h1 class="title">Every room and its doors</h1>
+<p class="lede">{places} places, {doors} doors, {present} here now. Choose a room to unfold it; the drawing and the rooms keep up as the town moves.</p>
+<p class="aside atlas-links"><a href="/kinds">the kinds</a> <a href="/library">the library</a> <a href="/lib">the modules</a> <a href="/library/bend">the language</a> <a href="/AGENTS.md/api">the API</a></p></div>
+<figure class="graph-wrap" data-live="/live" data-height="{height}"><div class="graph-scroll">{graph}</div><figcaption class="aside">An arrow is a door, from the room it hangs in to the room it opens onto; a lit room has someone in it, and its numbers are who is here and what lies here.</figcaption></figure>
+<section class="rooms" aria-label="the rooms">{panels}{alone}</section>{map}
+<!-- town_alone: rooms no door reaches -->
+<h2 class="eyebrow alone">No door reaches these yet</h2>{panels}
+<!-- town_map: the commonplace's own map, as its Bend writes it -->
+<details class="more map-text"><summary>the door map, as the commonplace writes it</summary><pre class="card">{text}</pre></details>
+<!-- graph: the door graph (atlas.graph): an arrow a door; a room a circle, a link to its panel -->
+<svg class="town-graph" viewBox="0 0 {width} {height}" width="{width}" role="img" aria-label="the rooms and their doors"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 1L10 5L0 9z"/></marker></defs><g class="doors">{doors}</g><g class="nodes">{nodes}</g></svg>
+<!-- graph_door -->
+<path class="door{both}" d="{d}" marker-end="url(#arrow)"><title>{title}</title></path>
+<!-- graph_node -->
+<a class="node{cls}" href="{href}" data-id="{id}"><title>{title}</title><circle cx="{x}" cy="{y}" r="6.5"/><text class="nl" x="{x}" y="{ty}">{label}</text><text class="ns" x="{x}" y="{sy}">{sub}</text>{badge}</a>
+<!-- graph_count -->
+<g class="count {cls}"><circle cx="{x}" cy="{y}" r="7.5"/><text x="{x}" y="{y}" dy="3.5">{n}</text></g>
+<!-- panel: a room on /town: its name, who is here, what lies here, its newest lines, its doors; unfolded, its scene, view and spells come from its own pages (atlas.js) -->
+<details class="room{lit}" id="{id}" data-obj="{obj}" data-version="{version}"{open}><summary><span class="rname">{name}</span> <span class="rabout">{about}</span> <span class="rsum">{summary}</span></summary>
+<div class="rbody"><div class="now">{here}{things}{lines}</div>{doors}{into}<div class="lazy" data-read="{read}" data-inspect="{inspect}"></div>
+<p class="ways"><a class="go" href="{go}">{golabel}</a> <a href="{read}">its page</a> <a href="{inspect}">inspect its Bend</a></p></div></details>
+<!-- panel_doors -->
+<p class="doors">Doors: {items}</p>
+<!-- panel_into -->
+<p class="doors">The way here: {items}</p>
+<!-- panel_door -->
+<a href="{href}" title="{to}">{label}</a>
+<!-- inspector: a thing inspected (/inspect/ID): what it is, its spells, who may do what, its law, rules and wants; its Bend beside, with the workshop under it; its fields and receipts -->
+<div class="ins-head"><p class="eyebrow">Inspecting <span class="code">{obj}</span> · <a href="/kinds">the kinds</a> · <a href="/library/bend">the language</a> · <a href="/lib">the modules</a></p>
+<h1 class="title">{name}</h1><p class="ways"><a class="go" href="{go}">Go there</a> <a href="{read}">its page</a> <a href="/town">the town</a></p><dl class="facts">{facts}</dl></div>
+<div class="ins-side">{verbs}{who}{laws}{rules}</div>
+<div class="ins-src" id="bend"><h2 class="eyebrow">Its Bend</h2>{source}{workshop}</div>
+<div class="ins-more" data-live="/live">{fields}<div id="receipts">{receipts}</div></div>
+<!-- fact -->
+<dt>{k}</dt><dd>{v}</dd>
+<!-- verbs: the spells offered to this reader, each a small form that casts it -->
+<section class="verbs" id="verbs"><h2 class="eyebrow">Its spells</h2><ul class="verbs">{items}</ul>{comein}</section>
+<!-- verbs_none -->
+<section class="verbs" id="verbs"><h2 class="eyebrow">Its spells</h2><p class="aside">It offers you no spell.</p></section>
+<!-- verbs_comein -->
+<p class="aside">To cast them, <a href="/enter">come in</a>.</p>
+<!-- verb: one spell: its name, its fields, cast or tried; its exact spell is the title; its line in the Bend a link -->
+<li class="verb" id="verb-{action}"><form class="cast" method="post" action="/play/{path}" title="{spell}"><input type="hidden" name="do" value="{action}"><span class="vname">{action}</span>{grown}{inputs}{act}</form>{line}</li>
+<!-- verb_act -->
+<span class="vact"><button class="cast-go">Cast</button> <button class="quiet-button" name="try" value="1" title="see what it would do; nothing is written">try</button></span>
+<!-- verb_grown -->
+<span class="grown" title="a verb grown on it, not in its Bend: the host casts it as its grower wrote it">grown</span>
+<!-- verb_line -->
+<a class="vline" href="{href}">its Bend</a>
+<!-- verb_spell: a spell as a stranger reads it -->
+<code class="vspell">{spell}</code>
+<!-- verb_text -->
+<label class="vfield">{name}<input name="f.{name}" maxlength="{max}" autocomplete="off"{required}></label>
+<!-- verb_number -->
+<label class="vfield">{name}<input name="f.{name}" type="number" min="{min}" max="{max}"{required}></label>
+<!-- verb_choice -->
+<label class="vfield">{name}<select name="f.{name}">{options}</select></label>
+<!-- who: who may do what, as the law stands now -->
+<section class="who" id="who"><h2 class="eyebrow">Who may do what</h2><p class="aside">What its law admits now, before the spell's own Bend has its say.</p>
+<div class="scroll"><table><tr><th>method</th>{you}<th>a newcomer</th></tr>{rows}</table></div></section>
+<!-- who_you -->
+<th>you</th>
+<!-- who_row -->
+<tr><td><a href="{href}"><code>{name}</code></a></td>{mine}{anyone}</tr>
+<!-- admit_yes -->
+<td class="yes">✓ yes</td>
+<!-- admit_no -->
+<td class="no">§ <code>{clause}</code> <span class="reading">{reading}</span></td>
+<!-- admit_unknown -->
+<td class="unknown">–</td>
+<!-- laws: the law's clauses, each with its reading -->
+<section class="laws" id="law"><h2 class="eyebrow">Its law</h2><ul class="clauses">{items}</ul></section>
+<!-- law -->
+<li class="clause {kw}"><span class="kw">{kw}</span> <b>{name}</b> {line}<span class="reading">{reading}</span><code class="expr">{clause}</code></li>
+<!-- law_line -->
+<a class="vline" href="{href}">in its Bend</a>
+<!-- rules: the rules it carries and the wants that hold of it now -->
+<section class="rules" id="rules"><h2 class="eyebrow">Rules and wants on it</h2><ul class="clauses">{items}</ul></section>
+<!-- rule -->
+<li class="clause {kw}"><span class="kw">{kw}</span> <b>{name}</b> <span class="by">by {who}{placed}</span><span class="reading">{reading}</span><code class="expr">when {when}</code><code class="expr then">{then}</code>{last}</li>
+<!-- rule_placed -->
+, entry {h}
+<!-- rule_since -->
+, holding since entry {h}
+<!-- rule_fired -->
+<span class="last">last fired at entry {height}, <a href="/AGENTS.md/receipt/{receipt}">receipt {receipt}</a></span>
+<!-- rule_unfired -->
+<span class="last">last held unfired: {why}</span>
+<!-- want_open -->
+<span class="last">yours to answer</span>
+<!-- want_waiting -->
+<span class="last">waiting on other hands</span>
+<!-- fields: its state, field by field -->
+<section class="fields" id="fields"><h2 class="eyebrow">Its fields</h2><dl class="state-fields">{items}</dl></section>
+<!-- field -->
+<dt>{name}</dt><dd>{value}</dd>
+<!-- field_text -->
+<span class="ftext">{text}</span>
+<!-- field_long -->
+<details class="flong"><summary>{head} <span class="aside">({n} characters)</span></summary><pre class="listing">{text}</pre></details>
+<!-- field_num -->
+<span class="fnum">{n}</span>
+<!-- field_empty -->
+<span class="fempty">empty</span>
+<!-- field_list -->
+<details class="flist"><summary>{n} rows</summary><ol class="frows">{items}</ol>{more}</details>
+<!-- field_more -->
+<p class="aside">and {n} more</p>
+<!-- source_block: one module of its Bend, its declarations listed above it -->
+<details class="bend"{open}><summary>{title} <span class="aside">{lines} lines</span></summary>{note}{outline}<pre class="bend" id="{prefix}"><code>{code}</code></pre></details>
+<!-- outline -->
+<nav class="outline" aria-label="its declarations">{items}</nav>
+<!-- outline_defs: every def, folded -->
+<details class="odefs"><summary>every def ({n})</summary>{items}</details>
+<!-- outline_item -->
+<a href="{href}"><span class="okw">{kind}</span> {name}</a>
+<!-- body_note -->
+<p class="aside">Each thing of this kind runs this layer over what the kind is of.</p>
+<!-- source_none -->
+<p class="aside">Its source is not yours to read.</p>
+<!-- workshop: the workshop's check spell with this thing's Bend in its block, to edit and send to the workshop -->
+<section class="workshop" id="workshop" data-obj="{obj}" data-over="{over}" data-kind="{kind}"><h2 class="eyebrow">Amend it in the workshop</h2>
+<p class="aside">This is the workshop's own spell, with the Bend above in its block. Change the Bend and check it: the workshop answers with each problem and its line. A clean draft can become a kind of your own (<code>draft / name: … / from: {kind}</code>) or a layer laid over this thing (<code>draft / name: … / over: {obj}</code>), held for you to adopt.</p>
+<form class="say ws" method="post" action="/play/workshop"><label>The spell<textarea class="ws-text" name="text" rows="{rows}" spellcheck="false">{spell}</textarea></label>{act}</form>
+<div class="ws-reply" aria-live="polite"></div></section>
+<!-- workshop_act -->
+<p class="acts"><span class="ws-modes" hidden><button type="button" class="quiet-button" data-mode="check">check it</button> <button type="button" class="quiet-button" data-mode="fork">a kind of my own</button> <button type="button" class="quiet-button" data-mode="layer">a layer over this</button></span> <button class="quiet-button" name="try" value="1" title="see what it would do; nothing is written">Try it first</button> <button class="go">Send to the workshop</button></p>
+<!-- workshop_comein -->
+<p class="aside">To send it, <a href="/enter">come in</a>.</p>
+<!-- library: the library's pages -->
+<div class="atlas-head"><p class="eyebrow">The library</p><h1 class="title">How the town works, in its own pages</h1>
+<p class="lede">Every page the library shelves, as <code>delvetalk library read / page: …</code> answers it. The language is <a href="/library/bend">bend</a>; the town's API, <a href="/library/api">api</a> and <a href="/AGENTS.md/api">its catalogue</a>; the modules every thing is written in, <a href="/lib">the modules</a>.</p></div>
+<ul class="rows library">{items}</ul>
+<!-- library_item -->
+<li><a href="{href}">{name}</a> <span class="kw">{kind}</span> <span class="reading">{title}</span></li>
+<!-- library_page -->
+<p class="eyebrow"><a href="/library">the library</a> · <code>{spell}</code></p><h1 class="title">{title}</h1><pre class="card page-text">{text}</pre>
+<!-- modules: the modules the town holds -->
+<div class="atlas-head"><p class="eyebrow">The modules</p><h1 class="title">The Bend every thing is written in</h1>
+<p class="lede">Each module the town holds, as its newest text: the library sealed into the world, and the packages its things run. A thing's own layers are on its inspector.</p></div>
+<ul class="rows modules">{items}</ul>
+<!-- module_item -->
+<li><a href="{href}">{name}</a> <span class="aside">{lines} lines, from entry {height}</span><span class="reading">{first}</span></li>
+<!-- module_page -->
+<p class="eyebrow"><a href="/lib">the modules</a> · from entry {height} · <span class="code">{cid}</span></p><h1 class="title">{name}</h1>{source}{versions}
+<!-- versions -->
+<details class="more"><summary>other texts of it the town holds</summary><ul class="rows">{items}</ul></details>
+<!-- version_item -->
+<li><a href="{href}">…{cid}</a> <span class="aside">from entry {height}</span></li>
+<!-- kinds: every kind -->
+<div class="atlas-head"><p class="eyebrow">The kinds</p><h1 class="title">{n} ways of making</h1>
+<p class="lede">Each kind makes things of one shape under one law. Inspect one to read its Bend and its law; make one from its card; fork one in the workshop to make a kind of your own.</p></div>
+<ul class="rows kinds">{items}</ul>
+<!-- kind_item -->
+<li><a href="{href}">{id}</a> <span class="aside">of {of}, by {who}, {count} made</span>{body}<span class="reading">{about}</span> <a class="say" href="{make}">make one</a></li>
+<!-- kind_body -->
+<span class="grown" title="it lays Bend of its own on what it makes">its own Bend</span>
