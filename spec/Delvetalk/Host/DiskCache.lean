@@ -1,4 +1,4 @@
-/- The on-disk compile cache (HOST-HANDOFF 5.66): compiled packages and definitions kept across
+/- The on-disk compile cache (HOST-HANDOFF §1): compiled packages and definitions kept across
    processes (a restarted serve, a test's many hosts), under `$DELVETALK_COMPILE_CACHE/<stamp>` (paint renders under
    `$DELVETALK_RENDER_CACHE/<stamp>`), where the stamp names this
    binary (the size and modification time of `IO.appPath`), so a new compiler never reads an old

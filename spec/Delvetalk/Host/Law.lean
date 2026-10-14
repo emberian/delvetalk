@@ -150,7 +150,7 @@ partial def emptyValue : Data → Bool
   | .record fields => fields.all fun (_, v) => emptyValue v
   | _ => false
 
-/-- The rows of a relation field (`rows {items: List<T>}`, RELATIONAL §2), or of a plain list. -/
+/-- The rows of a relation field (`rows {items: List<T>}`, FOUNDATION §9), or of a plain list. -/
 partial def rowsOf : Data → Option (List Data)
   | .variant "rows" (.record f) => (f.lookup "items").bind rowsOf
   | .variant "nil" _ => some []
@@ -346,7 +346,7 @@ def standingRefusal (e : LawExpr) : Option String :=
 
 /-- An amendment of a thing by its own owner (its state's text `owner`): what no cited law refuses, so a
     kind's owner, amending the text every instance follows, cannot lock an instance's owner out of their
-    own thing; they can always amend it out from under the kind (docs/review/astra-2026-10-12 world 2). -/
+    own thing; they can always amend it out from under the kind. -/
 def ownerAmends (facts : Facts) (new : Data) : Bool :=
   facts.kind == 2 && match rawField "owner" new with
     | some (.label owner) => !owner.isEmpty && owner == facts.subject
@@ -416,10 +416,10 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
     | some before => match rawField field before, rawField field new with
       | some a, some b => canon a == canon b
       | _, _ => false
-  -- Relations (RELATIONAL §5). Rows are compared whole by canonical bytes: a relation holds no
+  -- Relations (FOUNDATION §9 "Laws over relations"). Rows are compared whole by canonical bytes: a relation holds no
   -- key twice, so "every old row is in new" is "new ⊇ old by key, every old row unchanged".
   -- A row the declared retention dropped while this write was applied (`Facts.evicted`, as the
-  -- edits ran: codex host 8) was not retracted by the write, so it does not count.
+  -- edits ran) was not retracted by the write, so it does not count.
   | .rule .insertOnly field => match (rawField field new).bind rowsOf with
     | none => false
     | some after => match old with
@@ -470,7 +470,7 @@ end
 
 /-- What judging `e` reads, as `denote` reads it: a step per atom and a row (or list item) per row it walks, on
     each side; through `under` and `wants`, what the cited clauses read. A judgment's clauses together are
-    bounded by `Bounds.lawTicks` (`Facts` the host meters with; codex host 13), as a Bend law's ticks are. -/
+    bounded by `Bounds.lawTicks` (`Facts` the host meters with), as a Bend law's ticks are. -/
 partial def work (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr) (depth : Nat := Limits.lawDepth) : Nat :=
   let rows := fun (side : LawSide) (field : String) => ((rowsAt facts old new side field).map (·.length)).getD 0
   let both := fun (field : String) => rows .old field + rows .new field
@@ -524,7 +524,7 @@ def refusedBy (law : Law) (facts : Facts) (old : Option Data) (new : Data) : Opt
 
 /-! Rules and wants: the same conditions, the same `denote`. A law refuses at commit; the host fires
 a rule's spell when its condition holds at a write, and poses a want while it holds of the thing
-as it stands (docs/OVERHAUL.md §2; KERNEL-HANDOFF §27 is the host's step). -/
+as it stands (docs/OVERHAUL.md §2; KERNEL-HANDOFF §11 is the host's step). -/
 
 /-- The rules among `clauses` whose condition holds of this write, in order. How many it casts, under
     whom and how deep is the host's (`rulesPerCommit`, the rule's owner, `ruleDepth`). -/
@@ -763,7 +763,7 @@ private def rel (rows : List Data) : Data :=
 #guard !denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "changed"]) (parsed "insertOnly(rains)")
 #guard !denote facts (some (rec1 1)) (rec1 1) (parsed "insertOnly(count)")
 -- Retention: a row the write's insert evicted does not count against insertOnly, but a retraction
--- or an alteration still does, and a full relation is no evidence of eviction (codex host 8).
+-- or an alteration still does, and a full relation is no evidence of eviction.
 private def limited : Facts := { facts with evicted := [("rains", rain "ann" 1 "a")] }
 #guard denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "kim" 2 "b", rain "eve" 3 "c"]) (parsed "insertOnly(rains)")
 #guard !denote facts (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "kim" 2 "b", rain "eve" 3 "c"]) (parsed "insertOnly(rains)")

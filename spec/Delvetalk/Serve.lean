@@ -1,5 +1,5 @@
 /- `delvetalk-obend serve`: the one process that holds a directory of worlds (docs/FEDERATION.md §1,
-   HOST-HANDOFF 5.125). It takes the directory's lock, seals the library, listens on the public socket
+   HOST-HANDOFF §5 "Serve"). It takes the directory's lock, seals the library, listens on the public socket
    and the root socket (`spec/native/serve.c`), and answers one request at a time in arrival order,
    each through the world its envelope names. -/
 import Delvetalk.PackageSession
@@ -53,7 +53,7 @@ structure Config where
 structure Server where
   config : Config
   /-- Every world and scratch world this process has opened, held until it stops (a world opened
-      over its block store holds its live state and indexes, not its journal: HOST-HANDOFF 5.137), so a
+      over its block store holds its live state and indexes, not its journal: HOST-HANDOFF §3), so a
       turn in one may read another (`Host.Foreign`). -/
   worlds : Std.HashMap String PackageSession.Session := {}
   /-- Each scratch world (`scratch/<principal>/<name>`) and the home world's clock at its last op. -/

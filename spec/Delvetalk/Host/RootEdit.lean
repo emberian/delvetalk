@@ -3,7 +3,7 @@
    oldHead, at}` inside its hash; the old-to-new hash table and the count of slugs changed printed; the
    new journal replayed in full before it is written.
 
-   Re-sealing carries what replay checks (HOST-HANDOFF §7 item 1): every `previous` and `hash` from the
+   Re-sealing carries what replay checks (HOST-HANDOFF §5 "Carry and root-edit"): every `previous` and `hash` from the
    edit on (the first entry keeps `replay`; a fork's or a carry's genesis keeps the `previous` and height
    it was taken at, and heights are the journal's own, `baseOf`); an entry's `turn` that was its height becomes its new height; an `ended` id hashes the height, so it is
    recomputed, and the ids that hash an identity whose intent was such an id (sends, changes,
