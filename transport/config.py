@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = ROOT / 'world' / 'lib'  # what serve seals at its start
 ORIGIN = 'https://gsb.fg-goose.online'
 PREFIX = 'DELVETALK_'
+CARD_ROOM = 1400  # the host's own `Limits.cardShownChars`: what one delve.town post holds
 
 
 def field(default, what):
@@ -93,6 +94,15 @@ class Config:
                             "with the card's spells to send instead)")
     paint_budget: int = field(400, "open town: paints a clock day, the whole town's (host `paintQuota`; when spent, a card is read "
                               "exact, and the page says why)")
+
+    card_room: int = field(0, "the characters a reader is shown of a card, and one feed post holds before the town's answer is threaded "
+                           "(the world's `cardRoom`, set by `hand limits`; docs/DEPLOY.md \"A second instance\"): 0, the host's own 1,400, "
+                           "what one delve.town post holds; a feed-only town may give kilobytes (obend: 8,000)")
+
+    @property
+    def room(self):
+        """`card_room`, or the host's own when the config gives none."""
+        return self.card_room or CARD_ROOM
 
     def __post_init__(self):
         if not self.opener:

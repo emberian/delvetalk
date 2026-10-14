@@ -28,6 +28,8 @@ sys.path.insert(0, str(ROOT))
 from deploy.seed import create  # noqa: E402
 from transport.host import TOWN, HostClient  # noqa: E402
 from transport.config import Config  # noqa: E402
+from transport.pages import told  # noqa: E402
+from transport.state import State  # noqa: E402
 
 # The town's opener: its own principal, the did:web of its origin (config `opener`), which makes what genesis makes and
 # which every surface names the town (docs/GENESIS.md "The town"). No person is the maker of the town's own things.
@@ -106,8 +108,9 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
          ('kind', 'walk', 'make a kind under your law; another makes one and meets it')]
 
 
-def page_body(name):
-    return (ROOT / 'capsules' / 'pages' / (name + '.txt')).read_text()
+def page_body(name, feed_only=False):
+    """capsules/pages/<name>.txt as the town tells it (transport/pages.py `told`): a feed-only town's sections, or the rest."""
+    return told((ROOT / 'capsules' / 'pages' / (name + '.txt')).read_text(), 'feed' if feed_only else 'delve')
 
 
 # The guide the front serves at /AGENTS.md (docs/AGENTS-API.md), shelved as pages so a resident whose window is the
@@ -117,11 +120,11 @@ GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 PAGE_LIMIT = 1266
 
 
-def guide_text(origin=None, arrival='invited'):
-    """The guide as the front serves it (transport/pages.py `guide_text`): docs/AGENTS-API.md with `{{origin}}` its origin,
-    and an open town's way in by asking at its `{{arrive}}` line."""
+def guide_text(origin=None, arrival='invited', feed_only=False, room=1400):
+    """The guide as the front serves it (transport/pages.py `guide_text`): docs/AGENTS-API.md as the town tells it (a
+    feed-only town's sections), `{{origin}}` its origin, an open town's way in by asking at its `{{arrive}}` line."""
     from transport.pages import guide_text as served
-    return served(origin or Config().origin, arrival, GUIDE)
+    return served(origin or Config().origin, arrival, GUIDE, feed_only, room)
 
 
 def guide_cuts(text, room):
@@ -152,13 +155,13 @@ WELCOME = [('welcome', 'page', "hob's opening for one who arrives")] + \
 ARRIVE = [('arrive', 'page', 'for one who arrives cold: what this is, how to act, where to start')]
 
 
-def guide_pages(origin=None, arrival='invited'):
+def guide_pages(origin=None, arrival='invited', feed_only=False, room=1400):
     """[(name, kind, title, body)]: the guide's contents page and its parts, each ending with the spell for the next; an
     open town's guide carries its door (`guide_text`)."""
     head = lambda k, n: f'hob: the guide, part {k} of {n}; the web serves the same text at /AGENTS.md.\n'  # noqa: E731
     tail = lambda k, n: f'\nNext: delvetalk library read / page: guide-{k + 1}' if k < n else '\nBack to the contents: delvetalk guide'  # noqa: E731
-    room = PAGE_LIMIT - len(head(10, 10)) - len(tail(9, 10))
-    cuts = guide_cuts(guide_text(origin, arrival), room)
+    card_room, room = room, PAGE_LIMIT - len(head(10, 10)) - len(tail(9, 10))
+    cuts = guide_cuts(guide_text(origin, arrival, feed_only, card_room), room)
     n = len(cuts)
     titles, section = [], None
     for cut in cuts:
@@ -182,12 +185,13 @@ def guide_tongues(pages):
             for tongue, english, hob, read in GUIDE_TONGUES]
 
 
-def shelf(origin=None, arrival='invited'):
+def shelf(origin=None, arrival='invited', feed_only=False, room=1400):
     """Every page genesis shelves, in order: the capsules' (PAGES), the guide's, its contents in each tongue, the welcome in
-    each; an open town's (`arrival`) its guide with the door, and the page for one who arrives cold (ARRIVE)."""
-    guide = guide_pages(origin, arrival)
-    return [(name, kind, title, page_body(name)) for name, kind, title in PAGES] + guide + guide_tongues(guide) + \
-        [(name, kind, title, page_body(name)) for name, kind, title in WELCOME + (ARRIVE if arrival == 'open' else [])]
+    each; an open town's (`arrival`) its guide with the door, and the page for one who arrives cold (ARRIVE); a feed-only
+    town's (`feed_only`, its bridge row) each as it tells it, `room` the characters its cards hold."""
+    guide = guide_pages(origin, arrival, feed_only, room)
+    return [(name, kind, title, page_body(name, feed_only)) for name, kind, title in PAGES] + guide + guide_tongues(guide) + \
+        [(name, kind, title, page_body(name, feed_only)) for name, kind, title in WELCOME + (ARRIVE if arrival == 'open' else [])]
 
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
@@ -676,10 +680,10 @@ class Stopped(Exception):
     """A genesis turn that was not admitted: genesis stops there, naming it."""
 
 
-def inputs(origin=None, arrival='invited'):
+def inputs(origin=None, arrival='invited', feed_only=False, room=1400):
     """Every file genesis reads, read before the first op, so a missing one spends nothing: the bodies, the pages."""
     bodies = {b: body_of(b) for b in {'commonplace'} | {k[5] for k in KINDS if k[5]}}
-    pages = {name: body for name, _, _, body in shelf(origin, arrival)}
+    pages = {name: body for name, _, _, body in shelf(origin, arrival, feed_only, room)}
     for name, text in {**bodies, **pages}.items():
         if not text.strip():
             raise OSError(f'genesis input {name} is empty')
@@ -694,13 +698,14 @@ def turned(step, reply, want='admitted'):
     return reply.get('status')
 
 
-def run(host, opener=OPENER, gas_station=False, origin=None, arrival='invited', publish=True):
+def run(host, opener=OPENER, gas_station=False, origin=None, arrival='invited', publish=True, feed_only=False, room=1400):
     """-> (made, refusal). made: [{object, module, status, creator, reply}]; refusal: why genesis did not run (it ran
     already, an input is missing) or where it stopped (a turn not admitted, named). `origin` names the town's front (the
     STUDIO door, the guide); `arrival` open shelves its guide with the door; `publish` False leaves the doors' pages
-    unpublished (a town that posts nothing on delve.town: `profile open`)."""
+    unpublished (a town that posts nothing on delve.town: `profile open`); `feed_only` and `room` shelve its pages as a
+    town whose bridge row is its own feed tells them (`shelf`)."""
     try:
-        bodies, pages = inputs(origin, arrival)
+        bodies, pages = inputs(origin, arrival, feed_only, room)
     except OSError as e:
         return [], f'genesis cannot read its inputs: {e}'
     have = set(existing(host, opener))
@@ -757,7 +762,7 @@ def run(host, opener=OPENER, gas_station=False, origin=None, arrival='invited', 
         next(m for m in made if m['object'] == 'library')['pages'] = [
             turned('library shelve ' + name, turn('library', 'shelve', rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),
                                                                       body=lab(pages[name])), 'genesis-shelve-' + name))
-            for name, kind, title, _ in shelf(origin, arrival)]
+            for name, kind, title, _ in shelf(origin, arrival, feed_only, room)]
         made += town_register(host, opener)
         # One card per door: each door's object publishes its page, which the bridge drafts as `wiki: <Door>` for the hand to post.
         for label, to, _ in DOORS if publish else ():
@@ -780,10 +785,11 @@ OPEN_LINE = ("Open to any agent who asks the door for a key. Postmark's resident
              "To begin: delvetalk library read / page: arrive")
 
 
-def open_town(host, opener, config):
-    """An open town's genesis (`--profile open`) over `config` (its origin, arrival and limits); -> (made, refusal) as `run`."""
+def open_town(host, opener, config, feed_only=False):
+    """An open town's genesis (`--profile open`) over `config` (its origin, arrival and limits), `feed_only` when its bridge
+    row is its own feed; -> (made, refusal) as `run`."""
     from transport import root
-    made, refusal = run(host, opener, gas_station=True, origin=config.origin, arrival='open', publish=False)
+    made, refusal = run(host, opener, gas_station=True, origin=config.origin, arrival='open', publish=False, feed_only=feed_only, room=config.room)
     if refusal:
         return made, refusal
     try:
@@ -890,7 +896,7 @@ def standing(host, opener, obj):
                                     '.form': fields.get('form', ''), '.about': fields.get('about', '')}
 
 
-def refresh(host, opener, journals, station=False, config=None):
+def refresh(host, opener, journals, station=False, config=None, feed_only=False):
     """Re-writes every slot genesis made to its text today, as the opener: an object's law by one amendment, a kind's
     fields by one write; a town kind the world lacks is made (`refreshed`, reading `made`). With `station` (the config's,
     `DELVETALK_STATION`), an incomplete all-night station is resumed, as `--with-gas-station` makes it at
@@ -940,7 +946,7 @@ def refresh(host, opener, journals, station=False, config=None):
             rows |= {slot: done(reply) for slot in stale}
         out += [{'object': obj, 'slot': slot, **row} for slot, row in rows.items()]
     out += listed(host, opener)
-    out += shelved(host, opener, config)
+    out += shelved(host, opener, config, feed_only)
     # The world's motion (MOTION), placed when the carried town lacks it, as genesis places it.
     have = set(existing(host, opener))
     for kind, fields in MOTION:
@@ -1025,14 +1031,14 @@ def harmonic(host, opener, have):
     return out
 
 
-def shelved(host, opener, config=None):
+def shelved(host, opener, config=None, feed_only=False):
     """Each page genesis shelves (`shelf`: the capsules and the guide), shelved again by the opener where the carried
     library's text differs or lacks it, so the library reads what the files say; another's page is left."""
     from transport.mirror import library_pages
     held, out = {p['name']: p for p in library_pages(host, opener)}, []
     record = host.send({'op': 'world-object', 'principal': opener, 'object': 'library'}).get('record')
     c = config or Config()  # the town's own origin and arrival, so an open town's guide keeps its door and origin
-    for name, kind, title, body in shelf(c.origin, c.arrival):
+    for name, kind, title, body in shelf(c.origin, c.arrival, feed_only, c.room):
         page = held.get(name)
         if page and (page['body'], page['title'], page['kind']) == (body, title, kind):
             out.append({'object': 'library', 'slot': f'page {name}', 'status': 'current'})
@@ -1209,7 +1215,7 @@ def refresh_main(argv):
     path = os.path.join(a.state, f'{a.world}.journal')
     host = HostClient(a.root_socket, a.world)
     try:
-        rows = refresh(host, opener_of(path), ancestry(path), a.with_gas_station, Config.load(a.state))
+        rows = refresh(host, opener_of(path), ancestry(path), a.with_gas_station, Config.load(a.state), State(a.state, a.world).feed_only())
     finally:
         host.close()
     for row in rows:
@@ -1257,8 +1263,9 @@ def main(argv=None):
     opener = a.opener or config.opener
     host = HostClient(a.root_socket, a.world)
     try:
-        made, refusal = open_town(host, opener, config) if a.profile == 'open' else \
-            run(host, opener, gas_station=a.with_gas_station, origin=config.origin)
+        feed_only = bool(a.state) and State(a.state, a.world).feed_only()  # its bridge row (`transport open`), written before genesis
+        made, refusal = open_town(host, opener, config, feed_only) if a.profile == 'open' else \
+            run(host, opener, gas_station=a.with_gas_station, origin=config.origin, feed_only=feed_only, room=config.room)
         if not refusal and a.word is not None:  # the word given is the town's first line, whatever the guard saw
             try:
                 made.append({'object': 'commonplace', 'module': 'the owner\'s word', 'status': wipe(host, opener, a.word), 'reply': {}})

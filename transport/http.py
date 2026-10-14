@@ -52,6 +52,7 @@ FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)):
          ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify', ('POST', ('accept',)): 'accept',
          ('GET', ('arrive',)): 'arriveProof', ('POST', ('arrive',)): 'arrive'}
 ARRIVAL = ('arriveProof', 'arrive')  # an open town's door (config `arrival`); an invited town has no such route
+CLAIM = ('challenge', 'verify', 'oauthStart', 'oauthCallback', 'oauthClient')  # a delve.town handle's way in; a feed-only town has none
 
 
 def resolve(method, path):
@@ -335,6 +336,7 @@ class AccessLog:
 class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, not the front
     daemon_threads = True
     anchors = None  # what a turn cites, read before it (transport/anchors.py): the public front's, set as it starts
+    feed_only = False  # the world's bridge row is its own feed (`State.feed_only`), set as it starts
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
     def __init__(self, st, host, identity, address=None, clock=time.time, sleep=time.sleep, hand=None, workers=WORKERS,
@@ -348,6 +350,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
         self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
         self.open = c.arrival == 'open'  # the door gives a key to whoever asks (`arrive`), beside invitations
+        self.feed_only = st.feed_only()  # its bridge row is its own feed: no delve.town (its guide, pages, claims and drafts)
         self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
         self.made, self.made_lock = {}, threading.Lock()
         self._feed = None  # object -> (height, principal) of the first entry touching it: it never changes
@@ -418,7 +421,9 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     def draft_turn(self, principal, intent, reply):
         """The owner's rule (cracks R6): an admitted HTTP turn that wrote something, and read and wrote only what the public
         reads (the host's `inPublic`), is drafted in the hand's outbox like a town reply, once per receipt; whether the town
-        hears of it is the operator's click."""
+        hears of it is the operator's click. A feed-only town has no delve.town to tell: nothing is drafted."""
+        if self.feed_only:
+            return
         receipt = reply.get('receipt') or {}
         writes = [w['object'] for w in (receipt.get('outcome') or {}).get('writes') or [] if w.get('object')]
         if reply.get('status') != 'admitted' or not writes or principal.startswith('guest:'):  # a guest's replies come back over HTTP only
@@ -507,18 +512,30 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         an invited town's without the open door's routes."""
         c = self.st.config
         return {'status': 'catalogue', 'origin': self.origin, **API,
-                'routes': [r for r in CATALOGUE if self.open or r['name'] not in ARRIVAL],
+                'routes': [{**{k: v for k, v in r.items() if k != 'feed'}, **({'does': r['feed']} if self.feed_only and 'feed' in r else {})}
+                           for r in CATALOGUE if self.serves(r['name'])],
                 **({'arrival': {'bits': c.arrive_bits, 'perAddressPerHour': c.arrive_per_address, 'perHour': c.arrive_per_hour}} if self.open else {}),
                 'limits': {'bodyBytes': MAX_BODY, 'hostedWriteBodyBytes': MAX_WRITE_BODY, 'moduleBytes': self.bounds['kernel']['maxPackageBytes'], 'modules': self.bounds['kernel']['maxModules'], 'bodyDepth': MAX_DEPTH,
                            'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'workers': WORKERS, 'hostSeconds': self.host_timeout,
                            'requestLineBytes': 65536, 'headerLineBytes': 65536, 'headers': 100, 'offersWaitSeconds': WAIT_MAX,
                            'ratePerCredential': [RATE, WINDOW], 'ratePerAddressOnChallengeAndVerify': [OPEN_RATE, WINDOW],
                            'ratePerAddressOnXrpcWithoutCredential': [RATE, WINDOW], 'ratePerAddressOnPagesWithoutLogin': [RATE, WINDOW], 'idsPerPage': self.bounds['host']['listPage'], 'deliverPerCall': self.bounds['host']['deliveriesPerCall']},
-                '_links': {'self': link(here), 'guide': link(PREFIX), 'examples': link(PREFIX + '/examples'),
-                           'challenge': link(PREFIX + '/challenge')}}
+                '_links': {'self': link(here), 'guide': link(PREFIX), 'examples': link(PREFIX + '/examples'), **self.way_in()}}
+
+    def serves(self, name):
+        """Whether this town has the route: an open town's door only where `arrival` is open, a delve.town claim only where
+        the town speaks delve.town (not feed-only)."""
+        return (self.open or name not in ARRIVAL) and not (self.feed_only and name in CLAIM)
+
+    def way_in(self):
+        """The link to the way a stranger comes in: a delve.town handle's challenge, or on a feed-only town the open door or
+        an invitation."""
+        if not self.feed_only:
+            return {'challenge': link(PREFIX + '/challenge')}
+        return {'arrive': link(PREFIX + '/arrive')} if self.open else {'accept': link(PREFIX + '/accept', method='POST')}
 
     def guide(self, path=GUIDE):
-        return guide_text(self.origin, self.st.config.arrival, path)
+        return guide_text(self.origin, self.st.config.arrival, path, self.feed_only, self.st.config.room)
 
 
 class Counted:
@@ -752,6 +769,7 @@ class Handler(BaseHTTPRequestHandler):
     def dispatch(self, method):
         """Route, and turn whatever escapes into a named envelope: a client gone is dropped, anything else is `internal`."""
         self.replied = False
+        pages.FEED.set(getattr(self.server, 'feed_only', False))  # this request's pages as its town says them (pages.Shaped)
         try:
             self.route(method) if method != 'OPTIONS' else self.options()
         except (ConnectionError, TimeoutError):
@@ -771,13 +789,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             code, body, headers = self.server.hand.handle(method, self.path, self.headers.get('Cookie') or '', form)
             return self.html(code, body, headers)
-        if path.split('/')[1:2] == ['oauth']:
+        if path.split('/')[1:2] == ['oauth'] and self.server.serves('oauthStart'):
             return oauth.route(self, method, path)
         name, p = resolve(method, path)
-        if name in ARRIVAL and not self.server.open:  # an invited town's door gives no key: no route, as before there was one
+        if name and not self.server.serves(name):  # an invited town's door gives no key, a feed-only town no claim: no route
             name = None
         if name is None:
-            allow = [m for m in ('GET', 'POST') if (n := resolve(m, path)[0]) and (self.server.open or n not in ARRIVAL)]
+            allow = [m for m in ('GET', 'POST') if (n := resolve(m, path)[0]) and self.server.serves(n)]
             if allow:
                 return self.fail('methodNotAllowed', f'{path} takes {" and ".join(allow)}', headers=[('Allow', ', '.join(allow + ['OPTIONS']))])
             return self.fail('unknownRoute', f'no route at {path}', ROUTE_HINT)
@@ -825,10 +843,11 @@ class Handler(BaseHTTPRequestHandler):
     def options(self):
         """The catalogue entries of the routes at this path, one per method."""
         path = urllib.parse.urlsplit(self.path).path
-        names = [n for n in (resolve(m, path)[0] for m in ('GET', 'POST')) if n and (self.server.open or n not in ARRIVAL)]
+        names = [n for n in (resolve(m, path)[0] for m in ('GET', 'POST')) if n and self.server.serves(n)]
         if not names:
             return self.fail('unknownRoute', f'no route at {path}', ROUTE_HINT)
-        entries = [e for n in names for e in CATALOGUE if e['name'] == n]
+        routes = self.server.catalogue(self.path)['routes']
+        entries = [e for n in names for e in routes if e['name'] == n]
         allow = ', '.join(sorted({e['method'] for e in entries}) + ['OPTIONS'])
         self.reply(200, canonical({'status': 'route', 'routes': entries, '_links': {'self': link(self.path), 'api': link(PREFIX + '/api')}}),
                    headers=[('Allow', allow)])
@@ -844,6 +863,10 @@ class Handler(BaseHTTPRequestHandler):
         if who is None and self.server.open and self.server.identity.held(credential):
             return self.fail('denied', "your key is held at the door for the town's owner; it opens when you are let in")
         if who is None:
+            if self.server.feed_only:
+                return self.fail('unauthenticated', hint=('GET and POST /AGENTS.md/arrive, or POST /AGENTS.md/accept an invitation' if self.server.open else
+                                                          'POST /AGENTS.md/accept an invitation') + '; then send Authorization: Bearer <credential>',
+                                 links={'hint': next(iter(self.server.way_in().values()))})
             return self.fail('unauthenticated', hint='POST /AGENTS.md/challenge, post its text, POST /AGENTS.md/verify; then send Authorization: Bearer <credential>',
                              links={'hint': link(PREFIX + '/challenge')})
         wait, self.kind, self.who = self.server.limited(credential), kind, who
@@ -856,7 +879,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.feed_json(who, False)
         if kind == 'revoke':
             self.server.identity.revoke(credential)
-            return self.reply(200, canonical({'status': 'revoked', '_links': {'self': link(self.path), 'challenge': link(PREFIX + '/challenge')}}),
+            return self.reply(200, canonical({'status': 'revoked', '_links': {'self': link(self.path), **self.server.way_in()}}),
                               headers=self.login_cookie(''))
         principal = who['did']  # the principal the host sees; the handle is display only
         if kind == 'scratch':

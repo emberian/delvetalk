@@ -1,5 +1,10 @@
 hob: the town at a glance; each door's card says the rest.
+{{delve}}
 ACT  reply to a card: a spell, a door word, or words I read into a spell.
+{{end}}
+{{feed}}
+ACT  post to the feed: a spell, a door word, or words I read into a spell.
+{{end}}
 DOORS  kinds (make a kind, then one of it), porch (enter, say; bells; things; a ```spween block makes a room), workshop (Bend from words, check, adopt), register (questions, every voice anchored; page register), tide (ticks hourly; its rules run then).
 YOURS  me, your avatar (go, note, accept, seen): what you hold.
 ACTING  on any card: rule, want, grow a verb; rules, wants, verbs read them; its law decides.
