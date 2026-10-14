@@ -48,7 +48,7 @@ COMMANDS = {'serve': (__name__, 'serve'), 'bridge': ('transport.bridge', 'comman
             'post': ('transport.post', 'command'), 'hand': ('transport.hand', 'command'), 'http': ('transport.http', 'command'),
             'open': (__name__, 'open_world'), 'watch': ('transport.watch', 'watch'), 'repokey': (__name__, 'repokey'),
             'status': ('transport.watch', 'status'), 'tables': ('transport.tables', 'command'), 'mirror': ('transport.mirror', 'command'),
-            'lexicons': ('transport.lexicons', 'command')}
+            'lexicons': ('transport.lexicons', 'command'), 'automod': ('transport.automod', 'command')}
 # Commands over two state directories, not one world of one: they take their own arguments.
 WHOLE = {'carry': ('transport.carry', 'command')}
 
@@ -66,6 +66,7 @@ def parser():
     p.add_argument('--since', metavar='ISO', help='observe posts created at or after this time (a deliberate replay)')
     p.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default the wall clock)')
     add('interpret', 'ask the model for each pending interpretation and submit its answer').add_argument('--once', action='store_true')
+    add('automod', "screen residents' public texts after they are admitted and give the host the classifier's verdicts").add_argument('--once', action='store_true')
     p = add('post', "post once per intent: to delve.town (a dry run without the flag), or to the world's Zulip channel")
     p.add_argument('--draft', metavar='FILE', help='an outbox draft: its text, reply-to, object and slot')
     p.add_argument('--text-file', help='the text; an agentwiki post is one whose first line is `wiki: <page>` or `edit: <page> › <section>`')

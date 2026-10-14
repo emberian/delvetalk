@@ -1317,11 +1317,28 @@ class Handler(BaseHTTPRequestHandler):
     def feed_threads(self, q, thread=None):
         from transport.delve import Failure
         try:
-            return self.server.feed.threads(q.get('before'), q.get('limit', 30), thread=thread or q.get('thread'),
-                                            replies_before=q.get('replies_before'))
+            threads, more = self.server.feed.threads(q.get('before'), q.get('limit', 30), thread=thread or q.get('thread'),
+                                                     replies_before=q.get('replies_before'))
         except Failure as f:
             self.fail('badRequest', f'{f.code}: {f.detail}')
             return None
+        shown = iter(self.feed_shown([p for h, rs, _ in threads for p in (h, *rs)]))
+        return [(next(shown), [next(shown) for _ in rs], earlier) for h, rs, earlier in threads], more
+
+    def feed_shown(self, rows):
+        """Feed posts as a public page shows them: a post the automatic moderation hid, or a hidden text inside one, is
+        the host's placeholder (`world-redact`, docs/ROOT.md section 2.4); the feed's store keeps the words."""
+        rows = [dict(r) for r in rows if r is not None]
+        if not rows:
+            return rows
+        r = self.server.host.send({'op': 'world-redact', 'principal': PUBLIC,
+                                   'items': [{'source': 'feed:' + x['uri'], 'text': x['text']} for x in rows]})
+        texts = r.get('texts') if r.get('status') == 'redacted' and len(r.get('texts') or []) == len(rows) else None
+        return [dict(x, text=t) for x, t in zip(rows, texts)] if texts is not None else rows
+
+    def feed_get(self, uri):
+        row = self.server.feed.get(uri) if isinstance(uri, str) else None
+        return self.feed_shown([row])[0] if row is not None else None
 
     def feed_json(self, who, posting):
         """Read a bounded feed page or render the common submission driver's result as JSON."""
@@ -1357,16 +1374,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(303, '', 'text/plain', [('Location', '/enter')])
                 if who is None:
                     return self.fail(err[0], err[1])
-                return self.html(429 if err[0] == 'rateLimited' else 400, pages.feed(self.server.feed.threads()[0], who['handle'], note=err[1],
+                return self.html(429 if err[0] == 'rateLimited' else 400, pages.feed(self.feed_threads({})[0], who['handle'], note=err[1],
                                   said=data.get('text') if isinstance(data.get('text'), str) else '',
-                                  reply=self.server.feed.get(data.get('reply_to')) if isinstance(data.get('reply_to'), str) else None,
+                                  reply=self.feed_get(data.get('reply_to')),
                                   submission=data.get('idempotencyKey') if isinstance(data.get('idempotencyKey'), str) else None))
             return self.reply(303, '', 'text/plain', [('Location', '/feed?posted=' + urllib.parse.quote(row['uri'], safe='') + '#' + pages.anchor(row['uri']))])
         who = self.principal(self.credential())
         if self.server.limited(self.credential() if who else 'page:' + self.client_ip()):
             return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds')
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
-        posted = self.server.feed.get(q.get('answer') or q.get('posted') or '')
+        posted = self.feed_get(q.get('answer') or q.get('posted') or '')
         selected = self.feed_threads(q, thread=(posted['root'] or posted['uri']) if posted else None)
         if selected is None:
             return
@@ -1376,7 +1393,7 @@ class Handler(BaseHTTPRequestHandler):
             tries = int(q['wait']) if digits(q.get('wait', '')) and len(q['wait']) <= 2 else 0
             refresh = answer + '&wait=' + str(tries + 1) if posted is not None and not self.server.feed.answered(posted['uri']) and tries < 8 else None
             return self.html(200, pages.feed(threads, who and who['handle'], posted=posted, refresh=refresh, composer=False))
-        self.html(200, pages.feed(threads, who and who['handle'], more=more, reply=self.server.feed.get(q.get('reply') or ''),
+        self.html(200, pages.feed(threads, who and who['handle'], more=more, reply=self.feed_get(q.get('reply') or ''),
                                  posted=posted, waiting=answer, limit=q.get('limit', 30)))
 
     def me(self, credential, who):

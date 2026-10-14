@@ -865,10 +865,27 @@ def strokesIn (w : World) (reader : String) (j : Json) : Except String (Except S
     let day := (← optNat j "day").getD (w.clock / Limits.clockDay)
     return .ok (dayStrokes w reader day ((j.getObjValAs? Bool "morning").toOption.getD false))
 
-/-- The strokes a request names, in the tongue it is asked in (`tongueOf`). -/
+/-- The strokes with every resident's text passed through `f`: what the automatic moderation hid is not given to a
+    painter (docs/ROOT.md §2.4), so no paint or telling quotes it, and the paint's key moves when a text is hidden. -/
+def Strokes.redacted (s : Strokes) (f : String → String) : Strokes :=
+  { s with voice := f s.voice, about := f s.about, head := f s.head, fields := s.fields.map fun (k, v) => (k, f v),
+           maker := f s.maker, coiner := f s.coiner, keeper := f s.keeper, owner := f s.owner,
+           lines := s.lines.map fun l => { l with handle := f l.handle, text := f l.text },
+           marks := s.marks.map fun m => { m with handle := f m.handle },
+           verbs := s.verbs.map fun v => { v with grower := f v.grower, reading := f v.reading },
+           laws := s.laws.map fun (n, r) => (n, f r),
+           rules := s.rules.map fun r => { r with owner := f r.owner, reading := f r.reading },
+           wants := s.wants.map fun x => { x with reading := f x.reading, owner := f x.owner },
+           present := s.present.map f, today := s.today.map f, hands := s.hands.map f,
+           telling := s.telling.map fun t => { t with exact := t.exact.map f } }
+
+/-- The strokes a request names, in the tongue it is asked in (`tongueOf`), with what moderation hid redacted. -/
 def strokesFor (w : World) (reader : String) (j : Json) : Except String (Except String Strokes) := do
   let tongue := tongueOf w reader j
-  return (← strokesIn w reader j).map ({ · with tongue })
+  let texts := Screen.maskedTexts w
+  return (← strokesIn w reader j).map fun s =>
+    let s := { s with tongue }
+    if texts.isEmpty then s else s.redacted (Screen.redactWith texts)
 
 /-- `world-strokes {principal, object | day, version?, morning?, tongue?, speaker?, words?}`: `{status: "strokes", object, version,
     strokes, text}`, or `unknown` / `denied`. Nothing is written. -/

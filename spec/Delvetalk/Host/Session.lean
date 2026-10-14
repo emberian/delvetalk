@@ -4,6 +4,7 @@ import Delvetalk.Host.TurnLoop
 import Delvetalk.Host.Snapshot
 import Delvetalk.Host.Root
 import Delvetalk.Host.Enchant
+import Delvetalk.Host.Moderation
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -544,6 +545,11 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-render" | "world-renders" | "world-render-submit" => match ← Enchant.op op s.renders s.world request with
         | .ok (renders, w, r) => return (some { s with renders, world := w }, .ok r)
         | .error e => return (session, .error e)
+      | "world-screen" => durable s reader (fun w => Moderation.screenOp w request)
+      | "world-screen-verdicts" => durable s reader (fun w => Moderation.verdictsOp w request)
+      | "world-screen-review" => durable s reader (fun w => Moderation.reviewOp w request)
+      | "world-screened" => return (session, Moderation.screenedOp s.world request)
+      | "world-redact" => return (session, Moderation.redactOp s.world request)
       | "world-card" => match cardOp s.world request with
         | .ok (w, r) => return (some { s with world := w }, .ok r)
         | .error e => return (session, .error e)
@@ -561,6 +567,14 @@ def persistCaches (w : World) : IO Unit := do
     `compileCache {dir, hits, known}` (null when off). -/
 def stepWorld (session : Session) (request : Json) (foreign : Foreign := {}) : IO (Session × Except String Json) := do
   let (session, r) ← stepWorldCore session request foreign
+  -- What the automatic moderation hid (docs/ROOT.md §2.4) leaves every reply but the opener's: a card, a view, a
+  -- history, a paint's request, an interpretation's quoted writing. The journal keeps the bytes.
+  let r := match session, r with
+    | some s, .ok j =>
+      let texts := Screen.maskedTexts s.world
+      if texts.isEmpty || openerActs s.world ((request.getObjValAs? String "principal").toOption.getD "") then .ok j
+      else .ok (Screen.redactJson texts j)
+    | _, r => r
   -- The other worlds were this request's to read; the session does not keep them.
   let session := session.map fun s => { s with world := { s.world with foreign := {} } }
   if let some s := session then persistCaches s.world

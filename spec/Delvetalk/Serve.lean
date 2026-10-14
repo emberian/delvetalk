@@ -72,7 +72,7 @@ def arrival : List String := ["Avatar"]
 /-- The ops only the root socket takes (docs/ROOT.md §1.4). The opener's ordinary turns are the public
     socket's too; there its privileges are not (`resident`, `Host.openerActs`). -/
 def rootOps : List String := ["world-root", "world-library", "world-settings", "world-fork", "world-snapshot", "library-load",
-  "world-dump"]
+  "world-dump", "world-screen", "world-screen-verdicts", "world-screen-review"]
 
 /-- The ops `serve` sends itself to carry a call or send across (`cross`); no socket takes them. -/
 def crossingOps : List String := ["world-relay", "world-cross"]
@@ -330,6 +330,9 @@ def readForeign (srv : Server) (world op object reader : String) : Option (Json 
     | "world-card" => (Host.cardOp w request).map fun (p : Host.World × Json) => p.2
     | "world-inspect" => Host.inspectOp w request
     | _ => .error "no such read").toOption
+  -- What that world's moderation hid is hidden here too (`Session.stepWorld`).
+  let texts := Host.Screen.maskedTexts w
+  let reply := if texts.isEmpty || Host.openerActs w reader then reply else Host.Screen.redactJson texts reply
   let target := w.objects[object]?
   let cite := Json.mkObj ([("world", toJson world), ("object", toJson object), ("height", toJson w.height), ("head", toJson w.head)] ++
     ((target.map fun t => [("version", toJson t.version), ("stateCid", toJson t.stateCid)]).getD []))

@@ -114,7 +114,9 @@ FEDERATION §2, §3).
 **Root.** `world-root {principal, reason, act}` on the root socket: the owner reads, edits, zaps or ignores any
 representation, every act a journaled entry marked `root`, applied verbatim on replay with the value it replaced;
 moderation (quiet a principal until a clock, hide, shadow) is the opener's receipted powers under the law, and a
-quieted principal's turns are refused `quiet` until the clock passes (`docs/ROOT.md`; HOST-HANDOFF 5.126).
+quieted principal's turns are refused `quiet` until the clock passes (`docs/ROOT.md`; HOST-HANDOFF 5.126). The automatic
+moderation screens residents' public texts after admission, a classifier's verdict journaled as the opener's `screen`
+act; a hidden text leaves every reply but the opener's (ROOT §2.4).
 `delvetalk-obend root-edit` and `migrate` are the offline tools (`RootEdit.lean`).
 
 **Store.** Objects by id: `{maker, pin, law, version, behaviour, state, activities}`.
@@ -180,8 +182,8 @@ replays only the tail. A journal at `J` is two files: the chain `J`, one link a 
 previous}`), and the block store `J.blocks`, each entry's canonical record at `at`; an append writes and syncs the
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
-Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 14: component bodies
-replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 16: 14 component bodies
+replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226; 15 bounded want-transition drains; 16 the moderation's `screen` act and `screened` index, ROOT §2.4), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -1079,6 +1081,9 @@ each handoff keeps the detail, this table the order across lanes:
 | 5.223's remaining deployment text: the hand's morning title, clapper's next ask after grow, station register's sign evidence | transport, root | title says turning daily; after grow the clapper asks hang; an unrelated register gesture never answers its sign want |
 | segmented journal (world.md 11; §2 archival contract) | host/block-store | two seals under lowered byte/entry bounds, crash-safe restart, exact oldest receipt bytes and evicted pre-carry grant lookup through the archive |
 | inactive-object archive, K = 30 clock days (world.md 11; §2 archival contract) | host/objects | lower live cap, archive/make/reopen/fault with unchanged name, pin, version and state CID; grants/suspended references prevent archival; denied reads stay private |
+| the automatic moderation (ROOT §2.4) deployed: edition 16 carried on gsb and obend, the Z.ai key placed (DEPLOY "Automatic moderation") | root | both `serve-status` answer `replay: 16`, `delvetalk-automod` healthy, the overview reads "the classifier answers" |
+| the moderation's classifier on a paid GLM: the Z.ai account has no balance, so only the free flash models answer and they 429 (code 1305) under load, 3 to 23 s a call measured | root | a paid model (glm-4-32b-0414-128k, $0.10/M) set as `automod_model` with the free one its fallback, or the free tier's latency accepted |
+| a hidden text's earlier copies outside the host: posts already sent to delve.town or Zulip quoting it are not unsent (`hand unpost` is by hand) | transport | the automod page offers `unpost` for the town's posts whose text held a hidden text |
 | legacy allocation and receipt origins across older carries (5.226) | host | recover ownerless makers and original grant creation hashes from retained ancestry, replacing the documented genesis/owner fallback |
 
 After the fourth playtest, in the order the town will feel them: fronts and `relay` as seeded or cut back to the
