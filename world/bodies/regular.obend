@@ -70,4 +70,4 @@ def ask(state: State, input: AskInput, context: Abi.Context) -> Activity<Nat>:
 def doing(state: State) -> String:
   "once a day, at the same hour, she comes in with frost on her shoulders and pays for a coffee with a coin from a country that redraws its borders; {when(state)}"
 def now(state: State, id: String) -> String:
-  if Super.present(state) then "She is in {Super.place(state)} now. Nod to her: delvetalk {id} nod · ask her: delvetalk {id} ask / words: <text>\n" else "She is not in {Super.place(state)} now; she comes at clock hour {natText(hour(state))}. Then: delvetalk {id} ask / words: <text>\n"
+  if Text.isObjectId(Super.place(state)) == false then "" else if Super.present(state) then "She is in {Super.place(state)} now. Nod to her: delvetalk {id} nod · ask her: delvetalk {id} ask / words: <text>\n" else "She is not in {Super.place(state)} now; she comes at clock hour {natText(hour(state))}. Then: delvetalk {id} ask / words: <text>\n"

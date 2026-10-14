@@ -119,7 +119,8 @@ Not seeded: a spell any resident types, with the kinds that exist. Counts are ar
 
 - **A body is a resident's code.** It runs under its maker, judged by each instance's law, which it cannot widen; one
   body's budget fault repeats across its instances. A kind without a body carries only its text's laws, rules and wants.
-- **Fixed fields.** A kind's form values are fixed fields a law holds `unchanged`; a law reads lines, marks and counts,
+- **Form fields.** A kind's form values are held in the record's `fields`; its `set` checks the owner
+  and changes the fields its body exposes through lenses. A place-valued field uses `object A..B`, a bounded object id; a law reads lines, marks and counts,
   and a body reads the fields (the bell's article and seed are its body's `headLine`).
 - **Verb sprawl.** Sixteen grown verbs a thing, at most; `ungrow` (or the host's `retire`) takes one off. A grown verb
   with no rule naming it is a line and a tend, and its card says so.

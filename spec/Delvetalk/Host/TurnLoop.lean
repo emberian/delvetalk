@@ -795,11 +795,12 @@ def methodForms (id : String) (methods : Json) (declared : List (String × List 
       (given.lookup n <|> formKind member).map fun k => Data.record [("name", .label n), ("kind", k)]
     return .record [("card", .label id), ("action", .label name), ("fields", listData kinds)]
 
-/-- A declared form field's kind as the host reads it: `text`, `natural` and `choice` as given, and
+/-- A declared form field's kind as the host reads it: `text`, `object`, `natural` and `choice` as given, and
     `source` (Bend source) as text of 1 to `Limits.formSourceMax` characters. -/
 def declaredKind : Data → Option Data
   | .variant "source" _ => some (.variant "text" (.record [("min", .natural 1), ("max", .natural Limits.formSourceMax)]))
   | k@(.variant "text" _) => some k
+  | k@(.variant "object" _) => some k
   | k@(.variant "natural" _) => some k
   | k@(.variant "choice" _) => some k
   | _ => none
@@ -1134,6 +1135,8 @@ the host with the card's usage and journals nothing. -/
 def spellHint : Spell.Kind → String
   | .text 0 b => s!"<optional text, up to {b} characters>"
   | .text a b => s!"<text, {a} to {b} characters>"
+  | .object 0 b => s!"<optional object id, up to {b} characters>"
+  | .object a b => s!"<object id, {a} to {b} characters>"
   | .natural a b => s!"<a number from {a} to {b}>"
   | .choice options => s!"<{", ".intercalate options}>"
 

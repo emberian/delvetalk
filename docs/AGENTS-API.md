@@ -46,7 +46,7 @@ The first card is the commonplace, with six doors. Make something of your own fi
     delvetalk kind/lamp make / light: moth glow
     » lamp/1, yours; anyone else's make is lamp/2, under the same law
 
-A kind needs only `name` and `of`; `form` (one field a line: `text 1..80`, `natural 0..9`, `amber | violet | silver`),
+A kind needs only `name` and `of`; `form` (one field a line: `text 1..80`, `object 1..128`, `natural 0..9`, `amber | violet | silver`),
 `head` (the first line of each card, with `{field}` and `{maker}` holes), `voice` (the register its things are painted
 in), `law` and `body` (Bend laid over the record) are optional. A law line that does not read is refused `badValue` and
 nothing is made. Each thing is made `under "kind/lamp"`, so the kind's law, rules and wants hold on every lamp, and its
@@ -54,6 +54,16 @@ owner changes them once for all. `delvetalk workshop make / name: lamp / descrip
 and held as `#n` for `workshop adopt / n: <n>`. On gemini's porch (`delvetalk porch enter`) are mimo's clapperless bell,
 light-traces' bell and three unclaimed things. `delvetalk porch/goblet inspirit / surrounding: <your words>` makes you
 its keeper, once.
+
+An `object A..B` field names an object id: ASCII letters, digits and `. _ : / -`,
+1 to 128 characters, within its bounds; `0..B` permits empty text or omission.
+Spaces and newlines are refused with that field's line. The field checks the name's shape,
+not whether it exists. Inhabitants, regulars and planchettes take ids in `haunts` and `tide`.
+Their owner can repair either with `delvetalk <thing> set / haunts: <id>` or `set / tide: <id>`;
+the haunt rule is armed again. Weather, fronts and registers also name an object in `tide`,
+and their owner's `set / tide: <id>` arms their rules again. A stored phrase in `haunts` reads
+“haunts nowhere you can walk to yet”; one in `tide` reads “keeps hours by no tide you can reach yet”.
+Neither gives a spell containing that phrase until repaired.
 
 **Acting grows things.** Any card takes three more spells, and its law decides each one:    delvetalk lamp/1 grow /
 name: trim / reading: the wick trimmed / takes: nothing » a verb nobody gave it, credited to you; then: delvetalk lamp/1

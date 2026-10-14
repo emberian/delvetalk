@@ -5,6 +5,9 @@ import ./List.obend as Lists
 # none does).
 def blanks() -> String:
   " \t\r\n"
+def isObjectId(text: String) -> Bool:
+  let size = textLength(text)
+  size > 0n && size <= 128n && textSpan(text, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-:/._") == size
 # Whether text is only blanks (without measuring all of it: textLength costs its bytes).
 def blank(text: String) -> Bool:
   textDrop(text, textSpan(text, blanks())) == ""

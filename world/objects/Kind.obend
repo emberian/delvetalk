@@ -171,7 +171,9 @@ def kindId(name: String) -> String:
 # A `spween` field that is not a scene is refused by its reason, never made into a room without one;
 # a kind's law that does not read is refused before the kind is made.
 def making(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
-  if valueOf(fields, "id") != "" && context.principal != state.owner then refused(context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} places what this kind makes at an id; make it, and it is named"}) else if state.of == "kind" then lawChecked(state, fields, under, context, Text.trim(valueOf(fields, "law"))) else scened(state, fields, under, context, valueOf(fields, "spween"))
+  match Forms.fault(state.form, fields):
+    case some(f): refused(context, {clause: f.value.clause, reading: f.value.reading})
+    case none(_): if valueOf(fields, "id") != "" && context.principal != state.owner then refused(context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} places what this kind makes at an id; make it, and it is named"}) else if state.of == "kind" then lawChecked(state, fields, under, context, Text.trim(valueOf(fields, "law"))) else scened(state, fields, under, context, valueOf(fields, "spween"))
 # The text a kind will hold for what it makes, read as the host will read it: one clause a line,
 # a law, a rule or a want, each checked as a package's clauses are (`world.check`), so a text that
 # would refuse every make never stands. What it makes cites it (`under`), so its rules fire and its
@@ -285,9 +287,7 @@ def refused(context: Abi.Context, refusal: Card.Refusal) -> Activity<Done>:
 # value outside its bounds or not one of its options is refused by the host's clause, nothing
 # made; fields the form does not take (a room's `spween`) are the seed's to read.
 def makeUnder(state: State, input: {under: String, fields: Lists.List<Rows.Field>}, context: Abi.Context) -> Activity<Done>:
-  match Forms.fault(state.form, input.fields):
-    case some(f): refused(context, {clause: f.value.clause, reading: f.value.reading})
-    case none(_): making(state, input.fields, input.under, context)
+  making(state, input.fields, input.under, context)
 # Grafts the kind's make: the owner's, for a kind created whole rather than made (genesis shapes
 # `kinds`); `kinds` lays each kind's make as it makes it.
 def shape(state: State, input: {object: String}, context: Abi.Context) -> Activity<Done>:

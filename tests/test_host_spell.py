@@ -71,6 +71,22 @@ class Recorded(unittest.TestCase):
 
 
 class Clauses(unittest.TestCase):
+    def test_object_fields_fit_id_shapes_and_optional_empty(self):
+        for minimum in (0, 1):
+            form = {"card": "walker", "action": "walk", "fields": [
+                {"name": "target", "kind": {"object": {"min": minimum, "max": 128}}}]}
+            for target in ("A0-:/._", "x" * 128):
+                with self.subTest(minimum=minimum, target=target):
+                    fit = host({"text": "delvetalk walker walk / target: " + target, "form": form})["fit"]
+                    self.assertEqual(show_fit(fit), "proposal walker walk target=%s;" % target)
+            for target in ("a phrase", "x" * 129, "x?", "é"):
+                with self.subTest(minimum=minimum, target=target):
+                    fit = host({"text": "delvetalk walker walk / target: " + target, "form": form})["fit"]
+                    self.assertEqual(fit["refused"]["clause"], "badValue", fit)
+                    self.assertIn("target takes an object id", fit["refused"]["reason"])
+            fit = host({"text": "delvetalk walker walk", "form": form})["fit"]
+            self.assertEqual(show_fit(fit), "proposal walker walk target=;" if minimum == 0 else "unclear target|")
+
     def test_each_refusal_names_its_clause_unclear_its_needs_and_prose_whether_it_has_fields(self):
         form = fixtures("fit")[0]["form"]
         for reply, clause in (("delvetalk garden-2 plant", "otherCard"), ("delvetalk garden-1 prune", "otherCard"),

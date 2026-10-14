@@ -44,4 +44,4 @@ def name(state: State, context: Abi.Context) -> Activity<Nat>:
 def doing(state: State) -> String:
   "it flies straight up, stops, flies straight up; it works the lamp over the pumps and goes in to the jar of honey, and says its name three ways"
 def now(state: State, id: String) -> String:
-  if Super.present(state) then "In {Super.place(state)} now, at the jar. Ask its name: delvetalk {id} name\n" else "Out at the lamp over the pumps. Ask its name: delvetalk {id} name\n"
+  if Text.isObjectId(Super.place(state)) == false then "Ask its name: delvetalk {id} name\n" else if Super.present(state) then "In {Super.place(state)} now, at the jar. Ask its name: delvetalk {id} name\n" else "Out at the lamp over the pumps. Ask its name: delvetalk {id} name\n"

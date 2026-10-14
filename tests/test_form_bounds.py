@@ -95,5 +95,56 @@ class ExpectedForm(Chain):
         self.assertEqual((fields["seed"]["min"], fields["seed"]["max"]), (1, 80), fields)
 
 
+class ObjectFields(Chain):
+    def setUp(self):
+        super().setUp()
+        source = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  got: String
+def initial() -> State:
+  {got: ""}
+form walk:
+  target: object 1..128
+form optional:
+  target: object 0..128
+def walk(state: State, input: WalkInput, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {got: set input.target}
+  0n
+def optional(state: State, input: OptionalInput, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {got: set input.target}
+  0n
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Nat>:
+  0n
+"""
+        self.make("walker", closure(*("Abi", "List", "Form", "Plan", "World")) +
+                  [{"name": "Walker", "source": source}], record())
+
+    def test_object_form_checks_spells_direct_turns_bounds_and_optional_empty(self):
+        for target in ("A0-:/._", "x" * 128):
+            with self.subTest(target=target):
+                for method, argument in (("walk", record(target=label(target))),
+                                         ("receive", record(text=label("delvetalk walker walk / target: " + target), post=label("")))):
+                    reply = self.turn("walker", method, argument)
+                    self.assertEqual(reply["status"], "admitted", reply)
+                    self.assertIn({"name": "got", "value": label(target)}, self.state("walker")["fields"])
+        before = self.state("walker")
+        for target in ("", "x" * 129, "a phrase", "x\ny", "x\ty", "x?", "é"):
+            with self.subTest(target=target):
+                reply = self.turn("walker", "walk", record(target=label(target)))
+                self.assertEqual(reply["status"], "refused", reply)
+                self.assertIn("target takes an object id", reply["receipt"]["outcome"]["reason"])
+                self.assertEqual(self.state("walker"), before)
+        reply = self.turn("walker", "receive", record(text=label("delvetalk walker optional"), post=label("")))
+        self.assertEqual(reply["status"], "admitted", reply)
+        self.assertIn({"name": "got", "value": label("")}, self.state("walker")["fields"])
+        inspected = self.host.send(op="world-inspect", principal="ember", object="walker", source=False)
+        self.assertIn('"object"', str(inspected["forms"]).replace("'", '"'))
+
+
 if __name__ == "__main__":
     unittest.main()

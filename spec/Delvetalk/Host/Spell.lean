@@ -29,6 +29,7 @@ inductive Parsed where
 
 inductive Kind where
   | text (min max : Nat)
+  | object (min max : Nat)
   | natural (min max : Nat)
   | choice (options : List String)
   deriving Repr, BEq
@@ -651,6 +652,10 @@ def judge (field : Field) (value : String) : Option (Clause × String) :=
   | .text min max =>
       if value.length < min || value.length > max then wrong s!"{field.name} takes {min} to {max} characters."
       else none
+  | .object min max =>
+      if value.length < min || value.length > max || !(value.isEmpty && min == 0 || isCardName value.toList) then
+        wrong s!"{field.name} takes an object id of {min} to {max} characters."
+      else none
   | .natural min max =>
       match number value.toList with
       | none => wrong s!"{field.name} takes a natural number in plain digits."
@@ -679,18 +684,18 @@ def valueOf (bindings : List Binding) (name : String) : String :=
 
 def typed (kind : Kind) (value : String) : Value :=
   match kind with
-  | .text .. => .text value
+  | .text .. | .object .. => .text value
   | .natural .. => .natural ((number value.toList).getD 0)
   | .choice .. => .choice value
 
 def isText : Kind → Bool
-  | .text .. => true
+  | .text .. | .object .. => true
   | _ => false
 
-/-- A text field whose bound starts at 0 may be left out of a spell: it reads as the empty text. -/
+/-- A text or object field whose bound starts at 0 may be left out: it reads as empty text. -/
 def Field.optional (f : Field) : Bool :=
   match f.kind with
-  | .text 0 _ => true
+  | .text 0 _ | .object 0 _ => true
   | _ => false
 
 def rebound (bindings : List Binding) (form : Form) : List Binding :=
@@ -800,6 +805,10 @@ def Form.ofData : Data → Option Form
                 let .natural a ← k.lookup "min" | none
                 let .natural b ← k.lookup "max" | none
                 pure (Kind.text a b)
+            | .variant "object" (.record k) => do
+                let .natural a ← k.lookup "min" | none
+                let .natural b ← k.lookup "max" | none
+                pure (Kind.object a b)
             | .variant "natural" (.record k) => do
                 let .natural a ← k.lookup "min" | none
                 let .natural b ← k.lookup "max" | none
@@ -824,12 +833,15 @@ def Form.ofJson (j : Json) : Except String Form := do
       match k.getObjVal? "text" with
       | .ok t => pure (Kind.text (← t.getObjValAs? Nat "min") (← t.getObjValAs? Nat "max"))
       | .error _ =>
-        match k.getObjVal? "natural" with
-        | .ok t => pure (Kind.natural (← t.getObjValAs? Nat "min") (← t.getObjValAs? Nat "max"))
+        match k.getObjVal? "object" with
+        | .ok t => pure (Kind.object (← t.getObjValAs? Nat "min") (← t.getObjValAs? Nat "max"))
         | .error _ =>
-          let c ← k.getObjVal? "choice"
-          let opts ← (← c.getObjVal? "options").getArr?
-          pure (Kind.choice (← opts.toList.mapM fun o => o.getStr?))
+          match k.getObjVal? "natural" with
+          | .ok t => pure (Kind.natural (← t.getObjValAs? Nat "min") (← t.getObjValAs? Nat "max"))
+          | .error _ =>
+            let c ← k.getObjVal? "choice"
+            let opts ← (← c.getObjVal? "options").getArr?
+            pure (Kind.choice (← opts.toList.mapM fun o => o.getStr?))
     pure (Field.mk name kind)
   return ⟨card, action, fields⟩
 

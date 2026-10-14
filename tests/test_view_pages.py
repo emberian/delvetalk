@@ -114,6 +114,21 @@ class Drawn(unittest.TestCase):
     def draw(self, view, forms=FORMS, nodes=NODES, obj='board/1'):
         return views.render(wire(view), obj, forms, nodes)
 
+    def test_object_fields_keep_the_host_id_shape_bounds_and_optional_empty(self):
+        required = {'tag': 'object', 'min': 1, 'max': 128}
+        optional = {'tag': 'object', 'min': 0, 'max': 128}
+        forms = {'walk': {'target': required}, 'optional': {'target': optional}}
+        for target in ('A0-:/._', 'x' * 128):
+            self.assertTrue(views.fits(required, target), target)
+            self.assertEqual(views.chosen('walk', forms, {'target': target}), ('walk', {'target': target}))
+        for target in ('', 'a phrase', 'x\ny', 'x\ry', 'x\ty', 'x?', 'é', 'x' * 129):
+            self.assertFalse(views.fits(required, target), target)
+            self.assertIsNone(views.chosen('walk', forms, {'target': target}), target)
+        self.assertTrue(views.fits(optional, ''))
+        self.assertEqual(views.chosen('optional', forms), ('optional', {}))
+        self.assertIsNone(views.chosen('walk', forms))
+        self.assertEqual(views.bound(required), 128)
+
     def test_the_same_view_draws_the_same_bytes(self):
         view = every('a word')
         self.assertEqual(self.draw(view), self.draw(view))

@@ -917,7 +917,7 @@ F.Kind.choice({options: F.Names.cons(...)})}, tail: ...})}`, each list ending in
 `Host.Limits.formSourceMax` characters (`Delvetalk.Bounds.maxPackageBytes` is the program bound it follows) and fills from a reply's fenced `obend` block. -/
 def formRe : Re := seqs [str "form", many1 space, group 1 ident,
   opt (seqs [many1 space, str "as", many1 space, group 2 ident]), many space, chr ':', .done]
-def rangeKindRe : Re := seqs [group 1 (alts [str "text", str "natural"]), many1 space,
+def rangeKindRe : Re := seqs [group 1 (alts [str "text", str "object", str "natural"]), many1 space,
   group 2 (many1 (.char asciiDigit)), opt (chr 'n'), many space, str "..", many space,
   group 3 (many1 (.char asciiDigit)), opt (chr 'n'), many space, .done]
 
@@ -946,12 +946,12 @@ def formKind (alias : String) (line : Line) (spec : List Char) : PS (Expr × For
     let high := natValue ((capture trimmed.toList caps 3).getD [])
     let value := Expr.call (lib "Kind" kind) [.record [("min", .nat low span), ("max", .nat high span)] span] span
     let (lowN, highN) := (low.toNat!, high.toNat!)
-    return (value, if kind == "text" then .text lowN highN else .natural lowN highN)
+    return (value, if kind == "text" then .text lowN highN else if kind == "object" then .object lowN highN else .natural lowN highN)
   let options := (trimmed.splitOn "|").map fun o => o.trimAscii.toString
   if options.length == 1 && (trimmed.splitOn ".").length ≤ 2 && (trimmed.splitOn ".").all (isIdent ·.toList) then
     return (.call (.var formChoiceMarker span) [.str alias span, .str trimmed span] span, .named trimmed)
   if options.length < 2 || options.any (fun o => !isIdent o.toList) then
-    fail line ("a form field is `name: text MIN..MAX`, `name: natural MIN..MAX`, `name: source`, `name: a | b | c` " ++
+    fail line ("a form field is `name: text MIN..MAX`, `name: object MIN..MAX`, `name: natural MIN..MAX`, `name: source`, `name: a | b | c` " ++
       "or `name: Sum` (a closed sum of empty cases)")
   return (choiceKind alias options span, .choice options)
 

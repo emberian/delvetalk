@@ -21,3 +21,4 @@ errand: a request with a pay, settled when done
   delvetalk kind/errand make / asks: rain twice / on: bell/1 / done: count(new.lines) >= 2 / pays: delvetalk door/1 knock
 front: a clock that fills while a condition holds, moves when full
   delvetalk kind/front make / name: drought / fills: new.ticks % 24 == 0 / segments: 3 / move: delvetalk door/1 knock / tide: tide
+haunts/tide: object ids

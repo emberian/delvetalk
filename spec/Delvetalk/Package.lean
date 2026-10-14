@@ -159,6 +159,7 @@ def formKindJson : Delvetalk.Compiler.ObjectiveBendSurface.FormKind → Json
     let range := fun (min max : Nat) => Delvetalk.Theory.ObjectiveBendDemandData.Data.record [("min", .natural min), ("max", .natural max)]
     let data : Delvetalk.Theory.ObjectiveBendDemandData.Data := match kind with
       | .text min max => .variant "text" (range min max)
+      | .object min max => .variant "object" (range min max)
       | .natural min max => .variant "natural" (range min max)
       | .source => .variant "source" (.record [])
       | .choice options => .variant "choice" (.record [("options", options.foldr

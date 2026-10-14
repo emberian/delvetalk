@@ -180,6 +180,7 @@ in scope (`colour: Bell.Colour`), offered as a choice of its labels: the generic
 it to `choice` once types are known. -/
 inductive FormKind where
   | text (min max : Nat)
+  | object (min max : Nat)
   | natural (min max : Nat)
   | source
   | choice (options : List String)

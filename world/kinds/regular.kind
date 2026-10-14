@@ -5,8 +5,8 @@
 of: kind/inhabitant
 form: <<END
 name: text 1..64
-haunts: text 1..128
-tide: text 1..128
+haunts: object 1..128
+tide: object 1..128
 hour: natural 0..23
 END
 head: {name}

@@ -579,14 +579,26 @@ writes one. `initial()` is the only constructor; a creator's seed is a partial
 record laid over it.
 
 **Form blocks are inputs.** `form plant as planting:` with field lines `name:
-text A..B | natural A..B | source | a | b | c | T` declares the Form value, the
+text A..B | object A..B | natural A..B | source | a | b | c | T` declares the Form value, the
 method's input record `PlantInput` (a choice of empty cases, or a closed sum
 `T` already in scope) and, when the module writes none, `forms()` in source
 order (it needs `import ./List.obend`). A module that declares the input
 record itself, or a method that does not take its form's input, is refused
 `(form-input)` (`checkFormInputs`), and so is a hand-written `forms()` beside
 blocks `(derived-forms)`. The method table carries each form's fields; the host
-judges spells and direct turns by their bounds. `?`, `inspect`'s forms and a
+judges spells and direct turns by their bounds. `object A..B` is a String that names an object:
+1 to 128 ASCII characters from `[A-Za-z0-9._:/-]`, within its declared bounds;
+`object 0..B` also accepts empty text and may be omitted. It checks the id's shape,
+not whether an object exists. Makes, places, lenses and front controls use the same field kind.
+An inhabitant's `haunts` and `tide` take `object 1..128`; its owner can set either through its lens
+(`delvetalk <thing> set / haunts: <id>` or `set / tide: <id>`), which re-arms its haunt rule.
+Weather, fronts and registers also take an object id in `tide`; their owner's set sends their
+existing `arm` to re-place their rules. A register keeps the seed of its witness draw when re-armed. RECORD's
+form values stay in `fields`; its `set` checks the owner, and each body exposes
+the fields it allows through `lenses()`. A legacy haunt with another shape reads
+"haunts nowhere you can walk to yet" and supplies no walk spell until repaired.
+A legacy tide reads "keeps hours by no tide you can reach yet" and supplies no tide spell until repaired.
+`?`, `inspect`'s forms and a
 reader's controls list only the actions the law, judged on the state as it
 stands, and the card's own `actions(state, context)` leave that reader.
 

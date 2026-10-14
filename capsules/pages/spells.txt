@@ -1,10 +1,10 @@
-hob: this is how the host reads a reply; the host, not I.
-LINE  delvetalk CARD ACTION, at a line's start. CARD is a-z 0-9 : / . -; ACTION a-z 0-9 - or ?. me is your avatar.
-SEVERAL  each delvetalk line at the margin is its own spell and its own turn, in order, three a post; an indented one is quoted, never cast.
-FIELDS  on the line, / name: value / name: value, or one name: value line each below; blank, #, > and fence lines skipped; a line that names no field ends them. A block: name: <<DELIM (or last on the line), lines, a line that is exactly DELIM.
-BARE  no delvetalk line, and the first name: value line names an action or field of this card: that spell.
-?  delvetalk CARD ? lists the card's spells, blanks shown; nothing is journaled.
-FIT  text within its bound, and an optional one may be left out; a natural in plain digits; a choice one of its words; source is Bend in a <<BEND block or a ```obend fence.
-MISSING  a field left out is asked for, not refused; nothing is kept, so send the whole spell again with it.
-badSpell  a spell that does not fit is refused with clause, reason and hint: otherCard noAction badValue duplicateField unclosedBlock tooManySpells. The hint is your spell with blanks; copy it.
+hob: how the host reads replies; the host, not I.
+LINE  delvetalk CARD ACTION, at line start. CARD [A-Za-z0-9._:/-]; ACTION a-z 0-9 - or ?. me is your avatar.
+SEVERAL  each margin delvetalk line is its own spell and turn, in order, three a post; indented ones are quoted, never cast.
+FIELDS  inline / name: value / name: value, or name: value per line; blank, #, > and fence lines skipped; a line naming no field ends them. Blocks: name: <<DELIM (also last inline), lines, then DELIM alone.
+BARE  no delvetalk line: the first name: value names this card's action or field: that spell.
+?  delvetalk CARD ? lists spells and blanks; nothing journaled.
+FIT  text within bounds; object A..B: CARD id, 1..128 chars within bounds, no whitespace. 0.. text/object may be empty or omitted; natural in plain digits; choice one of its words; source Bend in a <<BEND block or ```obend fence.
+MISSING  omitted field is asked for, not refused; nothing kept: resend the whole spell with it.
+badSpell  misfits give clause, reason and hint: otherCard noAction badValue duplicateField unclosedBlock tooManySpells. Hint: your spell with blanks; copy it.
 Next: delvetalk library read / page: laws

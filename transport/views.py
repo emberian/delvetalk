@@ -23,6 +23,7 @@ DEPTH_MAX, COLUMNS_MAX, TABLE_ROWS, TABLE_COLUMNS, UNITS_MAX, PATH_TOKENS, IMAGE
 IMAGE_HOSTS = ()  # https hosts an image may come from; none: a view's images are its own data (and the page's CSP says so)
 ACTION = re.compile(r'[a-z][A-Za-z0-9_-]{0,63}\Z')
 FIELD = re.compile(r'[a-z][A-Za-z0-9_]{0,63}\Z')
+OBJECT_ID = re.compile(r'[A-Za-z0-9._:/-]{1,128}\Z')
 DATA_IMAGE = re.compile(r'data:image/(?:png|gif|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}\Z')
 PATH = re.compile(r'[MLHVCSQTAZmlhvcsqtaz]|\d{1,5}(?:\.\d{1,2})?')
 HEX = 20  # a hex tile's radius, in the drawing's units; a square tile is 2 * HEX
@@ -235,20 +236,22 @@ def fits(kind, value):
     tag = kind.get('tag') if isinstance(kind, dict) else None
     if tag == 'natural':
         return value.isascii() and value.isdigit() and len(value) <= 18 and kind.get('min', 0) <= int(value) <= kind.get('max', 10 ** 18)
-    if tag == 'text':
-        return '\n' not in value and '\r' not in value and kind.get('min', 0) <= len(value) <= kind.get('max', 1400)
+    if tag in ('text', 'object'):
+        minimum = kind.get('min', 0)
+        within = '\n' not in value and '\r' not in value and minimum <= len(value) <= kind.get('max', 128 if tag == 'object' else 1400)
+        return within and (tag == 'text' or (value == '' and minimum == 0) or bool(OBJECT_ID.fullmatch(value)))
     if tag == 'choice':
         return value in (kind.get('options') or [])
     return False
 
 
 def whole(declared, names):
-    """Whether `names` fill every field of a form a spell must name (all but a text that may be empty)."""
-    return all(n in names or (k.get('tag') == 'text' and k.get('min', 0) == 0) for n, k in declared.items() if isinstance(k, dict))
+    """Whether `names` fill every required field (text or object with a zero lower bound is optional)."""
+    return all(n in names or (k.get('tag') in ('text', 'object') and k.get('min', 0) == 0) for n, k in declared.items() if isinstance(k, dict))
 
 
 def bound(kind):
-    return kind.get('max', 1400) if isinstance(kind, dict) and kind.get('tag') == 'text' else 18
+    return kind.get('max', 128 if kind.get('tag') == 'object' else 1400) if isinstance(kind, dict) and kind.get('tag') in ('text', 'object') else 18
 
 
 def forms_of(inspected):
