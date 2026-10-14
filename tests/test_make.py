@@ -1,4 +1,4 @@
-"""Making an object in the shared world from a resident's own source (docs/GROUND.md §6 changes 1 and 6).
+"""Making an object in the shared world from a resident's own source (docs/VOICE.md "The offering").
 
 Evidence (layer: host): the `make` Plan creates, under the maker's authority, an object from Bend
 source the resident supplied (the Workshop's held, checked package); the create entry journals the
@@ -264,7 +264,7 @@ def methods()""").replace('cons({head: "dim", tail:', 'cons({head: "dim", tail: 
     def test_a_body_laid_in_the_making_has_the_shape_a_later_extend_gives(self):
         """The objects lane's cistern: a body that names only its own method in `methods()` and declares no
         relations, laid in the turn that makes the thing, keeps what the code below declared public and its
-        relations (HOST-HANDOFF 5.138), as the same body laid by a later extend does, and after replay."""
+        relations (HOST-HANDOFF §5.3 "Extend"), as the same body laid by a later extend does, and after replay."""
         from tests.test_relation import PACKAGE as RAINS
         base = RAINS.replace("LIMIT", "0n")
         pour = """edition ObjectiveBend 1
@@ -348,7 +348,7 @@ class ReceiptHash(Reflection):
 
 class Misfit(Reflection):
     """A turn's argument that does not fit is refused naming the field: one the input does not declare, one it
-    needs and lacks, one of another type (HOST-HANDOFF 5.132, 5.141)."""
+    needs and lacks, one of another type (HOST-HANDOFF §5.1 "Typed arguments")."""
 
     def test_the_refusal_names_the_field_that_does_not_fit(self):
         from tests.test_reflection import PROBE, probe_seed

@@ -441,7 +441,7 @@ class Posting(unittest.TestCase):
                 self.assertEqual(main(['post', '--state', d, '--intent', 't', '--draft', str(draft)], io.StringIO()), 1)
 
 class Threaded(unittest.TestCase):
-    """A draft over the clip (docs/POSTING.md, build 3) is posted as numbered parts in one thread, each within the
+    """A draft over the clip (docs/POSTING.md §3) is posted as numbered parts in one thread, each within the
     clip, each a reply to the one before and its own reservation; when the hour has room for fewer, the last that
     fits says when the next follows, and posting again goes on from there. Refuted by a part over 1,400 characters,
     a part replying to anything but the one before, a part posted twice, or a part sent past the quota."""

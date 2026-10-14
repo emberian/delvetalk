@@ -115,7 +115,7 @@ class Objects(unittest.TestCase):
 
     def test_a_full_policy_card_fits_its_owner(self):
         """Sixteen examples under the owner's head stay under 1,400
-        characters (WORLD-REVIEW 2: the policy's card had no clip)."""
+        characters (the policy's card once had no clip)."""
         reply = run_pure("Policy", "full", nat(16), probe=POLICY_PROBE, limits=BIG)
         self.assertEqual(reply["status"], "finished", reply)
         text = reply["value"]["value"]

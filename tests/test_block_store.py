@@ -1,7 +1,7 @@
 """The journal as a block store: an open from a snapshot equals replay from height 0, and a journal in the
 line format opens only after the one-shot migration.
 
-Evidence for HOST-HANDOFF 5.137 (layer: host). Every entry is a canonical record under its CID in
+Evidence for HOST-HANDOFF §3 (layer: host). Every entry is a canonical record under its CID in
 `<journal>.blocks`; the journal file is the chain of links; a snapshot carries every index `record`
 derives, so an open reads it and replays only the entries after it, each read and checked against the
 chain. Refuted by any read that answers otherwise after an open from a snapshot than after replay from

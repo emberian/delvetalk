@@ -3,7 +3,7 @@ the speaker (`me`) is named as they wrote it, never by their DID; a bad value is
 not repeated; an unknown card from a card without spells points to the directory; usage lists only
 the methods the speaker's law admits; a `views()` entry is read, not cast, so it is no spell.
 
-Evidence for HOST-HANDOFF 5.80 (layer: host). Refuted by a hint naming the speaker's DID, repeating a
+Evidence for HOST-HANDOFF §5 "Spells" (layer: host). Refuted by a hint naming the speaker's DID, repeating a
 value it refused, saying a card "takes no spells" for an unknown card, listing a method the law
 refuses the speaker, or listing a view.
 

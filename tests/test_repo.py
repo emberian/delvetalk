@@ -894,7 +894,7 @@ class ProjectionBoundary(unittest.TestCase):
 
 @signs
 class CarriedRepository(unittest.TestCase):
-    """A carried journal begins at the height the world before reached (HOST-HANDOFF 5.182): the live v10 town's
+    """A carried journal begins at the height the world before reached (HOST-HANDOFF §5 "Carry and root-edit"): the live v10 town's
     first entry is 447, and getRepo answered 503 "the journal's entry 447 is not height 1"."""
 
     def test_a_journal_whose_first_entry_is_447_is_a_whole_repository_and_since_reads_what_came_after(self):

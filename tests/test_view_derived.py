@@ -2,7 +2,7 @@
 as first-order Data, under read authority, with the root recorded; a view the package does not declare
 in `views()` is refused by name; `world-inspect` lists the declared views.
 
-Evidence for HOST-HANDOFF 5.46 (layer: host). Refuted by a value other than the view's, a view read
+Evidence for HOST-HANDOFF §5.3 (layer: host). Refuted by a value other than the view's, a view read
 without the root, a private object answered, or an undeclared definition run as a view.
 
     python3 -W error -m unittest tests.test_view_derived -v

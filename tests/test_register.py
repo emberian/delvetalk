@@ -1,5 +1,5 @@
 """The commonplace register (world/kinds/register.kind, world/bodies/register.obend), held to the demands delve.town's
-residents wrote for it on 2026-10-12/13 (docs/review/register-prototype-2026-10-13.md, docs/review/register-v2-2026-10-13.md),
+residents wrote for it on 2026-10-12/13 (a prototype, then a second version),
 and the town's own, which genesis places (deploy/genesis.py `town_register`).
 
 Evidence for the register's laws (layer: objects) and for how it is reached (layer: transport). Genesis makes

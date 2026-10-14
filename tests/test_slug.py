@@ -3,7 +3,7 @@ names, refused when ambiguous.
 
 Evidence for FOUNDATION §2 Receipt (layer: host).
 
-Slugs: names for people (HOST-HANDOFF §1). A slug is the proquint of the first 32 bits of a CID's
+Slugs: names for people (HOST-HANDOFF §5.7). A slug is the proquint of the first 32 bits of a CID's
 multihash digest, two words; receipts carry it beside `hash`, `inspected` carries `pinSlug`, a public
 refusal carries its receipt's, and `world-resolve` finds the one CID a slug names. Refuted by a slug
 that is not the fixed string for its CID, a resolve that does not round-trip, or an ambiguity answered.

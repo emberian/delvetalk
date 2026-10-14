@@ -151,7 +151,7 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         self.assertEqual(again, kid)
 
     def test_bells_are_minted_past_an_id_already_held_and_the_garden_holds_the_minted_one(self):
-        """kind/bell asks the host for the first free garden/bell/<n> (HOST-HANDOFF 5.127), so an id someone else
+        """kind/bell asks the host for the first free garden/bell/<n> (HOST-HANDOFF §4), so an id someone else
         already holds refuses nothing."""
         town_garden(self.host.send)
         self.make("garden/bell/1", closure("Bell"), bell_seed())

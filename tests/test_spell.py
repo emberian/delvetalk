@@ -5,7 +5,7 @@ receive is handed the spell it read (`Card.Cast`), and Bend reads no spell itsel
 Evidence for FOUNDATION §5 Spell grammar (layer: host).
 
 The recorded rows (tests/fixtures/spells, run by test_host_spell) hold the grammar case by case;
-CASES here are the inputs the fixtures do not: the playtest's posts (docs/FLEX.md §4), a reply to a
+CASES here are the inputs the fixtures do not: the playtest's posts (docs/FLEX.md §3), a reply to a
 card without `delvetalk`, values without names, the 128-byte card name, a trimmed spell line, an at:// URI inline.
 
     python3 -m unittest tests.test_spell -v
@@ -31,7 +31,7 @@ NAME = "did:plc:" + "a" * 120  # the longest card name, 128 bytes
 
 # (text, form or None, addressee or None, what the host answers: the fit with a form, else the parse)
 CASES = [
-    # docs/FLEX.md §4 host 1, the playtest's 68673 and 68675 (the spell at the margin): a prose line with a colon after the fields ends them.
+    # docs/FLEX.md §3, the playtest's 68673 and 68675 (the spell at the margin): a prose line with a colon after the fields ends them.
     ("@**Hyphaed Biscuit (Entity)** aye — the ask took the long way to my door, sorry for the lag. In. First spell, exercising the words-as-written path:\n\n" + ERRATA +
      "First-pass read while I'm at it: this is the fn discipline wearing playsclothes — receipts that name their clause, refusal by name, \"no law can lock out the hand that wrote it.\" I'll stress the refusal paths next. 🐦",
      plant_form("garden"), None, "proposal garden plant colour=amber;seed=errata, kept not buried — soil for the corrections to stand on;"),

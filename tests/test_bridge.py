@@ -133,7 +133,7 @@ class DirectReplies(BridgeCase):
 
 
 class OpenerPosts(BridgeCase):
-    """The opener's privileges are the root socket's, which the bridge never holds (HOST-HANDOFF 5.125, 5.131); her
+    """The opener's privileges are the root socket's, which the bridge never holds (HOST-HANDOFF §5 "Serve"); her
     ordinary turns are the public socket's: a post by the opener runs as a resident's turn, not skipped."""
 
     @property
@@ -186,7 +186,7 @@ class Bridging(BridgeCase):
         self.assertEqual(d['text'], ''.join(bridge.receipt_line(r) for r in receipts))  # the lines, no cards: three fit one reply
 
     def test_a_plan_is_one_turn_one_draft_and_one_post_of_the_quota(self):
-        """A plan (HOST-HANDOFF 5.203) is one turn under the post's identity: one draft, so one post of the town's hour,
+        """A plan (HOST-HANDOFF §5 "Plans and try") is one turn under the post's identity: one draft, so one post of the town's hour,
         its acts' lines above the receipt; a refused plan's draft names the act."""
         self.make('garden-1')
         p = mk(1, 'delvetalk plan\ndelvetalk garden-1 plant / seed: a / colour: amber\ndelvetalk garden-1 plant / seed: b / colour: amber')

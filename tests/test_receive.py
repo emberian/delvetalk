@@ -58,7 +58,7 @@ class Cards(Chain):
 
 
     def test_a_misfit_spell_to_a_card_that_reads_no_words_is_the_hosts_badSpell_with_the_usage(self):
-        """HOST-HANDOFF 5.153: only a card whose state names a policy hears a misfit; the garden, a bell
+        """HOST-HANDOFF §5.4: only a card whose state names a policy hears a misfit; the garden, a bell
         and the tide name none, so each misfit is refused badSpell with its clause, reason and the
         card's usage, and nothing is written, whatever their `receive` takes."""
         self.garden()
@@ -134,7 +134,7 @@ class Cards(Chain):
         self.assertEqual(self.version("garden"), laid + 1)
         self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden", "kind/bell"})
         # No card forge: with no policy the commonplace reads no words, so the misfit is the host's
-        # badSpell (HOST-HANDOFF 5.153); with one, hob is shown it (test_policy).
+        # badSpell (HOST-HANDOFF §5.4); with one, hob is shown it (test_policy).
         ghost = self.turn("commonplace", "receive", record(text=label("delvetalk forge make / name: sentry"), post=label("")), principal="glm")
         out = ghost["receipt"]["outcome"]
         self.assertEqual((ghost["status"], out["class"], out["clause"], out["reason"]),

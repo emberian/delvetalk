@@ -3,7 +3,7 @@ and insert, upsert and retract commit or refuse by the nine-cell table.
 
 Evidence for FOUNDATION §9 (layer: host).
 
-Relations in objects (docs/RELATIONAL.md §2, §3): a `Relation<T>` field the package declares in
+Relations in objects (docs/FOUNDATION.md §9): a `Relation<T>` field the package declares in
 `relations()` is kept sorted by its key's canonical bytes with no key twice and at most its limit of
 rows; `insert`, `upsert`, `retract` follow the nine-cell table. Each case names what would refute it.
 
@@ -284,7 +284,7 @@ def key(author, at):
 
 
 class Moved(RelationCase):
-    """Relations day 2 (RELATIONAL §3): a turn that waited commits its row edits against the
+    """Relations day 2 (FOUNDATION §9 "Inserts commute; rows rebase"): a turn that waited commits its row edits against the
     relation as it is now. An insert commutes; an upsert or retract commutes with every change that
     left its key alone; a concurrent change of its key makes it staleRoot, and the waiting turn is
     re-run once from its request on the rows as they are now."""
@@ -379,7 +379,7 @@ class Cells(RelationCase):
                          ("admitted", False, label("t2")), resumed)
 
     def test_a_write_inside_the_span_leaves_a_resumed_turn_its_own_field(self):
-        # Its own object: the resumed turn's field rule (HOST-HANDOFF 5.1) admits a write of `count`,
+        # Its own object: the resumed turn's field rule (HOST-HANDOFF §5.1) admits a write of `count`,
         # which no write since changed, whatever it read.
         self.waiting()
         [resumed] = self.edit("upsert", rain("old", 1, "changed"), ident="go")["resumed"]
@@ -408,7 +408,7 @@ class Cells(RelationCase):
 
 
 class Lookups(RelationCase):
-    """A lookup reads its answer, not the prefix below it (KERNEL-HANDOFF §16 item 15b): a hit reads its
+    """A lookup reads its answer, not the prefix below it (KERNEL-HANDOFF §15 "Reads"): a hit reads its
     key, a miss the gap its key falls in, journaled as a row and as `gaps [{field, after?, before?}]`. A
     write below or above the looked-up key leaves another object's view of it current; one at the key, or
     inside the gap, makes it stale. Refuted by a write below the key rerunning the view, or one at it not."""
@@ -455,7 +455,7 @@ class Lookups(RelationCase):
 
 
 class CellBound(RelationCase):
-    """State is bounded per cell (KERNEL-HANDOFF §15 step 4): the scalar part and each row at most
+    """State is bounded per cell (KERNEL-HANDOFF §15 "The state as cells"): the scalar part and each row at most
     `Bounds.maxCellBytes` canonical bytes; a relation is bounded by its declared limit, not by the
     object's whole size. Refuted by a relation of small rows past 256 KiB refused, or a row past the
     bound admitted or refused without naming its cell."""

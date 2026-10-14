@@ -1,4 +1,4 @@
-"""ATPROTO L4 consumer control: real RFC 6455 sockets over test_repo's fake journal.
+"""REPO "Live subscription", consumer control: real RFC 6455 sockets over test_repo's fake journal.
 
 Refuted by any of 1,000 append events failing sparse inversion, a replay byte changing, a gap or
 repeat at live handoff, a pinned HTTP worker, or downtime/rotation/carry reusing a sequence position.

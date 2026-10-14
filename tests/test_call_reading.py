@@ -2,7 +2,7 @@
 `Returned.refused {clause, reading}`, rehearsal run 11 finding 3): the voiced reason the host would
 journal, so a directory that hands a reply on can say why it was not taken.
 
-Evidence for HOST-HANDOFF 5.77 (layer: host). Refuted by a refused call whose reading is empty or
+Evidence for HOST-HANDOFF §5.3 (layer: host). Refuted by a refused call whose reading is empty or
 another refusal's, or by a call site without the field that no longer hears `refused {clause}`.
 
     python3 -W error -m unittest tests.test_call_reading -v

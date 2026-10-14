@@ -1,4 +1,4 @@
-"""ATPROTO L5 finding 9: service JWTs name a resident, never their HTTP forwarder.
+"""ATPROTO §2(b): service JWTs name a resident, never their HTTP forwarder.
 
 Refuted by any invalid token reaching the host, a bare audience treated differently
 from #delvetalk, a rotation needing two refreshes, or capacity forgetting a live jti.

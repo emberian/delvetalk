@@ -160,7 +160,7 @@ class PolicyObject(Chain):
         self.assertTrue(system.endswith(HOB_ANSWERS), system)
         self.assertIn("\nSaid, and the answer:\nSaid: a silver fern\n", system)  # the policy owner's examples stay in the system part
         self.assertNotIn("badValue", system)
-        self.assertNotIn("plant me a moth", system)  # the utterance is the user turn, not the system text (docs/FLEX.md section 2)
+        self.assertNotIn("plant me a moth", system)  # the utterance is the user turn, not the system text (docs/FLEX.md §4)
         self.assertNotIn("The misfit spell", run("plantTurn", context())["value"]["value"])
 
     def test_the_user_turn_lists_the_cards_wants_with_their_spells_and_the_librarys_pages_by_title_after_the_forms_all_quoted(self):
@@ -266,7 +266,7 @@ class PolicyObject(Chain):
         self.policy()
         self.garden()
         self.say("plant something")
-        # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF 5.107):
+        # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF §5.4):
         # `model: refused` is no question for the speaker, so hob's answer is none.
         silent = self.interpret({"status": "failed", "reason": "refused", "detail": "400"})
         self.assertEqual((silent["receipt"]["outcome"], silent["offers"]), ({"tag": "admitted", "writes": []}, []), silent)
@@ -332,7 +332,7 @@ class PolicyObject(Chain):
         self.say("a verdigris one")
         green = self.interpret(self.raw("delvetalk garden plant / colour: verdigris / seed: a fern"))
         # The host reads the colour's word as its case: one naming none is `unclear` (HOST-HANDOFF
-        # 5.52). hob is asked once: its line names the field the need names (never the model's or the
+        # §5.1). hob is asked once: its line names the field the need names (never the model's or the
         # host's words: VOICE's fixed line), with the spell that takes it.
         self.assertEqual(green["receipt"]["outcome"]["tag"], "admitted", green)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])  # hob is asked once
@@ -371,7 +371,7 @@ class PolicyObject(Chain):
         self.assertNotIn("Which card", self.host.send(op="world-card", principal="glm", object="commonplace")["text"])
 
     def test_prose_with_no_stated_reach_is_not_addressed_at_once(self):
-        # HOST-HANDOFF 118: no reach, no model, no suspension, no quota.
+        # HOST-HANDOFF §5.4: no reach, no model, no suspension, no quota.
         self.policy()
         self.garden()
         reply = self.say("Could we plant a silver fern?", reach=None)
@@ -468,7 +468,7 @@ class PolicyObject(Chain):
         self.say("Could we plant a silver fern that remembers?")
         pending = self.host.send(op="world-interpretations")["pending"]
         settled = self.host.send(op="world-interpretation", id=pending[0]["id"], reply=self.raw(SPELL))
-        # The host fits the model's spell to the offered plant form (HOST-HANDOFF 5.54).
+        # The host fits the model's spell to the offered plant form (HOST-HANDOFF §5.4).
         verdict = settled["receipt"]["outcome"]["verdict"]
         self.assertEqual((verdict["tag"], verdict["method"]), ("proposal", "plant"), settled)
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
