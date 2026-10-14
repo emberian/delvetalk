@@ -20,3 +20,5 @@ figcaption { color: var(--muted); font-size: .9rem; font-style: italic; }
 .diagram .arrow { fill: var(--muted); }
 footer .colophon-mark { display: block; width: 6rem; height: auto; margin: 0 0 .4rem; }
 @media (max-width: 34rem) { ul.doorlist li { grid-template-columns: 1fr; } }
+dl.was dt { text-decoration: line-through; }
+dl.was dt, dl.was dd { padding-top: .35rem; }
