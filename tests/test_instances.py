@@ -156,7 +156,8 @@ class Instances(unittest.TestCase):
 class Image(unittest.TestCase):
     """The transport image carries every document the transport and genesis read at run time: an open town's genesis
     read docs/AGENTS-ARRIVE.md, which the image lacked, and refused at the deploy of obend (2026-10-14); the
-    rehearsal ran from a checkout, which has every file. A file must be both in the build context (the dockerignore's
+    rehearsal ran from a checkout, which has every file; the inside pages' docs/AUTHORING.md and VOICE.md were missing at
+    obend's edition-16 carry-check the same way. A file must be both in the build context (the dockerignore's
     re-included paths) and copied."""
 
     def test_every_document_read_at_run_time_is_copied_into_the_image(self):
@@ -168,7 +169,7 @@ class Image(unittest.TestCase):
                 copied.update(line.split()[1:-1])
         context = [line[1:] for line in (ROOT / 'deploy' / 'Dockerfile.transport.dockerignore').read_text().splitlines()
                    if line.startswith('!')]  # the build context is `*` and these, re-included
-        read = {pages.GUIDE, pages.ARRIVE, http.EXAMPLES, genesis.GUIDE, Path(Config().plan)}
+        read = {pages.GUIDE, pages.ARRIVE, http.EXAMPLES, genesis.GUIDE, Path(Config().plan)} | {d[2] for d in genesis.INSIDE_DOCS}
         for path in sorted(read):
             rel = path.resolve().relative_to(ROOT).as_posix()
             self.assertTrue(any(rel == c or rel.startswith(c.rstrip('/') + '/') for c in copied),
