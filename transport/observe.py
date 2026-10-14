@@ -377,6 +377,25 @@ class Observer:
             raise
         return True
 
+    def again(self, since, pages=64, limit=50):
+        """The observations of the town's feed created at or after `since` (ISO), paged back until a page reaches past it
+        or `pages` are read; nothing stored. For a deliberate replay of what the bridge already answered (`bridge
+        --hear-again`): a dropped post is only its hash here."""
+        at, cursor, out = instant(since), None, []
+        for _ in range(pages):
+            page = self.client.feed(limit, cursor)
+            got = []
+            for post in posts_of(page):
+                try:
+                    got.append(observation(post, self.summon))
+                except Failure:
+                    continue
+            out += [o for o in got if instant(o['createdAt']) >= at]
+            cursor = page.get('cursor')
+            if not cursor or not got or min(instant(o['createdAt']) for o in got) < at:
+                break
+        return out
+
     def poll(self, query='#gsb', pages=3, limit=50):
         """Page search then feed, stopping a source at its first page with nothing new; then the request records
         (transport/requests.py)."""

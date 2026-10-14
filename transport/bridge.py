@@ -610,6 +610,27 @@ def queue_mentions(st, host, obs, authors, handles, addressed, at):
         observe.queue(st, obs['uri'], author['did'], author['handle'], obs['text'][:NOTE_TEXT], heard, at)
 
 
+def hear_again(st, host, observer, since, now=None):
+    """The operator's replay of mentions an edition queued none of (edition 19 heard only posts that reached a card):
+    every post of the feed since `since` that the bridge skipped and has told no one of has its mentions queued, due at
+    once, as its first run would have. Reach is never asked and nothing is turned here; the next run tells them, one
+    turn a resident, and a post is never told twice (mentioned.txt). -> the posts queued."""
+    at = time.time() if now is None else now
+    skipped, told = st.words(st.skipped), st.words(st.mentioned)
+    handles, authors = {}, {}
+    for did, handle in observe.authors(st):
+        handles[did], authors[handle.lower()] = handle, did
+    addressed, queued = None, []
+    for obs in sorted(observer.again(since), key=lambda o: (o['createdAt'], o['uri'])):
+        if not obs['mentions'] or obs['uri'] not in skipped or obs['uri'] in told or obs['uri'] in queued:
+            continue
+        handles.setdefault(obs['author']['did'], obs['author']['handle'])
+        addressed = addressed or host.send({'op': 'bounds'})['host']['mentionsAddressed']
+        queue_mentions(st, host, obs, authors, handles, addressed, at - MENTION_MINUTES * 60)
+        queued.append(obs['uri'])
+    return queued
+
+
 def tell_mentions(st, host, at):
     """The town tells each resident whose oldest queued note is MENTION_MINUTES old what mentioned them: one turn as the
     opener (the town, `context.town`) on their avatar, `mentions {notes}`, at most NOTES_PER_TURN notes a turn, each
@@ -901,6 +922,12 @@ def command(st, a, out):
     """`bridge`: the world's row names delve.town, an owner's Zulip channel, or the local feed alone;
     one step with `--once`, else a step every `poll` seconds."""
     host, row = st.host(), st.bridge()
+    if a.hear_again:
+        try:
+            out.write(canonical({'queued': hear_again(st, host, delve_observer(st, None), a.hear_again, a.now)}) + '\n')
+        finally:
+            host.close()
+        return 0
     since = observe.start_cursor(st, a.since, a.now)
     if row['transport'] == 'zulip':
         from transport import zulip

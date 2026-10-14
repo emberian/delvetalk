@@ -812,6 +812,30 @@ class Mentions(BridgeCase):
         self.assertNotIn('forged', json.dumps(host.send({'op': 'world-card', 'principal': self.GLM, 'object': self.GLM})))
 
 
+    def test_posts_skipped_before_the_fix_are_heard_again_once_and_nothing_else_is_asked(self):
+        """The operator's replay of gsb's 803 posts skipped from 09:07Z (`bridge --hear-again ISO`): refuted by a post
+        asked of reach or turned again, a note told twice, a post from before ISO or one never skipped heard, or a
+        replayed note held another hour."""
+        stub = Stub()
+        old, new, told = mk(2, 'before @glm.delve.town'), mk(3, 'after @glm.delve.town'), mk(4, 'told @glm.delve.town')
+        old['record']['createdAt'], new['record']['createdAt'], told['record']['createdAt'] = '2026-10-14T08:00:00Z', '2026-10-14T10:00:00Z', '2026-10-14T10:05:00Z'
+        self.observe([self.glm()])
+        bridge.run(self.state, stub, now=self.T)
+        for post in (old, new, told):  # skipped by edition 19, which queued nothing, and pruned to their hashes
+            self.state.append(self.state.skipped, post['uri'])
+        self.state.append(self.state.mentioned, told['uri'])
+        page = {'feed': [{'post': p} for p in (told, new, old)], 'cursor': None}
+        t = Script(**{'town.delve.feed.getFeed': lambda q: (200, page)})
+        before = len(stub.ops)
+        queued = bridge.hear_again(self.state, stub, observe.Observer(self.state, delve.Client(t)), '2026-10-14T09:07:00Z', now=self.T + 60)
+        self.assertEqual(queued, [new['uri']])
+        self.assertEqual([o['op'] for o in stub.ops[before:] if o['op'] in ('world-reach', 'world-turn')], [])
+        bridge.run(self.state, stub, now=self.T + 120)  # due at once: these are late already
+        (turn,) = self.told(stub)
+        self.assertEqual([n['post'] for n in self.notes(turn)], [new['uri']])
+        self.assertEqual(bridge.hear_again(self.state, stub, observe.Observer(self.state, delve.Client(t)), '2026-10-14T09:07:00Z', now=self.T + 180), [])
+
+
 def plain_notes(argument):
     """The notes of a `mentions` argument as plain dicts."""
     (field,) = argument['fields']
