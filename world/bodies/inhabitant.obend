@@ -58,11 +58,13 @@ def atHour(state: State, context: Abi.Context, name: String, hour: Nat, then: St
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
   if context.caller != state.kind then false else Super.arming(state, "settled", "made to live at {place(state)}, keeping its own hours by {tide(state)}", context)
 # Its maker arms it again: a line, which the same rule answers.
+# Stranded (a place field holding no object id: Record's `repair`), it is told once to its maker and armed quietly after.
 def arm(state: State, context: Abi.Context) -> Activity<Bool>:
-  if context.principal != state.maker then Super.armRefused(state, context) else Super.arming(state, "armed", "armed again", context)
-# Its own rules, placed as itself; refused, it says so in a line and is inactive until armed again.
+  if Super.mayArm(state, context) == false then Super.armRefused(state, context) else if Lists.length(Super.strandedFields(state)) > 0n then Super.stranding(state, context) else Super.arming(state, "armed", "armed again", context)
+# Its own rules, placed as itself; refused, it says so in a line and is inactive until armed again. Stranded, it
+# places nothing and says nothing: its maker was told once (`arm`).
 def haunt(state: State, context: Abi.Context) -> Activity<Bool>:
-  if own(context) == false then Card.refusing(false, {clause: "itself", reading: "{context.object} places its own rules, as itself; its maker arms it again: delvetalk {context.object} arm"}, context) else if Text.isObjectId(place(state)) == false then Card.refusing(false, {clause: "haunts", reading: hauntLine(state)}, context) else if Text.isObjectId(tide(state)) == false then Card.refusing(false, {clause: "tide", reading: Card.tideLine(tide(state))}, context) else placing(haunting(state, context), state, context)
+  if own(context) == false then Card.refusing(false, {clause: "itself", reading: "{context.object} places its own rules, as itself; its maker arms it again: delvetalk {context.object} arm"}, context) else if Lists.length(Super.strandedFields(state)) > 0n then false else placing(haunting(state, context), state, context)
 def placing(rules: Lists.List<Haunting>, state: State, context: Abi.Context) -> Activity<Bool>:
   match rules:
     case nil(_): Super.armedNow(state, context)
@@ -143,7 +145,7 @@ def verbs() -> String:
 def moves() -> String:
   "haunt"
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Lists.concat(Text.words("lines {verbs()}"), if own(context) then Text.words(moves()) else Text.words("")), Lists.concat(if context.principal == state.maker then Text.words("arm") else Text.words(""), if context.principal == state.owner then Text.words("door undoor set") else Text.words("")))
+  Lists.concat(Lists.concat(Lists.concat(Text.words("lines {verbs()}"), if own(context) then Text.words(moves()) else Text.words("")), Lists.concat(if context.principal == state.maker then Text.words("arm") else Text.words(""), if context.principal == state.owner then Text.words("door undoor set") else Text.words(""))), Super.repairAction(state, context))
 def methods() -> Lists.List<String>:
   Text.words("~made ~act")
 def title(state: State) -> String:

@@ -12,5 +12,8 @@ END
 head: {name}
 voice: one who lives here and keeps its own hours; what it does it has done before, and does again
 about: lives in a place by its own hours: its own rules on the tide move it, and it leaves lines where it goes
-text: rule haunts "places its own rules where it haunts, as itself, when it is made, armed or its haunt or tide is set": request.method == "made" or request.method == "arm" or request.method == "set" then delvetalk {request.object} haunt
+text: <<END
+rule haunts "places its own rules where it haunts, as itself, when it is made, armed, or its haunt or tide is set or repaired": request.method == "made" or request.method == "arm" or request.method == "set" or request.method == "repair" then delvetalk {request.object} haunt
+want stranded "a field that names no place: the town repairs it, or its maker sets it": "stranded" in new.marks.name and not ("repaired" in new.marks.name) asks delvetalk {request.object} repair
+END
 body: inhabitant

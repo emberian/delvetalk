@@ -606,6 +606,9 @@ the set adds no line, pending admission or tending. The `methods` law keeps vari
 changeable only by spells, never proposals. A legacy haunt with another shape reads
 "haunts nowhere you can walk to yet" and supplies no walk spell until repaired.
 A legacy tide reads "keeps hours by no tide you can reach yet" and supplies no tide spell until repaired.
+The town or the owner repairs such a field (RECORD's `repair`; every carry's refresh asks it of what the kinds made,
+docs/GENESIS.md): set to the one card its phrase names, else marked `stranded`, told once to its maker, and armed
+quietly after, its kind's want listing it for the town.
 `?`, `inspect`'s forms and a
 reader's controls list only the actions the law, judged on the state as it
 stands, and the card's own `actions(state, context)` leave that reader.

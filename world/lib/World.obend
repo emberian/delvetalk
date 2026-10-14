@@ -113,6 +113,16 @@ sum Named:
 sum Listed:
   listed: {ids: Document.Names, more: Bool}
   refused: {clause: String}
+# The cards a turn may read under a prefix with their names (`heads {prefix, after}`): each card's `head` and
+# `owner` as its state keeps them ("" where it keeps none), a page as `objects` gives, `after` the last id. A
+# derived read: it records no root.
+record Head:
+  id: String
+  head: String
+  owner: String
+sum Headed:
+  headed: {items: Lists.List<Head>, more: Bool}
+  refused: {clause: String}
 # What changed since a height (docs/METAPHYSICS.md §5): the newest change of each object the asker
 # may read under the prefix, newest first, 64 a page (`after`: the last object of the page before),
 # with the version it reached, the height, and who made it (a handle when known). A derived read:
@@ -281,6 +291,7 @@ protocol world:
   grantWith({to: String, object: Plans.Reference, method: String, until: Nat, fixed: Data, uses: Nat}) -> Granted
   revoke({id: String}) -> Revoked
   objects({prefix: String, after: String}) -> Listed
+  heads({prefix: String, after: String}) -> Headed
   changed({since: Nat, prefix: String, after: String}) -> Since
   card({object: Plans.Reference}) -> Carded
   rule({object: Plans.Reference, name: String, when: String, then: String}) -> Placed

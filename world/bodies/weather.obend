@@ -47,7 +47,7 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(if context.principal == state.owner then Text.words("rain write lines door undoor set") else Text.words("rain write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
+  Lists.concat(Lists.concat(if context.principal == state.owner then Text.words("rain write lines door undoor set") else Text.words("rain write lines"), if context.principal == state.maker then Text.words("arm") else Text.words("")), Super.repairAction(state, context))
 def lenses() -> Lists.List<Form.Field>:
   Super.objectLenses("tide")
 def setArms() -> Bool:
@@ -71,7 +71,7 @@ def placing(state: State, context: Abi.Context) -> Activity<Bool>:
     case refused(r): Super.unarmed(state, tide(state), r.clause, r.reading, context)
 # Its maker places its rule again (taken off first, if it stood).
 def arm(state: State, context: Abi.Context) -> Activity<Bool>:
-  if context.principal != state.maker then Super.armRefused(state, context) else if Text.isObjectId(tide(state)) == false then Card.refusing(false, {clause: "tide", reading: Card.tideLine(tide(state))}, context) else rearming(state, context)
+  if Super.mayArm(state, context) == false then Super.armRefused(state, context) else if Text.isObjectId(tide(state)) == false then Super.stranding(state, context) else rearming(state, context)
 def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.unrule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object)}):
     case _: placing(state, context)

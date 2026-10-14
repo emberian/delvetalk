@@ -1102,7 +1102,7 @@ def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "compose", "kindStack", "amend", "inspect", "check", "checkObject", "grant", "grantWith", "revoke",
-   "objects", "changed", "card", "principal",
+   "objects", "heads", "changed", "card", "principal",
    "rule", "unrule", "want", "unwant", "grow", "ungrow", "act", "chronicle", "wanting", "holds", "receipt"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
@@ -2644,6 +2644,21 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let s ← get
     let (ids, more) := listIds s.world s.subject pfx after
     respond bounds responseType "listed" [.record [("ids", listData (ids.map Data.label)), ("more", .boolean more)]]
+  | .variant "heads" (.record f) =>
+    -- `objects` with each card's name: its state's `head` and `owner` ("" where it keeps none), a page of the
+    -- ids the turn's subject may read under the prefix. A derived read, as `objects` is: no root, so a later change
+    -- does not make the asking turn stale (a town's repair reads every card's name in one turn, past `maxRoots`).
+    let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed heads plan"
+    let some after := (f.lookup "after").bind labelOf | evaluation "malformed heads plan"
+    let s ← get
+    let (ids, more) := listIds s.world s.subject pfx after
+    let text := fun (o : Object) (name : String) => match o.state with
+      | .record fields => ((fields.lookup name).bind labelOf).getD ""
+      | _ => ""
+    let item := fun (id : String) => match s.world.objects[id]? with
+      | some o => Data.record [("id", .label id), ("head", .label (text o "head")), ("owner", .label (text o "owner"))]
+      | none => Data.record [("id", .label id), ("head", .label ""), ("owner", .label "")]
+    respond bounds responseType "headed" [.record [("items", listData (ids.map item)), ("more", .boolean more)]]
   | .variant "changed" (.record f) =>
     let some (.natural since) := f.lookup "since" | evaluation "malformed changed plan"
     let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed changed plan"

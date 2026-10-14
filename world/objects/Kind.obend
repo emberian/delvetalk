@@ -367,7 +367,60 @@ def forkMade(state: State, from: String, original: State, name: String, body: St
     case created(c): counted(state, c.object.object, "", true, Lists.List.cons({head: layerSource(original.of, original.form), tail: Lists.List.nil()}), context)
     case refused(r): refused(context, {clause: r.clause, reading: if r.reading == "" then "{kindId(name)} was not made" else r.reading})
 def methods() -> Lists.List<String>:
-  Text.words("~shape ~reshape makeUnder ~checkBody ~makeDrafted ~makeFork")
+  Text.words("~shape ~reshape makeUnder ~checkBody ~makeDrafted ~makeFork repair")
+# --- Settling what it made --------------------------------------------------------------
+# A carry's migration and the town's mend for things made before a field came to name an object (RECORD's
+# `repair`): `kinds` sends `repair` to each kind whose form has an object field, and such a kind sends it to each
+# thing it made whose object field holds a phrase. Each is its own turn, delivered as any send is, so one turn here
+# reads only the forms and fields and writes nothing. Its owner's or the town's, a method (`world-turn {method: repair}`), no spell.
+def repair(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:
+  if context.principal != state.owner && (context.town == "" || context.principal != context.town) then Card.refusing(0n, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} or the town repairs what this kind made"}, context) else if state.of == "kind" then kindsSettling(Relations.rows(state.made), 0n, context) else thingsSettling(objectFields(state.form), Relations.rows(state.made), 0n, context)
+def objectFields(form: String) -> Lists.List<String>:
+  Lists.map(Lists.filter(Forms.specs(form), fn(s: Forms.Spec) -> Bool: Text.starts(s.kind, "object")), fn(s: Forms.Spec) -> String: s.name)
+def kindsSettling(made: Lists.List<Made>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+  match made:
+    case nil(_): settleSent(sent, "kinds", context)
+    case cons(c): kindForm(c.head.object, c.tail, sent, context)
+def kindForm(kind: String, rest: Lists.List<Made>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<String>({object: {world: context.world, object: kind}, field: "form"}):
+    case viewed(v): if Lists.length(objectFields(v.state)) > 0n then kindSent(kind, rest, sent, context) else kindsSettling(rest, sent, context)
+    case _: kindsSettling(rest, sent, context)
+def kindSent(kind: String, rest: Lists.List<Made>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: {world: context.world, object: kind}, method: "repair", argument: {}}):
+    case delivery(_): kindsSettling(rest, sent + 1n, context)
+    case refused(_): kindsSettling(rest, sent, context)
+def thingSent(names: Lists.List<String>, id: String, rest: Lists.List<Made>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: {world: context.world, object: id}, method: "repair", argument: {}}):
+    case delivery(_): thingsFrom(names, rest, sent + 1n, context)
+    case refused(_): thingsFrom(names, rest, sent, context)
+def thingsSettling(names: Lists.List<String>, made: Lists.List<Made>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+  match names:
+    case nil(_): settleSent(0n, "things", context)
+    case cons(_): thingsFrom(names, made, sent, context)
+def thingsFrom(names: Lists.List<String>, made: Lists.List<Made>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+  match made:
+    case nil(_): settleSent(sent, "things", context)
+    case cons(c): thingFields(names, c.head.object, c.tail, sent, context)
+def thingFields(names: Lists.List<String>, id: String, rest: Lists.List<Made>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Lists.List<Rows.Field>>({object: {world: context.world, object: id}, field: "fields"}):
+    case viewed(f): thingVars(names, id, f.state, rest, sent, context)
+    case _: thingsFrom(names, rest, sent, context)
+def thingVars(names: Lists.List<String>, id: String, fields: Lists.List<Rows.Field>, rest: Lists.List<Made>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Lists.List<Scenes.Var>>({object: {world: context.world, object: id}, field: "vars"}):
+    case viewed(v): if strandedIn(names, fields, v.state) then thingSent(names, id, rest, sent, context) else thingsFrom(names, rest, sent, context)
+    case _: thingsFrom(names, rest, sent, context)
+# Whether a thing holds a phrase in one of `names` (RECORD's `field`: a variable that names an object, else its making's value).
+def strandedIn(names: Lists.List<String>, fields: Lists.List<Rows.Field>, vars: Lists.List<Scenes.Var>) -> Bool:
+  Lists.any(names, fn(name: String) -> Bool: phraseIn(name, fields, vars))
+def phraseIn(name: String, fields: Lists.List<Rows.Field>, vars: Lists.List<Scenes.Var>) -> Bool:
+  let value = valueIn(name, fields, vars)
+  value != "" && Text.isObjectId(value) == false
+def valueIn(name: String, fields: Lists.List<Rows.Field>, vars: Lists.List<Scenes.Var>) -> String:
+  match Lists.find(vars, fn(v: Scenes.Var) -> Bool: v.name == name && Text.isObjectId(v.value)):
+    case some(v): v.value.value
+    case none(_): valueOf(fields, name)
+def settleSent(sent: Nat, what: String, context: Abi.Context) -> Activity<Nat>:
+  Card.tell(sent, Document.text("Sent repair to {natText(sent)} {what}.\n"))
 # A kind's page is its card alone: the host's default page would append every form's usage, and
 # `kinds`' card, which lists every kind with its line, would pass the 1,400-character clip.
 def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:

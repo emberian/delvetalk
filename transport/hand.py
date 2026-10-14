@@ -1075,7 +1075,7 @@ class Hand:
         face, _, verb = rest.partition('/')
         if rest == 'root/save':
             return self.save(form.get('object', ''), form)
-        if face == 'requests' and verb in ('admit', 'adopt', 'decline'):
+        if face == 'requests' and verb in ('admit', 'adopt', 'decline', 'repair'):
             got = self.request(form.get('kind', ''), verb, form.get('object', ''), integer(form, 'n', 0), form.get('reading', '').strip())
             return {'done': f"{verb} {got['object']} #{got['n']}: {got['line']}"}
         if rest == 'reports/answer':
@@ -1243,17 +1243,20 @@ class Hand:
 
     # ---- what waits for the town's own hand (playtest 5: Kestrel's and Yue's acts that waited unseen)
 
-    REQUEST_VERBS = {'line': ('admit', 'decline'), 'proposal': ('adopt', 'decline')}
+    REQUEST_VERBS = {'line': ('admit', 'decline'), 'proposal': ('adopt', 'decline'), 'stranded': ('repair',)}
 
     def requests(self):
         """What waits for the town itself, oldest first: lines pending on the records it keeps (a want `pending` the
         opener answers: the commonplace's, a resident's first line there admitted by its rule `firstline`) and proposals
-        the workshop holds for things the town owns. A door onto the town's things waits for nobody: a resident hangs it
-        on their own card; the reverse door, on the town's thing, is the town's to hang. Read only."""
-        kept, after = [], 0
+        the workshop holds for things the town owns, and things whose place field holds no object id (a want `stranded`
+        that asks the town to `repair` it: Record's `repair`, which tells its maker what the town cannot name). A door onto
+        the town's things waits for nobody: a resident hangs it on their own card; the reverse door, on the town's thing,
+        is the town's to hang. Read only."""
+        kept, stranded, after = [], [], 0
         for _ in range(64):  # pages of the opener's wants, newest first, by `since`
             got = self.host.send({'op': 'world-wanting', 'principal': self.owner, 'limit': 64, **({'after': after} if after else {})})
             kept += [r['object'] for r in got.get('rows') or [] if r.get('name') == 'pending' and r.get('asks', '').endswith(' admit')]
+            stranded += [r for r in got.get('rows') or [] if r.get('name') == 'stranded']
             if not got.get('more') or not got.get('next'):
                 break
             after = got['next']
@@ -1272,19 +1275,25 @@ class Hand:
             if target and pages.state_of(self.host.send({'op': 'world-view', 'principal': self.owner, 'object': target})).get('owner') == self.owner:
                 proposals.append({'kind': 'proposal', 'object': target, 'n': h['n'], 'who': h.get('proposerHandle') or self.handle_of(h.get('proposer', '')) or h.get('proposer', ''),
                                   'principal': h.get('proposer', ''), 'text': f"a new package for {target}" + (f", migrated by {h['migration']}" if h.get('migration') else ''), 'at': None})
-        return sorted(lines, key=lambda r: (r['at'] or 0, r['object'], r['n'])) + sorted(proposals, key=lambda r: r['n'])
+        strays = []
+        for r in {r['object']: r for r in stranded}.values():
+            st = pages.state_of(self.host.send({'op': 'world-view', 'principal': self.owner, 'object': r['object']}))
+            strays.append({'kind': 'stranded', 'object': r['object'], 'n': 0, 'who': st.get('makerHandle') or self.handle_of(st.get('maker', '')) or st.get('maker', ''),
+                           'principal': st.get('maker', ''), 'text': r.get('reading') or 'a field that names no place', 'at': r.get('since')})
+        return (sorted(lines, key=lambda r: (r['at'] or 0, r['object'], r['n'])) + sorted(proposals, key=lambda r: r['n'])
+                + sorted(strays, key=lambda r: r['object']))
 
     def request(self, kind, verb, obj, n, reading=''):
         """Admit or decline a line waiting on a record the town keeps (`kind` line), adopt or decline a proposal held for
         a thing the town owns (`proposal`): the town's own spell, journaled as its turn, and a line in the hand's log."""
         if verb not in self.REQUEST_VERBS.get(kind, ()):
             raise HandError(f'{kind or "a request"} takes {" or ".join(self.REQUEST_VERBS.get(kind, ("line", "proposal")))}, not {verb}')
-        n = int(n)
-        card, field = (obj, 'number') if kind == 'line' else ('workshop', 'n')
-        intent = f'hand:request:{kind}:{verb}:{obj}:{n}'
+        n = int(n or 0)
+        card, field = (obj, 'number') if kind == 'line' else (obj, None) if kind == 'stranded' else ('workshop', 'n')
+        intent = f'hand:request:{kind}:{verb}:{obj}:{n}' + (f':{int(self.clock())}' if kind == 'stranded' else '')  # a repair may be asked again
         # The method itself, as the town: a kept record's `decline` is a method no card offers as a spell (~decline).
         reply = self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': verb, 'identity': intent,
-                                'argument': typed({field: n})})
+                                'argument': typed({field: n} if field else {})})
         receipt = reply.get('receipt') or {}
         if not receipt:
             raise HandError(f"{verb} {obj} #{n}: {reply.get('message') or reply.get('status')}")
@@ -1305,7 +1314,8 @@ class Hand:
         rows = self.requests()
         none = '<li class="quiet">— nothing waits for the town —</li>'
         return shell('requests', self.st.world, H['requests'].format(world=q(self.st.world), note=self.note(query),
-                     codes=self.codes([counted(sum(r['kind'] == 'line' for r in rows), 'line'), counted(sum(r['kind'] == 'proposal' for r in rows), 'proposal')]),
+                     codes=self.codes([counted(sum(r['kind'] == 'line' for r in rows), 'line'), counted(sum(r['kind'] == 'proposal' for r in rows), 'proposal'),
+                                       counted(sum(r['kind'] == 'stranded' for r in rows), 'stranded thing')]),
                      rows=self.request_rows(rows, base, q) or none))
 
     # ---- the automatic moderation (docs/ROOT.md 2.4)
@@ -1629,10 +1639,11 @@ def parser(p, common):
                       ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
             'morning': [('--day', dict(type=int, help='the clock day (default today)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))],
             'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [], 'overview': [],
-            'requests': [('verb', dict(nargs='?', choices=('admit', 'adopt', 'decline'), help="none: list what waits for the town")),
-                         ('object', dict(nargs='?', help='the record a line waits on, or the thing a proposal is for')),
+            'requests': [('verb', dict(nargs='?', choices=('admit', 'adopt', 'decline', 'repair'), help="none: list what waits for the town")),
+                         ('object', dict(nargs='?', help="the record a line waits on, the thing a proposal is for, or a stranded thing "
+                                                          "(`repair kinds --kind stranded`: every thing the town's kinds made)")),
                          ('n', dict(nargs='?', type=int, help="the line's number, or the held proposal's")),
-                         ('--kind', dict(choices=('line', 'proposal'), default='line')), ('--reading', dict(default=''))],
+                         ('--kind', dict(choices=('line', 'proposal', 'stranded'), default='line')), ('--reading', dict(default=''))],
             'reports': [('verb', dict(nargs='?', choices=('answer',), help='none: the reports moved since --since, newest first')),
                         ('card', dict(nargs='?', choices=(mending.BASKET, mending.DRAWER), help='the basket, or its drawer for a confided report')),
                         ('n', dict(nargs='?', type=int, help="the report's number on that card")),

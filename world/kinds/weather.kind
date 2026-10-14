@@ -5,4 +5,5 @@ form: <<END
 over: object 1..128
 tide: object 1..128
 END
+text: want stranded "a field that names no place: the town repairs it, or its maker sets it": "stranded" in new.marks.name and not ("repaired" in new.marks.name) asks delvetalk {request.object} repair
 body: weather

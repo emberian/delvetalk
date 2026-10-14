@@ -288,7 +288,15 @@ def setField(state: State, field: Form.Field, value: String, context: Abi.Contex
     case none(_): fieldSet(state, field.name, value, context)
 def fieldSet(state: State, name: String, value: String, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = world.write(extend(keep(), {vars: fieldEdit(state.vars, name, value)}))
+  if marked(state, "stranded") && marked(state, "repaired") == false && Lists.any(strandedFields(state), fn(n: String) -> Bool: n != name) == false then fieldRepaired(name, value, context) else fieldDone(name, value, context)
+# The owner's set of the last stranded field repairs it (its want closes).
+def fieldRepaired(name: String, value: String, context: Abi.Context) -> Activity<Card.Replied>:
+  let written(_) = write {marks: insert markOf("repaired", context)}
+  fieldDone(name, value, context)
+def fieldDone(name: String, value: String, context: Abi.Context) -> Activity<Card.Replied>:
   if setArms() then fieldArmed(name, value, context) else fieldTold(name, value)
+def markOf(name: String, context: Abi.Context) -> Rows.Mark:
+  {name: name, who: context.principal, handle: context.handle, at: context.height}
 def fieldEdit(vars: Lists.List<Scenes.Var>, name: String, value: String) -> Plans.Entries<Scenes.Var, Scenes.Var>:
   match Lists.find(vars, fn(v: Scenes.Var) -> Bool: v.name == name):
     case some(v): Plans.Entries.amendItem({item: v.value, change: {name: name, value: value}})
@@ -301,6 +309,145 @@ def fieldArmed(name: String, value: String, context: Abi.Context) -> Activity<Ca
     case refused(r): Card.refusing(Card.Replied.done({action: "set"}), {clause: r.clause, reading: "{context.object} could not arm its rules again: {r.clause}"}, context)
 def fieldTold(name: String, value: String) -> Activity<Card.Replied>:
   Card.tell(Card.Replied.done({action: "set"}), Document.text("Set {name} to {value}.\n"))
+# --- Stranded fields ------------------------------------------------------------------
+# A field that names a place (`haunts`, `tide`: an object lens) holds an object id; a thing made before edition 19
+# may hold the phrase it was made with ("the diner, since before the highway"). Such a field is stranded: the thing
+# names no place it can go, and its rules there are never placed. The town or its owner repairs it (`repair`): each
+# stranded field is set to the object the town can name unambiguously from the phrase, and a field it cannot is
+# marked `stranded` (its kind's want asks the town, the hand lists it) and told once to the maker, how to set it;
+# after that its arming is quiet. `repaired` is marked when none is stranded any more.
+def strandedFields(state: State) -> Lists.List<String>:
+  Lists.filter(Lists.map(lenses(), fn(f: Form.Field) -> String: f.name), fn(name: String) -> Bool: field(state, name) != "" && Text.isObjectId(field(state, name)) == false)
+def strandedLine(state: State, id: String) -> String:
+  match strandedFields(state):
+    case nil(_): ""
+    case cons(c): "{id} {c.head} holds \"{textTake(field(state, c.head), 80n)}\", which names no object; its maker sets it: delvetalk {id} set / {c.head}: <an object id>"
+# The town may repair and arm what another hand made, as its owner and maker may.
+def townOrOwner(state: State, context: Abi.Context) -> Bool:
+  context.principal == state.owner || (context.town != "" && context.principal == context.town)
+# `repair`, offered to the town and the owner while a field is stranded.
+def repairAction(state: State, context: Abi.Context) -> Lists.List<String>:
+  if townOrOwner(state, context) && Lists.length(strandedFields(state)) > 0n then Text.words("repair") else Lists.List.nil()
+def mayArm(state: State, context: Abi.Context) -> Bool:
+  context.principal == state.maker || (context.town != "" && context.principal == context.town)
+# Arming a stranded thing: the first time it is marked and its maker told, once; after that nothing is written, so no
+# rule of its fires and its hourly re-arming is quiet. The reply says what to do either way.
+def stranding(state: State, context: Abi.Context) -> Activity<Bool>:
+  if marked(state, "stranded") then Card.tell(false, Document.text("{strandedLine(state, context.object)}\n")) else strandNoted(state, context)
+def strandNoted(state: State, context: Abi.Context) -> Activity<Bool>:
+  let written(_) = write {marks: insert markOf("stranded", context)}
+  match world.call::<Scenes.Done>({object: {world: context.world, object: state.maker}, method: "note", argument: {text: textTake(strandedLine(state, context.object), 280n)}}):
+    case _: Card.tell(false, Document.text("{strandedLine(state, context.object)}\n"))
+# A place the town has: its id, its head's words and its owner.
+record Place:
+  id: String
+  words: Lists.List<String>
+  owner: String
+form repair:
+def repair(state: State, input: {}, context: Abi.Context) -> Activity<Card.Replied>:
+  if townOrOwner(state, context) == false then Card.refusing(Card.Replied.done({action: "repair"}), {clause: "owner", reading: "Only {Card.name(state.owner, context)} or the town repairs its fields"}, context) else repairing(state, strandedFields(state), context)
+def repairing(state: State, names: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  match names:
+    case nil(_): Card.tell(Card.Replied.done({action: "repair"}), Document.text("Every field of {context.object} names an object; nothing to repair.\n"))
+    case cons(_): repairPlaces(state, names, "", Lists.List.nil(), context)
+# Every card the town lists with its name, a page at a time (`heads`, which reads no root).
+def repairPlaces(state: State, names: Lists.List<String>, after: String, got: Lists.List<Place>, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.heads({prefix: "", after: after}):
+    case headed(h): repairPage(state, names, Lists.concat(Lists.map(h.items, fn(i: World.Head) -> Place: {id: i.id, words: phraseWords(i.head), owner: i.owner}), got), h.items, h.more, context)
+    case refused(_): repairResolve(state, names, got, context)
+def repairPage(state: State, names: Lists.List<String>, got: Lists.List<Place>, items: Lists.List<World.Head>, more: Bool, context: Abi.Context) -> Activity<Card.Replied>:
+  match Lists.reverse(items):
+    case cons(c): if more then repairPlaces(state, names, c.head.id, got, context) else repairResolve(state, names, got, context)
+    case nil(_): repairResolve(state, names, got, context)
+# A phrase's words for matching: lower case, the punctuation at either end of a word dropped.
+def phraseWords(text: String) -> Lists.List<String>:
+  Lists.filter(Lists.map(Text.words(Text.lower(text)), fn(w: String) -> String: Text.trimEndOf(textDrop(w, textSpan(w, punctuation())), punctuation())), fn(w: String) -> Bool: w != "")
+def punctuation() -> String:
+  ",.;:!?\"'()[]"
+# Whether `run` stands, word by word, inside `words`.
+def within(run: Lists.List<String>, words: Lists.List<String>) -> Bool:
+  match run:
+    case nil(_): false
+    case cons(_): startsWith(run, words) || afterFirst(run, words)
+def afterFirst(run: Lists.List<String>, words: Lists.List<String>) -> Bool:
+  match words:
+    case nil(_): false
+    case cons(c): within(run, c.tail)
+def startsWith(run: Lists.List<String>, words: Lists.List<String>) -> Bool:
+  match run:
+    case nil(_): true
+    case cons(r): startsWord(r.head, r.tail, words)
+def startsWord(first: String, run: Lists.List<String>, words: Lists.List<String>) -> Bool:
+  match words:
+    case nil(_): false
+    case cons(w): first == w.head && startsWith(run, w.tail)
+# The places a phrase names: a place whose head stands in it word for word, or whose id is one of its words; never
+# the thing itself. A field named for a place the town has (`tide`) names that place.
+def placesNamed(phrase: String, places: Lists.List<Place>, own: String) -> Lists.List<String>:
+  let words = phraseWords(phrase)
+  Lists.map(Lists.filter(places, fn(p: Place) -> Bool: p.id != own && (within(p.words, words) || Lists.any(words, fn(w: String) -> Bool: w == p.id))), fn(p: Place) -> String: p.id)
+record Resolved:
+  name: String
+  value: String
+# Each stranded field resolved, or left: one place named, else the one of several its maker owns, else none.
+def repairResolve(state: State, names: Lists.List<String>, places: Lists.List<Place>, context: Abi.Context) -> Activity<Card.Replied>:
+  repairResolving(state, names, places, Lists.List.nil(), Lists.List.nil(), context)
+def repairResolving(state: State, names: Lists.List<String>, places: Lists.List<Place>, done: Lists.List<Resolved>, left: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  match names:
+    case nil(_): repairSetting(state, Lists.reverse(done), Lists.reverse(left), context)
+    case cons(c): if Lists.any(places, fn(p: Place) -> Bool: p.id == c.head) then repairResolving(state, c.tail, places, Lists.List.cons({head: {name: c.head, value: c.head}, tail: done}), left, context) else repairChosen(state, c.head, c.tail, placesNamed(field(state, c.head), places, context.object), places, done, left, context)
+def repairChosen(state: State, name: String, rest: Lists.List<String>, named: Lists.List<String>, places: Lists.List<Place>, done: Lists.List<Resolved>, left: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  match named:
+    case nil(_): repairResolving(state, rest, places, done, Lists.List.cons({head: name, tail: left}), context)
+    case cons(c): if Lists.length(named) == 1n then repairResolving(state, rest, places, Lists.List.cons({head: {name: name, value: c.head}, tail: done}), left, context) else repairOwned(state, name, rest, named, places, done, left, context)
+# Of several places named, those its maker owns: repaired when there is exactly one.
+def repairOwned(state: State, name: String, rest: Lists.List<String>, named: Lists.List<String>, places: Lists.List<Place>, done: Lists.List<Resolved>, left: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  let mine = Lists.filter(named, fn(id: String) -> Bool: Lists.any(places, fn(p: Place) -> Bool: p.id == id && p.owner == state.maker))
+  if Lists.length(mine) == 1n then repairResolving(state, rest, places, Lists.List.cons({head: {name: name, value: repairOnly(mine)}, tail: done}), left, context) else repairResolving(state, rest, places, done, Lists.List.cons({head: name, tail: left}), context)
+def repairOnly(names: Lists.List<String>) -> String:
+  match names:
+    case nil(_): ""
+    case cons(c): c.head
+# The resolved fields set as its owner's `set` sets them; what is left stranded is marked and told to its maker once.
+def repairSetting(state: State, done: Lists.List<Resolved>, left: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  match done:
+    case nil(_): repairLeft(state, left, Lists.List.nil(), context)
+    case cons(_): repairWrites(state, done, done, left, context)
+def repairWrites(state: State, rest: Lists.List<Resolved>, done: Lists.List<Resolved>, left: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  match rest:
+    case nil(_): repairLeft(state, left, done, context)
+    case cons(c): repairOne(state, c.head, c.tail, done, left, context)
+def repairOne(state: State, one: Resolved, rest: Lists.List<Resolved>, done: Lists.List<Resolved>, left: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  let written(_) = world.write(extend(keep(), {vars: fieldEdit(state.vars, one.name, one.value)}))
+  repairWrites(state, rest, done, left, context)
+def repairLeft(state: State, left: Lists.List<String>, done: Lists.List<Resolved>, context: Abi.Context) -> Activity<Card.Replied>:
+  match left:
+    case nil(_): repairedMark(state, done, context)
+    case cons(_): repairStranded(state, done, left, context)
+def repairedMark(state: State, done: Lists.List<Resolved>, context: Abi.Context) -> Activity<Card.Replied>:
+  if marked(state, "repaired") then repairArmedOr(done, context) else repairedMarked(done, context)
+def repairedMarked(done: Lists.List<Resolved>, context: Abi.Context) -> Activity<Card.Replied>:
+  let written(_) = write {marks: insert markOf("repaired", context)}
+  repairArmedOr(done, context)
+def repairArmedOr(done: Lists.List<Resolved>, context: Abi.Context) -> Activity<Card.Replied>:
+  if setArms() then repairArmed(done, context) else repairTold(done, Lists.List.nil(), context)
+# What is left stranded, marked and told to its maker once (as `stranding` does), the repair's reply saying it.
+def repairStranded(state: State, done: Lists.List<Resolved>, left: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  if marked(state, "stranded") then repairTold(done, left, context) else repairNoted(state, done, left, context)
+def repairNoted(state: State, done: Lists.List<Resolved>, left: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  let written(_) = write {marks: insert markOf("stranded", context)}
+  match world.call::<Scenes.Done>({object: {world: context.world, object: state.maker}, method: "note", argument: {text: textTake(strandedLine(state, context.object), 280n)}}):
+    case _: repairTold(done, left, context)
+def repairArmed(done: Lists.List<Resolved>, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.send({object: Plans.self(context), method: "arm", argument: {}}):
+    case _: repairTold(done, Lists.List.nil(), context)
+def repairTold(done: Lists.List<Resolved>, left: Lists.List<String>, context: Abi.Context) -> Activity<Card.Replied>:
+  let lines = Lists.concat(Lists.map(done, fn(r: Resolved) -> String: repairedLine(r)), Lists.map(left, fn(n: String) -> String: strandedLeft(n, context.object)))
+  Card.tell(Card.Replied.done({action: "repair"}), Document.text(textJoin(lines, "")))
+def repairedLine(r: Resolved) -> String:
+  "Repaired {r.name}: {r.value}.\n"
+def strandedLeft(name: String, id: String) -> String:
+  "{name} names no place the town can tell; its maker sets it: delvetalk {id} set / {name}: <an object id>\n"
 # What it rings, as a card says it ("" when it sounds nothing).
 def ringing(state: State) -> String:
   if state.tone == "" then "" else "Rings {state.tone}.\n"
@@ -467,7 +614,7 @@ form undoor:
   label: text 1..32
 # What the host offers a reader (HOST-HANDOFF 103): admit to the keeper, doors to the owner.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words("")))
+  Lists.concat(Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))), repairAction(state, context))
 # Words take the record's card by default (Card.answer); prose it leaves silent is hob's.
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))

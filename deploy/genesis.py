@@ -1150,6 +1150,7 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
     out += placed_register(host, opener)
     out += placed_mending(host, opener)
     out += first_lined(host, opener)
+    out += repaired(host, opener)
     out += placed_playthings(host, opener, config)
     whole, installed = True, False
     if station and station_complete(host, opener):
@@ -1175,6 +1176,23 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
             except Stopped as e:
                 out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
     return out
+
+
+def repaired(host, opener):
+    """Things made before a field of theirs came to name an object (edition 19: `haunts`, `tide`), repaired by the town
+    on a carried town: `kinds repair`, once a refresh (Kind's `repair`: each kind with an object field, then each of its
+    things that holds a phrase there, is sent RECORD's `repair`, its own turn). A phrase the town can name one place by is
+    set to it; one it cannot is marked `stranded`, told once to its maker and listed on the hand's requests. One row."""
+    if standing(host, opener, 'kinds') is None:
+        return []
+    version = standing(host, opener, 'kinds')[0]
+    height = host.send({'op': 'world-status', 'principal': opener}).get('height', 0)
+    reply = host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'repair', 'identity': f'refresh-kinds-repair-{version}',
+                       'argument': rec()})
+    if reply.get('status') == 'admitted' and (reply.get('receipt') or {}).get('height', height + 1) <= height:
+        return [{'object': 'kinds', 'slot': 'repair', 'status': 'current'}]  # the host's first receipt: asked at this version already
+    said = ' '.join(o.get('text', '').strip() for o in reply.get('offers') or [])
+    return [{'object': 'kinds', 'slot': 'repair', **done(reply), 'reading': said or 'repaired'}]
 
 
 def first_lined(host, opener):
