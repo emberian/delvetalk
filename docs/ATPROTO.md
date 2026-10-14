@@ -430,6 +430,8 @@ publish what the holder chooses.
 with no DID, repository or firehose; publishing is the existing exits; the table is the contract for every
 surface, and off the feed never means private.
 
+atproto Spaces (access-gated, never confidential) are designed, not built, in [design/SPACES.md](design/SPACES.md).
+
 ## 4. Identity
 
 **The mapping is built.** `identity.hosted_identity(value, host)` maps in both directions, with one canonical
