@@ -1152,7 +1152,8 @@ Measured at the first rollout (2026-10-14, both towns carried just before): the 
 alone, so a carry's genesis is where screening begins: gsb's 4,633 entries of v16 and obend's 845 of v1 (and every chain
 before) were not screened; obend's feed, a transport file the carry copies, was screened whole (10 posts). Nothing was
 hidden or flagged on either town. lane/playtest5 screens the past: the host container mounts every data directory read
-only at `/towns` (compose.yml), the path a carried genesis cites its ancestors by, so the host reads them; then a backfill,
+only at `/towns` (compose.yml; compose.hand.yml mounts it into the hand too, whose overview reads the day across the
+carried chain), the path a carried genesis cites its ancestors by, so the host reads them; then a backfill,
 a dry run first, reports what it would hide and changes nothing:
 
     docker compose exec delvetalk-automod python3 -m transport automod --backfill            # dry run, resumable, 4,096 entries a pass
