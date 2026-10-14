@@ -607,41 +607,6 @@ inductive Transition (State : Type) where
   continues it. The waiting state is retained exactly. -/
   | yielded (waiting : State)
 
-inductive MachineSteps {State : Type} (step : State → Transition State) : State → State → Prop where
-  | refl (state : State) : MachineSteps step state state
-  | next {initial middle result : State} : step initial = .advanced middle →
-      MachineSteps step middle result → MachineSteps step initial result
-
-/-- Supported is fixed by the intended source edition/domain, not chosen by an
-implementation to make initialization/completeness vacuous. Administrative
-progress applies only to running transitions. Final values and capacity
-suspension have separate observations. Completeness is an explicit obligation
-for the supported adequately provisioned domain; no instance is claimed here. -/
-structure Representation (State : Type) (Supported : Term → Prop) where
-  represents : State → Term → Prop
-  start : Term → Option State
-  initializesSupported : ∀ source, Supported source → ∃ state, start source = some state
-  initialized : ∀ source state, start source = some state → represents state source
-  step : State → Transition State
-  administrativeRank : State → Nat
-  simulation : ∀ state successor source, represents state source → step state = .advanced successor →
-    ∃ next, represents successor next ∧
-      ((next = source ∧ administrativeRank successor < administrativeRank state) ∨
-        PositiveSteps source next)
-  valueAdequacy : ∀ state source result, represents state source → step state = .finished result →
-    ∃ value, Steps source value ∧ Value value ∧ Observes value result
-  suspensionExact : ∀ state retained, step state = .suspended retained → retained = state
-  evaluationComplete : ∀ source value result, Supported source → Evaluates source value → Observes value result →
-    ∃ initial final, start source = some initial ∧ MachineSteps step initial final ∧
-      step final = .finished result
-
-/-- Generic Fix returns the target, never implicitly wraps it in a prototype.
-Prototype conflation is an explicit library knot whose spec can be inspected
-without demanding the recursive target. `self` here is the whole prototype. -/
-def instantiatePrototype (spec seed : Term) : Term :=
-  .fix (.lam (.lam (.prototype (spec.rename (fun n => n + 2))
-    (.app (.app (spec.rename (fun n => n + 2)) (.bound 1)) (.bound 0))))) seed
-
 theorem prototype_metadata_unforced (spec divergent : Term) :
     Step (.reflect (.prototype spec divergent)) spec := .reflectPrototype _ _
 

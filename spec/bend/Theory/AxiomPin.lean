@@ -10,7 +10,7 @@ otherwise.  `sorryAx`, a declared project axiom and the compiler trust of
 
 This module imports only `Lean`, so Mathlib-free modules (the Objective Bend
 Core4 definitions and proofs) can pin their theorems without taking a Mathlib
-dependency.  `Theory.AssertAxioms` re-exports it and adds the tree-wide census.
+dependency.
 
 The exact axiom set of each Objective Bend declaration is not typed by hand
 beside it: it is a column of the declaration's row in the contract manifests

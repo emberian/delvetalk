@@ -20,7 +20,7 @@ so the theorems are about the checks that run.
 
 Rows are lists of `(name, type)`; the elaborator passes canonical types, so `==` on a type is
 the elaborator's `sameTy`. -/
-import Theory.AssertAxioms
+import Theory.AxiomPin
 namespace Delvetalk.Compiler.ObjectiveBendContract
 set_option autoImplicit false
 

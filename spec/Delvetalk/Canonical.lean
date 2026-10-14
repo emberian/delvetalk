@@ -62,8 +62,6 @@ def bigEndianList (n : Nat) : List UInt8 :=
 termination_by n
 decreasing_by omega
 
-def bigEndian (n : Nat) : ByteArray := ⟨(bigEndianList n).toArray⟩
-
 def textList (s : String) : List UInt8 := headList 3 s.utf8ByteSize ++ s.toUTF8.data.toList
 
 def text (out : ByteArray) (s : String) : ByteArray :=
@@ -452,9 +450,6 @@ theorem encodeList_label (t : String) : encodeList (.label t) = textList t := by
   rw [encodeList]; split
   · rename_i h'; rw [listView_atom.2.2.1] at h'; cases h'
   · rfl
-
-theorem headList_cons (m n : Nat) : ∃ rest, headList m n = UInt8.ofNat (32 * m + headInfo n) :: rest :=
-  ⟨_, rfl⟩
 
 /-- Every encoding begins with `firstByte`, which is never null's 0xf6. -/
 theorem encodeList_first (d : Data) : ∃ rest, encodeList d = UInt8.ofNat (firstByte d) :: rest := by

@@ -105,7 +105,7 @@ representation, every act a journaled entry marked `root`, applied verbatim on r
   principal's turns are refused `quiet` until the clock passes (`docs/ROOT.md`).
 - The automatic moderation screens residents' public texts after admission, a classifier's verdict journaled as the
   opener's `screen` act; a hidden text leaves every reply but the opener's (ROOT §2.4).
-- `delvetalk-obend root-edit` and `migrate` are the offline tools (`RootEdit.lean`).
+- `delvetalk-obend root-edit` is the offline editing tool (`RootEdit.lean`).
 
 **Store.** Objects by id: `{maker, pin, law, version, behaviour, state, activities}`.
 

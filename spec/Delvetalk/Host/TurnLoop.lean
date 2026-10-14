@@ -3280,8 +3280,6 @@ structure TurnMeta where
   /-- The reach a delivered `receive` carries from the turn that handed it on (`Send.reach`). -/
   reach : Option String := none
 
-def ledgerJson (l : Ledger) : Json := l.json
-
 /-- The sends of an admitted turn, each with the ledger it inherits: depth - 1,
     work - the ticks this turn used, storage - the bytes its writes added. -/
 def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : Nat)

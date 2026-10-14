@@ -510,13 +510,6 @@ def runBounded (limits : Limits) : Nat → State → Outcome
     | .suspended .ticks next => runBounded limits ticks next
     | other => other
 
-/-- Compatibility projection for inspecting retained state; Outcome must be
-used when distinguishing completion, suspension and divergence matters. -/
-def run (limits : Limits) (ticks : Nat) (state : State) : State :=
-  match runBounded limits ticks state with
-  | .finished _ retained | .suspended _ retained | .divergent _ retained | .refused _ retained
-  | .yielded _ retained => retained
-
 /-- Resume a yielded program with the kernel's response, a closed term (decoded
 data). Heap and stack are unchanged: the yielded state IS the checkpoint.
 Any other state cannot be resumed. -/

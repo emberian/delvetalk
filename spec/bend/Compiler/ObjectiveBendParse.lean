@@ -1367,14 +1367,6 @@ def parseObjective (source : String) : Except Diagnostic Module := do
     | none => imports
   return ⟨imports.toList, decls.toList, layer.map (·.1), implements.toList, forms.toList⟩
 
-/-- Strict UTF-8 decoding as `new TextDecoder("utf-8",{fatal:true})`: invalid bytes refuse and a
-leading byte-order mark is consumed. -/
-def decodeSource (bytes : ByteArray) : Option String :=
-  (String.fromUTF8? bytes).map fun s =>
-    match s.toList with
-    | '﻿' :: rest => String.ofList rest
-    | _ => s
-
 /-- What parsing a source says, if it refuses. -/
 private def parseRefusal (source : String) : Option String :=
   match parseObjective source with

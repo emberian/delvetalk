@@ -229,7 +229,7 @@ cells cost nothing but its array head). `lawTicks` 100,000. `typeFuelDefault` 16
 
 State: `maxCellBytes` 262,144, the canonical bytes of one state cell (§15): the scalar part, or one relation row.
 
-Wire: `dataWireDepth` 256, `plainJsonDepth` 64, `documentWireDepth` 8192, `entryArrowDepth` 64, `maxFrameBytes`
+Wire: `dataWireDepth` 256, `documentWireDepth` 8192, `entryArrowDepth` 64, `maxFrameBytes`
 16 MiB (a driver request line, which also holds the artifact a `run` sends back), `issuedCheckpoints` 65,536.
 
 Packages:
@@ -251,7 +251,7 @@ text shares the 1 MiB). `Document.maxOffersPerTurn`/`maxOutputBytes` are aliases
 
 Outside `Limits.lean`: `PackageMain` 16 MiB line frame; `EvaluateTerm` nesting 4096, default 200,000 ticks,
 `go 64` yields cap; `Canonical` reuses `nodesMax`/`bytesMax`; the host's own `Host.Limits` (`dataDepth` 8192,
-`plainDepth` 64, `maxTurnTicks` 1,000,000, `maxCheckpointBytes`, `maxRefusalBytes` 4096, `lawDepth` 4,
+`maxTurnTicks` 1,000,000, `maxCheckpointBytes`, `maxRefusalBytes` 4096, `lawDepth` 4,
 `maxLawClauses` 16, `rulesPerCommit` 8, `rulesPerObject` 32; HOST-HANDOFF). Fuel parameters that are not
 budgets: `Typing.check` fuel, `Ty.dataFuel`, `termNestingCapacity` 4096, `conformsFuel`, `peelArrows`,
 `maxInferenceSteps`. A fuel exhaustion is a refusal, never a wrong answer, but it looks like a type error.
@@ -618,9 +618,9 @@ comment. The host judges, fires and poses them (`Host/Law.lean`, HOST-HANDOFF).
   no rule over old and new, no `changed`, no `under`; `admit` refuses the first such construct (`wantRule`).
   `parsed_want_reads_as_it_stands` proves it of every line `parseClause` accepts.
 - **One parser**: `parseClause`, `parseClauseSource` (the clause and the text after its `:` as written),
-  `parseText` (blank lines aside; names unique across all three modalities, `checkNames`), `parseBody`,
-  `splitReading`. `tokenize` stops at `then` (a rule) or `asks` (a want) where it is not a field name; a leftover
-  `then`/`asks` names the modality that takes it (`joinRule`). The Surface decl is `.clause keyword name source
+  `parseText` (blank lines aside; names unique across all three modalities, `checkNames`), `parseBody`.
+  `tokenize` stops at `then` (a rule) or `asks` (a want) where it is not a field name; a leftover `then`/`asks`
+  names the modality that takes it (`joinRule`). The Surface decl is `.clause keyword name source
   reading`; its JSON `kind` is the keyword. `ObjectiveBendElaborate.Module.clauses`/`Lowering.clauses` carry the
   entry module's text, every modality (the host places a package's rules and wants from them);
   `Module.laws`/`Lowering.laws` are its law projection (`lawsOf`).

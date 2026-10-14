@@ -1042,9 +1042,6 @@ def futureRowSource : AnnotatedTerm :=
 theorem independently_checked_future_rows :
     (check futureRowSource [] 16).isSome = true := by decide
 
-def futureRowChecked : Checked futureRowSource [] :=
-  (check futureRowSource [] 16).get independently_checked_future_rows
-
 /-- This source can be separately instantiated at EVERY future Self/Super type
 in the declared shareable fragment. Unknown members stay in Super itself, not
 in a fixed closed record chosen during extension compilation. -/
@@ -1064,15 +1061,6 @@ theorem future_row_instantiation_accepted (self super : Ty)
     validContext, reusableAllowed, reusableCaptures,
     List.range_succ, List.zipWith, selfShareable, superShareable, (Ty.isRow_mono superRow (by omega) : super.isRow [] 77 = true),
     Ty.isComputation]
-
-/-- A total law provider proves a law ABOUT the partial runtime term; source
-law names alone cannot construct this evidence. Compatible retention is chosen
-explicitly rather than asserted as a universal consequence of inheritance. -/
-structure LawProvider (source : AnnotatedTerm) (law : Term → Prop) where
-  evidence : law source.erase
-
-structure RetainedContracts (source : AnnotatedTerm) (laws : List (Term → Prop)) where
-  providers : ∀ law ∈ laws, LawProvider source law
 
 def FutureRowTyped (source : Ty → Ty → AnnotatedTerm) : Prop :=
   ∀ self super, self.shareable = true → super.shareable = true → super.isRow [] 64 = true →
@@ -1693,34 +1681,6 @@ info: 'Delvetalk.Theory.ObjectiveBendTyping.refusal_kind_custody_in_reusable_clo
 -/
 #guard_msgs in
 #print axioms refusal_kind_custody_in_reusable_closure
-
-def packetReceipt (value : Json) : Except String Json := do
-  let packet ← decodePacket value
-  let result ← requireSome (refusalReason packet) (check packet.source packet.context packet.fuel)
-  return Json.mkObj [
-    ("schema", toJson "dregg.objective-bend.typing-receipt.v1"),
-    ("status", toJson "accepted"),
-    ("type", typeJson result.type), ("uses", toJson result.uses),
-    ("typingScope", toJson "compiled proof-producing annotated partial checker; preservation and demand adequacy separate"),
-    ("laws", toJson "undischarged unless independent total law providers are supplied"),
-    ("authority", toJson "no current native authority granted")]
-
-/-- Native entry point for the exact core packet produced by the world lowerer.
-Its executable result relies on Lean compilation; it is not a kernel certificate
-for the parsed bytes or an executor/authority qualification. -/
-def checkPacketFile (path : String) : IO UInt32 := do
-  let input ← IO.FS.readFile path
-  let result := do
-    let parsed ← Json.parse input
-    packetReceipt parsed
-  match result with
-  | .ok receipt => IO.println receipt.compress; return 0
-  | .error message =>
-      IO.eprintln (Json.mkObj [("schema",toJson "dregg.objective-bend.typing-receipt.v1"),
-        ("status",toJson "refused"),("stage",toJson "objective-source-type-check"),("message",toJson message)]).compress
-      return 2
-
-
 
 /-! ## Activities: effects as a type, never in a shared position -/
 

@@ -1,21 +1,17 @@
-"""The journal as a block store: an open from a snapshot equals replay from height 0, and a journal in the
-line format opens only after the one-shot migration.
+"""The journal as a block store: an open from a snapshot equals replay from height 0.
 
 Evidence for HOST-HANDOFF §3 (layer: host). Every entry is a canonical record under its CID in
 `<journal>.blocks`; the journal file is the chain of links; a snapshot carries every index `record`
 derives, so an open reads it and replays only the entries after it, each read and checked against the
 chain. Refuted by any read that answers otherwise after an open from a snapshot than after replay from
-0 (`world-open {verify: true}` and an open with the snapshots removed), by a snapshot `verify` refuses,
-or by a line-format journal that opens, or a migrated one that does not keep its hashes.
+0 (`world-open {verify: true}` and an open with the snapshots removed), or by a snapshot `verify` refuses.
 """
 import glob
 import json
 import os
-import subprocess
 import unittest
 
 from transport.journal import entries as journal_entries
-from tests.host import binary
 from tests.test_reflection import PACKAGE, PROBE, Reflection, probe_seed, source_seed
 from tests.wire import label, record
 
@@ -81,28 +77,16 @@ class BlockStore(Reflection):
         self.assertEqual(self.host.send(op="world-open", path=self.path)["snapshot"], {"resumed": 0, "refused": []})
         self.assertEqual(self.world(), live)
 
-    def test_a_line_format_journal_is_refused_by_name_and_opens_once_migrated(self):
+    def test_a_line_format_journal_is_refused_by_name(self):
         self.make("c", PACKAGE, source_seed())
         self.assertEqual(self.turn("c", "bump")["status"], "admitted")
-        head = self.host.send(op="world-status")["head"]
         entries = journal_entries(self.path)
         old = os.path.join(self.dir.name, "old.journal")
         with open(old, "w") as f:
             f.write("".join(json.dumps(e, separators=(",", ":")) + "\n" for e in entries))
         refused = self.spawn().send(op="world-open", path=old)
         self.assertEqual(refused["status"], "error", refused)
-        self.assertIn("migrate --journal", refused["message"])
-        new = os.path.join(self.dir.name, "new.journal")
-        p = subprocess.run([binary(), "migrate", "--journal", old, "--out", new], capture_output=True, text=True)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(json.loads(p.stdout)["head"], head)
-        self.assertEqual(journal_entries(new), entries)
-        h = self.spawn()
-        opened = h.send(op="world-open", path=new, verify=True)
-        self.assertEqual((opened["status"], opened["head"], opened["snapshot"]["refused"]), ("opened", head, []), opened)
-        # The old file is kept; a second migration into the same file is refused.
-        p = subprocess.run([binary(), "migrate", "--journal", old, "--out", new], capture_output=True, text=True)
-        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("old line format", refused["message"])
 
 
 if __name__ == "__main__":

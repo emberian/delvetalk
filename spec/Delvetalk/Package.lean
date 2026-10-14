@@ -615,50 +615,6 @@ def executeEntry (entry : Delvetalk.CheckedEntry) (arguments limits : Json) (pro
     applied ← applied.apply (← argumentTerm value) .empty
   executeTyped applied.source.term applied.type limits profile
 
-/-- World data conversion: exact naturals, booleans, strings and records only.
-The returned node count lets the enclosing host charge its shared budget. -/
-def jsonData : Nat → Json → Except String (Data × Nat)
-  | 0, _ => throw "package JSON nesting capacity"
-  | fuel + 1, value => do
-    match value with
-    | .bool b => return (.boolean b, 1)
-    | .str text => return (.label text, 1)
-    | .num _ => return (.natural (← value.getNat?), 1)
-    | .obj fields =>
-        let converted ← fields.toArray.toList.mapM fun (name,child) => do
-          let (datum,nodes) ← jsonData fuel child
-          return ((name,datum),nodes)
-        return (.record (converted.map Prod.fst), 1 + (converted.map Prod.snd).foldl (· + ·) 0)
-    | _ => throw "package JSON requires natural, boolean, string or record"
-
-def dataPlain : Nat → Data → Except String (Json × Nat)
-  | 0, _ => throw "package result nesting capacity"
-  | fuel + 1, value => do
-    match value with
-    | .natural n => return (toJson n, 1)
-    | .boolean b => return (toJson b, 1)
-    | .label text => return (toJson text, 1)
-    | .record fields =>
-        let converted ← fields.mapM fun (name,child) => do
-          let (datum,nodes) ← dataPlain fuel child
-          return ((name,datum),nodes)
-        return (Json.mkObj (converted.map Prod.fst), 1 + (converted.map Prod.snd).foldl (· + ·) 0)
-    | .variant _ _ => throw "variant results are not in the plain JSON package profile"
-
-/-- For hosts that already verified this exact packet's source artifact. The
-caller supplies remaining ticks, charges ticksUsed AND conversionNodes against
-its enclosing budget, and commits nothing on refusal. -/
-def executeJsonPacket (packet arguments limits : Json) : Except String Json := do
-  let converted ← (← arguments.getArr?).toList.mapM (jsonData Bounds.plainJsonDepth)
-  let inputNodes := (converted.map Prod.snd).foldl (· + ·) 0
-  let result ← executePacket packet (.arr ((converted.map fun pair => dataJson pair.1).toArray)) limits
-  if (← result.getObjValAs? String "status") != "finished" then return result
-  let (value,outputNodes) ← dataPlain Bounds.plainJsonDepth (← decodeData Bounds.dataWireDepth (← result.getObjVal? "value"))
-  return Json.mkObj [("status",toJson "finished"),("value",value),
-    ("type",← result.getObjVal? "type"),("ticksUsed",← result.getObjVal? "ticksUsed"),
-    ("heapCells",← result.getObjVal? "heapCells"),("nodesUsed",← result.getObjVal? "nodesUsed"),
-    ("conversionNodes",toJson (inputNodes + outputNodes))]
-
 /-- Re-run the pinned frontend and checker to bind claimed source to executable
 packet. Self-hashes alone are integrity fields, never compilation evidence. -/
 def verifyArtifact (artifact : Json) : Except String Unit := do

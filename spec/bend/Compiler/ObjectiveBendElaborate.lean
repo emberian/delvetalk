@@ -3061,10 +3061,6 @@ def elaboratePackageLocated (modules : List Module) : Except Refusal Elaborated 
 def elaboratePackage (modules : List Module) : Except String Elaborated :=
   (elaboratePackageLocated modules).mapError (·.message)
 
-def elaborate (modules : List Module) (entryModule : Nat) (entryDefinition : String) :
-    Except String Output := do
-  (← elaboratePackage modules).select entryModule entryDefinition
-
 /-! ## The typing proposal (literalAnnotations) -/
 
 structure Annotation where
