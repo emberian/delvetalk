@@ -242,8 +242,6 @@ def maxUtteranceBytes : Nat := 8192
 def maxOffersBytes : Nat := 65536
 /-- A model reply, as settled. -/
 def maxReplyBytes : Nat := 262144
-/-- Nesting of the plain JSON argument of a proposal. -/
-def plainDepth : Nat := 64
 /-- Grants one turn may make, live grants a world holds, and a resident's share. -/
 def grantsPerTurn : Nat := 8
 def maxGrants : Nat := 4096

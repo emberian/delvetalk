@@ -2,16 +2,18 @@
 
 Every second it asks the host, on the root socket as the opener, for the texts written since its cursor
 (`world-screen {after, external}`), offering the feed's new posts beside them; the host answers the texts and has
-already acted on any its wordlist names. The worker holds what is new; once it has held a text for `automod_window`
-seconds, or holds `automod_batch` texts, it asks the classifier (the owner's Z.ai subscription, its Anthropic-compatible Messages endpoint, `automod_model`) about the batch in one
-call, each text numbered, and gives the host the classifier's reply verbatim (`world-screen-verdicts`). The host decides
+already acted on any its wordlist names. The worker holds what is new; once it has held a text for 5 seconds, or holds
+24 texts, it asks the classifier (glm-5.3-flash on the owner's Z.ai subscription, its Anthropic-compatible Messages
+endpoint) about the batch in one call, each text numbered, and gives the host the classifier's reply verbatim
+(`world-screen-verdicts`). The host decides
 what a verdict does and journals it; nothing here hides or quiets anything. An idle worker asks the host and calls no
 model. When the classifier fails, the texts wait (the cursor and the held texts are kept on disk, so a restart loses
 none), the worker backs off, and its status file says so for the hand's overview; when the provider's own filter refuses
 a batch, the worker asks again in halves, and a single text the provider refuses goes to the host as `blocked`.
 
 The key is a file (`zai_key_file`), read on every call; spend is a line a call in <state>/automod-spend.jsonl, kept
-apart from the Anthropic ledger (tokens only: a subscription has no per-token price), and the day's calls are capped by `automod_daily_calls`. Run as
+apart from the Anthropic ledger (tokens only: a subscription has no per-token price), and the day's calls are capped
+at 2,000. Run as
 `python3 -m transport automod --state DIR [--world W] [--once]`.
 """
 import json
@@ -21,6 +23,13 @@ import time
 
 from transport import model
 from transport.delve import canonical
+
+MODEL = 'glm-5.3-flash'  # the Z.ai subscription's classifier, with thinking disabled
+BASE_URL = 'https://api.z.ai/api/anthropic'  # the subscription endpoint, not pay-per-token paas
+WINDOW = 5.0  # seconds a new text waits for others to join its batch
+BATCH = 24  # texts per classifier call (also bounded by BATCH_BYTES)
+DAILY_CALLS = 2000  # classifier calls per UTC day per world
+QUIET_HOURS = 24  # hours the host quiets a high-confidence flag's author
 
 CLIP = 2048  # bytes of one text the classifier reads: a verdict on its opening hides it whole
 BATCH_BYTES = 32 * 1024  # bytes of clipped text in one call, so a batch of long posts is cut short of the cap
@@ -49,7 +58,7 @@ def user_text(items):
 
 
 def ask_glm(st, system, user, transport=None):
-    """One Messages API call to the owner's Z.ai subscription (its Anthropic-compatible endpoint, `automod_base_url`) ->
+    """One Messages API call to the owner's Z.ai subscription (its Anthropic-compatible endpoint) ->
     {status: replied, raw, model, usage, seconds} | {status: blocked} | failed(...). The wire is model.py's: its key
     reader, its HTTP, its reading of the answer (thinking blocks skipped, the text blocks joined). Thinking is off:
     left on, glm-5.3-flash spends seconds deliberating before a one-line verdict (measured 2026-10-13: 7.6 s against
@@ -58,11 +67,11 @@ def ask_glm(st, system, user, transport=None):
     secret = model.key(c.zai_key_file)
     if not secret:
         return failed('refused', 'no key: zai_key_file names none')
-    body = {'model': c.automod_model, 'temperature': 0, 'max_tokens': 4096, 'thinking': {'type': 'disabled'},
+    body = {'model': MODEL, 'temperature': 0, 'max_tokens': 4096, 'thinking': {'type': 'disabled'},
             'system': system, 'messages': [{'role': 'user', 'content': user}]}
     headers = {'x-api-key': secret, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'}
     began = time.monotonic()
-    status, raw, *_ = (transport or model.http)('POST', c.automod_base_url.rstrip('/') + '/v1/messages', headers, json.dumps(body).encode())
+    status, raw, *_ = (transport or model.http)('POST', BASE_URL.rstrip('/') + '/v1/messages', headers, json.dumps(body).encode())
     seconds = round(time.monotonic() - began, 3)
     try:
         out = json.loads(raw)
@@ -71,7 +80,7 @@ def ask_glm(st, system, user, transport=None):
     error = (out.get('error') or {}) if isinstance(out, dict) else {}
     if str(error.get('code')) == '1301' or (isinstance(out, dict) and out.get('stop_reason') == 'sensitive'):
         return {'status': 'blocked', 'seconds': seconds}  # the provider's content filter refused the input
-    return {**model.interpret_body(status, raw, c.automod_model), 'seconds': seconds}
+    return {**model.interpret_body(status, raw, MODEL), 'seconds': seconds}
 
 
 def log(line):
@@ -161,7 +170,7 @@ class Worker:
                 return
             external, seq = self.offered()
             r = self.send({'op': 'world-screen', 'after': self.cursor, 'limit': 128, 'external': external,
-                           'quietHours': self.c.automod_quiet_hours})
+                           'quietHours': QUIET_HOURS})
             if r.get('status') != 'screen':
                 self.note['lastError'] = f"host: {r.get('message') or r}"
                 self.complain(f"host {r.get('status') or 'silent'}")
@@ -186,16 +195,16 @@ class Worker:
     def due(self, now):
         if not self.pending or now < self.wait_until:
             return False
-        if len(self.pending) >= self.c.automod_batch:
+        if len(self.pending) >= BATCH:
             return True
-        return now - min(i['seen'] for i in self.pending) >= self.c.automod_window
+        return now - min(i['seen'] for i in self.pending) >= WINDOW
 
     def batch(self):
         """The newest held texts, up to the batch's count and bytes."""
         out, size = [], 0
         for i in sorted(self.pending, key=lambda i: (i['seen'], i.get('at', 0)), reverse=True):
             n = len(clip(i['text']).encode())
-            if out and (len(out) >= self.c.automod_batch or size + n > BATCH_BYTES):
+            if out and (len(out) >= BATCH or size + n > BATCH_BYTES):
                 break
             out.append(i)
             size += n
@@ -204,7 +213,7 @@ class Worker:
     def budget_left(self, now):
         if day_start(now) != self.day:
             self.day, self.calls_today = day_start(now), 0
-        return self.calls_today < self.c.automod_daily_calls
+        return self.calls_today < DAILY_CALLS
 
     def call(self, items):
         """One call about `items` -> its result, the spend journaled to the ledger."""
@@ -225,7 +234,7 @@ class Worker:
         """Give the host the classifier's reply about `items`; drop what it settled. -> the host's status."""
         reply = {k: v for k, v in result.items() if k in ('status', 'raw', 'reason', 'detail')}
         r = self.send({'op': 'world-screen-verdicts', 'items': [{k: i[k] for k in ('key', 'text', 'source', 'author', 'at')} for i in items],
-                       'reply': reply, 'quietHours': self.c.automod_quiet_hours, 'model': result.get('model') or self.c.automod_model})
+                       'reply': reply, 'quietHours': QUIET_HOURS, 'model': result.get('model') or MODEL})
         status = r.get('status')
         if status == 'verdicts':
             unanswered = set(r.get('unanswered') or [])
@@ -240,7 +249,7 @@ class Worker:
             now = self.clock()
             for a in r.get('acted') or []:
                 seen = next((i['seen'] for i in items if i['key'] == a['key']), now)
-                self.note['recent'].append({**a, 'at': now, 'by': result.get('model') or self.c.automod_model, 'afterSeconds': round(now - seen, 3)})
+                self.note['recent'].append({**a, 'at': now, 'by': result.get('model') or MODEL, 'afterSeconds': round(now - seen, 3)})
             self.pending = [i for i in self.pending if i['key'] not in settled]
         elif status != 'failed':
             self.note['lastError'] = f"host: {r.get('why') or r.get('message') or status}"
@@ -287,7 +296,7 @@ class Worker:
                 break
             self.save()
             now = self.clock()
-            if len(self.pending) < self.c.automod_batch:
+            if len(self.pending) < BATCH:
                 break  # a short batch waits its window again
         self.save()
         self.write_status()
@@ -299,10 +308,10 @@ class Worker:
         if not self.c.zai_key_file:
             glm = 'no key'
         self.st.write(self.status_path, {
-            'at': now, 'world': self.st.world, 'model': self.c.automod_model, 'cursor': self.cursor, 'height': self.height,
+            'at': now, 'world': self.st.world, 'model': MODEL, 'cursor': self.cursor, 'height': self.height,
             'pending': len(self.pending), 'oldestSeconds': round(now - oldest, 1) if oldest else 0,
             'glm': glm, 'lastError': self.note['lastError'], 'lastCall': self.note['lastCall'], 'retryAt': self.wait_until or None,
-            'today': {**spent(self.st, day_start(now)), 'calls': self.calls_today, 'budget': self.c.automod_daily_calls},
+            'today': {**spent(self.st, day_start(now)), 'calls': self.calls_today, 'budget': DAILY_CALLS},
             'recent': self.note['recent'][-20:], 'left': self.note['left'][-20:]})
 
 
@@ -367,7 +376,7 @@ def backfill(st, host, ask=None, act=False, entries=4096, clock=time.time):
             summary['hidden'] += 1
             line({**a, 'text': a.get('text') or texts.get(a['key'], '')}, 'wordlist')
         seen.update(i['key'] for i in fresh)
-        for items in chunks(fresh, st.config.automod_batch):
+        for items in chunks(fresh, BATCH):
             if not w.budget_left(clock()):
                 st.write(path, {'cursor': cursor, 'base': base})
                 return {**summary, 'status': 'budget', 'cursor': cursor}
@@ -380,11 +389,11 @@ def backfill(st, host, ask=None, act=False, entries=4096, clock=time.time):
                 reply = result if given else w.call(one)
                 v = w.send({'op': 'world-screen-verdicts', 'items': [{k: i[k] for k in ('key', 'text', 'source', 'author', 'at')} for i in one],
                             'reply': {k: x for k, x in reply.items() if k in ('status', 'raw', 'reason', 'detail')}, 'quietHours': 0,
-                            'model': reply.get('model') or st.config.automod_model, 'dryRun': not act})
+                            'model': reply.get('model') or MODEL, 'dryRun': not act})
                 summary['unanswered'] += len(v.get('unanswered') or [])
                 for a in v.get('acted') or []:
                     summary['hidden' if a.get('state') == 'hidden' else 'review'] += 1
-                    line({**a, 'text': texts.get(a['key'], '')}, reply.get('model') or st.config.automod_model)
+                    line({**a, 'text': texts.get(a['key'], '')}, reply.get('model') or MODEL)
             summary['texts'] += len(items)
         summary['scanned'] += r['through'] - cursor
         if r['through'] == cursor:
@@ -396,11 +405,6 @@ def backfill(st, host, ask=None, act=False, entries=4096, clock=time.time):
 
 def command(st, a, out):
     """`automod`: a step every second (`--once`: one step and its status printed)."""
-    if not st.config.automod:  # off: a process that does nothing, so its service stays healthy and says why
-        out.write('automod: off in this config (automod = false)\n')
-        out.flush()
-        st.daemon('automod', lambda: None, every=30.0)
-        return 0
     if getattr(a, 'backfill', False):
         host = st.root_host()
         try:

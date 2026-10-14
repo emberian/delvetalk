@@ -38,8 +38,6 @@ def typeFuelDefault : Nat := 16384
 /-- Nesting of Data decoded from the JSON wire as an argument or a response
     (a list cell costs two levels). -/
 def dataWireDepth : Nat := 256
-/-- Nesting of plain JSON converted to Data and back (`executeJsonPacket`). -/
-def plainJsonDepth : Nat := 64
 /-- Nesting of a Document on the wire: a long list is a deep chain. -/
 def documentWireDepth : Nat := 8192
 /-- Longest chain of parameters peeled off an entry's type to find its activity. -/

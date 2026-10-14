@@ -168,24 +168,4 @@ def linearize (g : Graph) (head : List String) (parentsIn : List (List String)) 
       tails := updated
   .error (.fuelExhausted "merge loop" head)
 
-/-- Renaming a graph along a bijection (`to`, with inverse `back`). -/
-def Graph.rename (g : Graph) (to back : String → String) : Graph :=
-  ⟨fun y => (g.precedence (back y)).map to, fun y => g.isSuffix (back y)⟩
-
-/-- ORDERED-PRESENTATION INVARIANCE (scholar §5, proposed theorem), stated, not
-yet proved. Linearization commutes with every renaming of specification
-identities: the precedence list (and its most specific suffix) of the renamed
-presentation is the renamed result, and a refusal stays a refusal. It is a
-claim about the ORDERED presentation (local parent sequences and suffix
-marks), not about a bare DAG: a bare symmetric poset admits no equivariant
-strict order. Current evidence: `Compiler.ObjectiveBendC4Vectors.ordered_presentation_invariance_4000`
-checks it (compiled) on 4000 seeded random DAGs with suffix marks. Its premises are
-inhabited by the identity renaming. -/
-def OrderedPresentationInvariant : Prop :=
-  ∀ (g : Graph) (to back : String → String),
-    (∀ x, back (to x) = x) → (∀ y, to (back y) = y) →
-    ∀ (head : List String) (parents : List (List String)),
-      (linearize (g.rename to back) (head.map to) (parents.map (·.map to))).toOption =
-        (linearize g head parents).toOption.map (fun r => (r.1.map to, r.2.map to))
-
 end Delvetalk.Compiler.ObjectiveBendC4

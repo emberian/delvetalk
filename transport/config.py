@@ -1,5 +1,5 @@
 """The transport's one configuration (docs/OPERATIONS.md section b): every setting the programs share is a field below,
-with its default and what it means, and nothing else holds a default. `Config.load(state)` reads `<state>/delvetalk.toml`
+with its default and what it means. Fixed adapter values live at their use sites. `Config.load(state)` reads `<state>/delvetalk.toml`
 (optional; an unknown key or a value of the wrong type is refused by name), then the environment: `DELVETALK_<FIELD>`
 overrides `<field>`. A world's bridge is not configuration here but its row (`State.bridge`), which `open` writes."""
 import dataclasses
@@ -32,7 +32,6 @@ class Config:
     sync: str = field('fsync', "how serve makes an append durable: none, fsync or full")
     obend: str = field('delvetalk-obend', 'the host binary `serve` runs')
     poll: int = field(60, 'seconds between two steps of the bridge')
-    model_poll: float = field(1.0, "seconds between two rounds of the model worker (interpretations and paints): a paint must come inside the host's patience")
     http_bind: str = field('127.0.0.1', "the front's listening address")
     http_port: int = field(8765, "the front's port (the one the edge's Caddy route names)")
     firehose_bind: str = field('127.0.0.1', "subscribeRepos listener's address, independent of HTTP workers")
@@ -68,13 +67,10 @@ class Config:
     delve_mock: str = field('', "the bridge observes these fixture pages instead of delve.town (tests, the rehearsal)")
     model_mock: str = field('', 'the interpreter answers from these model fixtures instead of the network')
     watch_zuliprc: str = field('', "the watch bot's .zuliprc")
-    watch_stream: str = field('delvetalk-ops', 'the stream the watch posts to')
     watch_topic: str = field('watch', 'the topic the watch posts to')
     welcome: str = field(str(ROOT / 'docs' / 'previews' / 'zulip-welcome.txt'), 'the welcome deploy/playtest.sh posts')
     grant: float = field(200.0, 'the monthly API credit in dollars, against which the hand reports spend')
     plan: str = field(str(ROOT / 'docs' / 'PLAYTEST-2.md'), "the playtest's plan, whose seeds (§2) and invitations (§3) the hand's Speak offers")
-    probe_names: str = field('deploycheck', "the names a deploy's check guests are given, space-separated prefixes (docs/DEPLOY.md): /town counts "
-                             "their lines with the town's own and lists them nowhere as residents")
     owner_principals: str = field('', "the owner's principals besides the opener (his Zulip user), space-separated: no measure counts them as residents")
     arrival: str = field('invited', "how a guest with no account comes in (docs/DEPLOY.md \"A second instance\"): invited, by an invitation's "
                          "code alone; open, also by asking the door for a key (`/enter`, `POST /AGENTS.md/arrive`) with a small proof of work")
@@ -94,15 +90,7 @@ class Config:
     slow_turns: int = field(6, "the turns one hand may start a clock hour while the town is slow (`hand slow on`; any town)")
     hob_budget: int = field(300, "open town: hob's readings a clock day, the whole town's (host `modelQuota`; when spent, words are refused "
                             "with the card's spells to send instead)")
-    automod: bool = field(True, "run the automatic moderation worker (`transport automod`, docs/ROOT.md section 2.4): residents' public texts "
-                          "screened after they are admitted, a flagged one hidden and its author quieted; on by default on every town")
     zai_key_file: str = field('', "the file holding the owner's Z.ai subscription key the moderation's classifier uses (never the Anthropic key's budget)")
-    automod_model: str = field('glm-5.3-flash', "the classifier: a model the Z.ai subscription serves (glm-5.3-flash answers a batch in about 2 s; glm-5.3-flashx is not in the plan, code 1311)")
-    automod_base_url: str = field('https://api.z.ai/api/anthropic', "Z.ai's Anthropic-compatible endpoint: the subscription is served here (POST /v1/messages), not at the pay-per-token paas endpoint")
-    automod_window: float = field(5.0, "seconds the worker holds a new text for others to join its batch before it asks; a full batch goes at once")
-    automod_batch: int = field(24, "texts one classifier call reads, each answered by its number (each clipped to 2 KiB, a batch to 32 KiB)")
-    automod_daily_calls: int = field(2000, "classifier calls a UTC day, this world's; when spent, texts wait (the wordlist still acts)")
-    automod_quiet_hours: int = field(24, "hours a high-confidence flag quiets the text's author (the host's `quiet`; 0: never)")
     paint_budget: int = field(400, "open town: paints a clock day, the whole town's (host `paintQuota`; when spent, a card is read "
                               "exact, and the page says why)")
 

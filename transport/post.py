@@ -17,7 +17,6 @@ from transport.delve import POST as COLLECTION, Client, Failure, canonical, http
 from transport.host import CLOCK
 from transport.observe import MENTION, wiki_target
 
-FLAG = '--i-am-ember-and-authorize-posting'
 MAX_TEXT = 64 * 1024
 CLIP = 1400  # what a reader of the town reads of one post (world/lib/Card.obend `post()`)
 NOTE = 64  # room each part keeps for its number, and for saying when the next part follows

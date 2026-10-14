@@ -29,7 +29,8 @@ only if the claim must become a journaled fact or the hop shows in the access lo
 ### One state, one config, one entry point
 
 **`transport/config.py`: one `Config`.** A frozen dataclass; every setting the programs share is a field with a
-default and a one-line description, and nothing else holds a default. `Config.load(state)` reads
+default and a one-line description. Fixed adapter values live at their use sites; the moderation worker's values
+are constants in `transport/automod.py`. `Config.load(state)` reads
 `<state>/delvetalk.toml` (`tomllib`; optional; an unknown key or a value of the wrong type is refused by name), then
 the environment: `DELVETALK_<FIELD>` overrides `<field>`. Precedence: default, file, environment. Compose's environment
 carries only what is a fact of the container (mount paths, secret files, the bind address); the operator's choices live
@@ -209,8 +210,8 @@ So the world has a **hard cap per day on model calls, as a host quota**: `modelQ
 `world-settings`), counted from the clock day's suspended-with-`interpretation` entries plus `attempted` retries; an
 `interpret` past it refuses `quota` with `next` the next day's first minute, and the opener and the clock are not
 exempt (the loop case is theirs). The host's default is 2,000 (`Limits.modelQuota`, about $0.45); an open town sets it
-from `hob_budget` and its paints from `paint_budget` (`hand limits`). Automatic moderation has its own day,
-`automod_daily_calls` (2,000). `hand spend` is the monthly total against the grant.
+from `hob_budget` and its paints from `paint_budget` (`hand limits`). Automatic moderation has its own cap
+of 2,000 calls a day (`automod.DAILY_CALLS`). `hand spend` is the monthly total against the grant.
 
 **Decision:** `modelQuota` per world per day in the host, opener included.
 

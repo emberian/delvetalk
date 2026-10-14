@@ -8,9 +8,7 @@
 # TLS for gsb.fg-goose.online and its `reverse_proxy 10.10.1.10:8765`
 # (dregg-infra edge/delvetalk/route.caddy, merged into edge/anchor/Caddyfile)
 # reaches the port below over the private net. There are no proxy labels to set:
-# the edge uses no label-driven proxy. Port 8765 is the one that route already
-# names, so the Caddy route needs no change; the old systemd
-# delvetalk-proxy.socket listens on the same address and must be stopped first.
+# the edge uses no label-driven proxy.
 #
 # ONE WRITER PER DIRECTORY. `delvetalk-host` is `delvetalk-obend serve` (`python3 -m transport serve`
 # execs it with the config's sockets, opener and library), the
@@ -35,17 +33,17 @@ name: delvetalk
 x-env: &env
   DELVETALK_STATE: /data/state
   DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
-  DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
-  DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
+  DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:?set DELVETALK_ORIGIN in instance .env}
+  DELVETALK_OPENER: ${DELVETALK_OPENER:?set DELVETALK_OPENER in instance .env}
   # The bridge's request poller reads every repository pds.delve.town lists (transport/requests.py): .env turns it on.
-  DELVETALK_REQUESTS: ${DELVETALK_REQUESTS:-off}
+  DELVETALK_REQUESTS: ${DELVETALK_REQUESTS:?set DELVETALK_REQUESTS in instance .env}
   # Hosted guest/Zulip DIDs are built but lack wildcard DNS; .env must explicitly turn them on.
-  DELVETALK_HOSTED_ACCOUNTS: ${DELVETALK_HOSTED_ACCOUNTS:-off}
+  DELVETALK_HOSTED_ACCOUNTS: ${DELVETALK_HOSTED_ACCOUNTS:?set DELVETALK_HOSTED_ACCOUNTS in instance .env}
   # A carry's refresh makes the all-night station on a town that lacks it (deploy/genesis.py gas_station): .env turns it on.
-  DELVETALK_STATION: ${DELVETALK_STATION:-off}
+  DELVETALK_STATION: ${DELVETALK_STATION:?set DELVETALK_STATION in instance .env}
 
 x-service: &service
-  image: ${DELVETALK_IMAGE:-delvetalk:current}
+  image: ${DELVETALK_IMAGE:?set DELVETALK_IMAGE in instance .env}
   restart: unless-stopped
   user: "10425:10425"
   read_only: true
@@ -63,7 +61,7 @@ x-service: &service
     # worlds/<world>/). The host and ops mount all of /data. A host path, not a
     # named volume, as the edge keeps /var/lib/dregg/<service>: it is what
     # deploy/backup.sh reads.
-    - ${DELVETALK_DATA:-/var/lib/delvetalk/v11}/state:/data/state
+    - ${DELVETALK_DATA:?set DELVETALK_DATA in instance .env}/state:/data/state
   logging:
     driver: json-file
     options: { max-size: "10m", max-file: "5" }
@@ -75,12 +73,12 @@ services:
     command: ["python3", "-m", "transport", "serve"]
     network_mode: none  # unix sockets only: the host never opens a network connection
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v11}:/data
-      - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
+      - ${DELVETALK_DATA:?set DELVETALK_DATA in instance .env}:/data
+      - ${DELVETALK_ROOT:?set DELVETALK_ROOT in instance .env}:/run/delvetalk-root
       # Every data directory, read only, where a carried genesis cites its ancestors (`/towns/vN/state/town.journal`, as the
       # ops container that carried it saw them): the host reads the town's past through them (tellings, firsts, the
       # automod backfill); without the mount a carry is where its history begins.
-      - ${DELVETALK_TOWNS:-/var/lib/delvetalk}:/towns:ro
+      - ${DELVETALK_TOWNS:?set DELVETALK_TOWNS in instance .env}:/towns:ro
     # Replay at a world's first op recompiles every created object (~0.2 to 1 s
     # each); a world idle ten minutes is closed and reopened by replay. The old
     # systemd unit's measured need was about 62 MiB RSS for a tiny world.
@@ -107,14 +105,14 @@ services:
     environment:
       <<: *env
       DELVETALK_HTTP_BIND: 0.0.0.0
-      DELVETALK_HTTP_PORT: ${DELVETALK_HTTP_PORT:-8765}  # another port: a drill or rehearsal beside a live stack
+      DELVETALK_HTTP_PORT: ${DELVETALK_HTTP_PORT:?set DELVETALK_HTTP_PORT in instance .env}  # another port: a drill or rehearsal beside a live stack
       DELVETALK_TRUST_PROXY: "on"
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v11}/state:/data/state
+      - ${DELVETALK_DATA:?set DELVETALK_DATA in instance .env}/state:/data/state
       # The repositories' signing keys, <world>.key (`transport repokey`; docs/REPO.md "The key"), at the config's default path.
-      - ${DELVETALK_REPO_KEYS:-/etc/delvetalk/repo}:/etc/delvetalk/repo:ro
+      - ${DELVETALK_REPO_KEYS:?set DELVETALK_REPO_KEYS in instance .env}:/etc/delvetalk/repo:ro
     ports:
-      - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_HTTP_PORT:-8765}:${DELVETALK_HTTP_PORT:-8765}/tcp"
+      - "${DELVETALK_PRIVATE_IP:?set DELVETALK_PRIVATE_IP in instance .env}:${DELVETALK_HTTP_PORT:?set DELVETALK_HTTP_PORT in instance .env}:${DELVETALK_HTTP_PORT:?set DELVETALK_HTTP_PORT in instance .env}/tcp"
     depends_on:
       delvetalk-host: { condition: service_healthy }
     mem_limit: 256m
@@ -179,12 +177,12 @@ services:
       # Every data directory, read only: genesis refuses while a town lives in any (deploy/genesis.py, no wipe).
       DELVETALK_TOWNS: /towns
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v11}:/data
-      - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
-      - ${DELVETALK_REPO_KEYS:-/etc/delvetalk/repo}:/etc/delvetalk/repo
-      - ${DELVETALK_TOWNS:-/var/lib/delvetalk}:/towns:ro
+      - ${DELVETALK_DATA:?set DELVETALK_DATA in instance .env}:/data
+      - ${DELVETALK_ROOT:?set DELVETALK_ROOT in instance .env}:/run/delvetalk-root
+      - ${DELVETALK_REPO_KEYS:?set DELVETALK_REPO_KEYS in instance .env}:/etc/delvetalk/repo
+      - ${DELVETALK_TOWNS:?set DELVETALK_TOWNS in instance .env}:/towns:ro
 
 secrets:
   anthropic_key:
     # Outside the repository and outside /data, readable by uid 10425 only.
-    file: ${DELVETALK_ANTHROPIC_KEY_PATH:-/etc/delvetalk/anthropic.key}
+    file: ${DELVETALK_ANTHROPIC_KEY_PATH:?set DELVETALK_ANTHROPIC_KEY_PATH in instance .env}

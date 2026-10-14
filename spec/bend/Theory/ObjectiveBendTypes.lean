@@ -185,8 +185,6 @@ def Ty.isPlanUnder (bounds : DataBounds) (rigid : List Nat) : Ty → Bool
   | row@(.field _ _ _) => row.isDataUnder bounds rigid Ty.dataFuel []
   | _ => false
 
-def Ty.isPlan : Ty → Bool := Ty.isPlanUnder [] []
-
 theorem Ty.shareable_not_computation (type : Ty) (shareable : type.shareable = true) :
     type.isComputation = false := by
   cases type <;> simp_all [Ty.shareable, Ty.isComputation]
@@ -423,21 +421,6 @@ structure ExtensionFamilies where
 def ExtensionFamilies.functionType (family : ExtensionFamilies) (futureSelf : Ty) : Ty :=
   .arrow .reusable .unrestricted futureSelf
     (.arrow .reusable .unrestricted family.inherited family.provided)
-
-/-- Heterogeneous composition: inherited→middle→provided. Requirements from
-both independently authored extensions remain explicit obligations. -/
-structure FamilyMix where
-  earlier : ExtensionFamilies
-  later : ExtensionFamilies
-  intermediate : earlier.provided = later.inherited
-  required : List Ty := [earlier.required, later.required]
-
-/-- A recursively constrained binary method keeps the future Self parameter in
-both argument and result; a future row remains in the provided target. -/
-def binaryMethodFamily : ExtensionFamilies :=
-  ⟨.variable 1,
-    .field "combine" (.arrow .reusable .unrestricted (.variable 0) (.variable 0)) (.variable 2),
-    .field "combine" (.arrow .reusable .unrestricted (.variable 0) (.variable 0)) (.variable 1)⟩
 
 theorem binary_method_changes_with_future_self (first second : Ty) :
     (Ty.arrow .reusable .unrestricted (.variable 0) (.variable 0)).instantiate

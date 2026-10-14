@@ -932,12 +932,6 @@ def normal (t : String) : String :=
   let cs := if cs.length > 2 && cs.drop (cs.length - 2) == ['\'', 's'] then stripEdges (cs.take (cs.length - 2)) else cs
   String.ofList cs
 
-/-- Runs of `cs` between characters `sep` holds, empty ones dropped. -/
-def splitBy (sep : Char → Bool) (cs : List Char) : List (List Char) :=
-  let (cur, acc) := cs.foldl (fun (cur, acc) c =>
-    if sep c then ([], if cur.isEmpty then acc else cur.reverse :: acc) else (c :: cur, acc)) (([] : List Char), ([] : List (List Char)))
-  (if cur.isEmpty then acc else cur.reverse :: acc).reverse
-
 /-- Where a character falls between words: a CJK mark stands alone (2), a script written without spaces (1) is one
     run of words, anything else (0) another. -/
 def charClass (c : Char) : Nat := if Tongue.cjkMark c then 2 else if Tongue.unspacedChar c then 1 else 0

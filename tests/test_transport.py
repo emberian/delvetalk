@@ -401,7 +401,7 @@ class Posting(unittest.TestCase):
             f.write_text('hello')
             err = io.StringIO()
             with mock.patch.object(post, 'send', side_effect=AssertionError('send')), mock.patch('sys.stderr', err):
-                code = main(['post', '--state', d, '--text-file', str(f), '--intent', 't', post.FLAG], io.StringIO(), client=delve.Client(Script()))
+                code = main(['post', '--state', d, '--text-file', str(f), '--intent', 't', '--i-am-ember-and-authorize-posting'], io.StringIO(), client=delve.Client(Script()))
             self.assertEqual((code, json.loads(err.getvalue())['error']), (1, 'live_post_needs_object'))
             self.assertEqual(self.dry(d, ['--text-file', str(f)], delve.Client(Script()))[0], 2)
 

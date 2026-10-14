@@ -1005,13 +1005,6 @@ def parseReading (chars : List Char) : Except String (String × List Char) :=
     | .ok (.str reading) => .ok (reading, chars.drop (n + 1))
     | _ => refuse ("`" ++ literal ++ "`") readingRule
 
-/-- The reading after a clause's name, as text: the reading and the rest after it, or none when the
-text does not open with one. -/
-def splitReading (rest : String) : Except String (Option (String × String)) :=
-  match rest.toList with
-  | chars@('"' :: _) => (parseReading chars).map fun (reading, more) => some (reading, String.ofList more)
-  | _ => .ok none
-
 def keywords : List String := ["law", "rule", "want"]
 
 /-- The text after a clause's `:`, in its modality: the condition, then for a rule `then SPELL` and

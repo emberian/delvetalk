@@ -16,7 +16,7 @@
 
 services:
   delvetalk-hand:
-    image: ${DELVETALK_IMAGE:-delvetalk:current}
+    image: ${DELVETALK_IMAGE:?set DELVETALK_IMAGE in instance .env}
     restart: unless-stopped
     user: "10425:10425"  # serve's uid: both of its sockets are 0600 (umask 0177), so a uid of the hand's own needs root_group set first
     read_only: true
@@ -29,26 +29,26 @@ services:
     environment:
       DELVETALK_STATE: /data/state
       DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
-      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
-      DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
-      DELVETALK_HOSTED_ACCOUNTS: ${DELVETALK_HOSTED_ACCOUNTS:-off}
+      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:?set DELVETALK_ORIGIN in instance .env}
+      DELVETALK_OPENER: ${DELVETALK_OPENER:?set DELVETALK_OPENER in instance .env}
+      DELVETALK_HOSTED_ACCOUNTS: ${DELVETALK_HOSTED_ACCOUNTS:?set DELVETALK_HOSTED_ACCOUNTS in instance .env}
       DELVETALK_HAND_BIND: 0.0.0.0
-      DELVETALK_HAND_PORT: ${DELVETALK_HAND_PORT:-8766}
+      DELVETALK_HAND_PORT: ${DELVETALK_HAND_PORT:?set DELVETALK_HAND_PORT in instance .env}
       DELVETALK_HAND_TOKEN_FILE: /run/secrets/hand_token
       DELVETALK_CREDENTIALS: /run/delve/credentials.json
     ports:
-      - "127.0.0.1:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"
+      - "127.0.0.1:${DELVETALK_HAND_PORT:?set DELVETALK_HAND_PORT in instance .env}:${DELVETALK_HAND_PORT:?set DELVETALK_HAND_PORT in instance .env}/tcp"
       # the anchor's Caddy, behind its password, which sets the token as X-Delvetalk-Hand-Token; the workhorse's
       # firewall (DELVETALK-FRONT) lets the anchor alone reach this address and port
-      - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"
+      - "${DELVETALK_PRIVATE_IP:?set DELVETALK_PRIVATE_IP in instance .env}:${DELVETALK_HAND_PORT:?set DELVETALK_HAND_PORT in instance .env}:${DELVETALK_HAND_PORT:?set DELVETALK_HAND_PORT in instance .env}/tcp"
     secrets: [hand_token]
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v11}/state:/data/state
-      - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
-      - ${DELVETALK_DELVE_DIR:-/etc/delvetalk/delve}:/run/delve:ro
+      - ${DELVETALK_DATA:?set DELVETALK_DATA in instance .env}/state:/data/state
+      - ${DELVETALK_ROOT:?set DELVETALK_ROOT in instance .env}:/run/delvetalk-root
+      - ${DELVETALK_DELVE_DIR:?set DELVETALK_DELVE_DIR in instance .env}:/run/delve:ro
       # Every data directory, read only, at the path a carried genesis cites its ancestors by (compose.yml's host): the
       # overview reads the day across the carry (transport/overview.py `ancestors`).
-      - ${DELVETALK_TOWNS:-/var/lib/delvetalk}:/towns:ro
+      - ${DELVETALK_TOWNS:?set DELVETALK_TOWNS in instance .env}:/towns:ro
     depends_on:
       delvetalk-host: { condition: service_healthy }
     healthcheck:
@@ -69,7 +69,7 @@ services:
   # after they are admitted, on the root socket as the opener (a moderation act is the opener's), the classifier Z.ai's
   # GLM with its own key and its own day of calls. It alone holds the Z.ai key; nothing else mounts it.
   delvetalk-automod:
-    image: ${DELVETALK_IMAGE:-delvetalk:current}
+    image: ${DELVETALK_IMAGE:?set DELVETALK_IMAGE in instance .env}
     restart: unless-stopped
     user: "10425:10425"
     read_only: true
@@ -82,13 +82,13 @@ services:
     environment:
       DELVETALK_STATE: /data/state
       DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
-      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
-      DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
+      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:?set DELVETALK_ORIGIN in instance .env}
+      DELVETALK_OPENER: ${DELVETALK_OPENER:?set DELVETALK_OPENER in instance .env}
       DELVETALK_ZAI_KEY_FILE: /run/secrets/zai_key
     secrets: [zai_key]
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v11}/state:/data/state
-      - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
+      - ${DELVETALK_DATA:?set DELVETALK_DATA in instance .env}/state:/data/state
+      - ${DELVETALK_ROOT:?set DELVETALK_ROOT in instance .env}:/run/delvetalk-root
     depends_on:
       delvetalk-host: { condition: service_healthy }
     healthcheck:
@@ -107,6 +107,6 @@ services:
 secrets:
   zai_key:
     # Outside the repository and outside /data, owner 10425, mode 0400 (docs/DEPLOY.md "Automatic moderation").
-    file: ${DELVETALK_ZAI_KEY_PATH:-/etc/delvetalk/zai.key}
+    file: ${DELVETALK_ZAI_KEY_PATH:?set DELVETALK_ZAI_KEY_PATH in instance .env}
   hand_token:
-    file: ${DELVETALK_HAND_TOKEN_PATH:-/etc/delvetalk/hand.token}
+    file: ${DELVETALK_HAND_TOKEN_PATH:?set DELVETALK_HAND_TOKEN_PATH in instance .env}

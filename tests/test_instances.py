@@ -51,16 +51,9 @@ class Live(unittest.TestCase):
                          ('delvetalk', '/var/lib/delvetalk/v20', '/var/lib/delvetalk/root', '/etc/delvetalk/repo', '8765', '8766',
                           'did:plc:6amo7col5h4ciq2gpm5eur7b'))
 
-    def test_against_compose_defaults_only_the_data_directory_and_the_station_differ(self):
-        """compose.yml's own defaults are the live town's; its `.env` moved two of them since (v11 to v20 by the
-        carries, the station by the owner's word), and names the rest as compose would take them."""
-        defaults = {}
-        for name in ('compose.yml', 'compose.hand.yml'):
-            for var, default in re.findall(r'\$\{(\w+):-([^}]*)\}', (ROOT / 'deploy' / name).read_text()):
-                defaults.setdefault(var, default)
-        env = dict(line.split('=', 1) for line in self.live.env(image=defaults['DELVETALK_IMAGE']).splitlines() if not line.startswith('#'))
-        differ = {k for k, v in defaults.items() if env.get(k) != v}
-        self.assertEqual(differ, {'DELVETALK_DATA', 'DELVETALK_STATION'}, {k: (defaults[k], env.get(k)) for k in differ})
+    def test_no_compose_variable_has_a_default(self):
+        for name in ('compose.yml', 'compose.hand.yml', 'compose.firehose.yml'):
+            self.assertEqual(re.findall(r'\$\{\w+:-[^}]*\}', (ROOT / 'deploy' / name).read_text()), [], name)
 
 
 class Healthchecks(unittest.TestCase):
@@ -85,7 +78,7 @@ class Instances(unittest.TestCase):
         self.open = self.all['open']
 
     def test_every_variable_compose_reads_is_in_each_env(self):
-        """A variable an instance's `.env` did not name would fall to compose's default, the live town's: none does."""
+        """Every variable compose requires is named in each instance's `.env`."""
         used = set()
         for name in ('compose.yml', 'compose.hand.yml', 'compose.firehose.yml'):
             used |= set(re.findall(r'\$\{(\w+)', (ROOT / 'deploy' / name).read_text()))
@@ -122,8 +115,8 @@ class Instances(unittest.TestCase):
             files.add(i.hand_token_at_edge)
         self.assertEqual(len(files), len(self.all))  # each hand its own token
         hand = (ROOT / 'deploy' / 'compose.hand.yml').read_text()
-        self.assertIn('- "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"', hand)
-        self.assertIn('- "127.0.0.1:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"', hand)  # root's ssh forward
+        self.assertIn('- "${DELVETALK_PRIVATE_IP:?set DELVETALK_PRIVATE_IP in instance .env}:${DELVETALK_HAND_PORT:?set DELVETALK_HAND_PORT in instance .env}:${DELVETALK_HAND_PORT:?set DELVETALK_HAND_PORT in instance .env}/tcp"', hand)
+        self.assertIn('- "127.0.0.1:${DELVETALK_HAND_PORT:?set DELVETALK_HAND_PORT in instance .env}:${DELVETALK_HAND_PORT:?set DELVETALK_HAND_PORT in instance .env}/tcp"', hand)  # root's ssh forward
 
     def test_check_refuses_two_instances_on_one_port_or_path(self):
         self.assertEqual(instance.check(self.all), [])

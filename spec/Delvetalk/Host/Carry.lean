@@ -43,10 +43,8 @@
    move (`body: true`). Without `--library` the
    world's library and every pin are carried as they were.
 
-   A world of an edition that names states otherwise (before 10, by their wire JSON; from 10, by their cells:
-   `Naming.ofEdition`) is read by its own naming, every object checked against its anchors, and the genesis
-   lists each state's two names (`renamed [{object, before, after}]`), so a check finds each object at the state
-   the snapshot held.
+   Every journal and snapshot this carry consumes names states by their cells (`Object.stateCid`).
+   Every object is checked against its anchors.
 
    The old journal is only read: J must verify as a chain, not be open, and OUT must not exist. The new
    journal is replayed from its genesis, and every object's state CID compared with the snapshot's (a moved
@@ -72,20 +70,19 @@ def readKeys : List String :=
   Snapshot.carriedKeys ++ ["pending", "suspended", "handles", "modules", "blocks", "anchors", "receipts", "touched"]
 
 /-- The world a snapshot body at `height` of `src` holds, as this binary reads it: the indexes in
-    `readKeys`, laid over an empty world's, then the store, every object checked against its anchors by
-    the naming of the journal's replay edition (`Naming.ofEdition`). -/
-def readWorld (b : Json) (src : Entries) (height : Nat) (replay : Nat) : Except String World := do
+    `readKeys`, laid over an empty world's, then the store, every object checked against its anchors
+    using `Object.stateCid`. -/
+def readWorld (b : Json) (src : Entries) (height : Nat) : Except String World := do
   let base : World := { entries := src.upTo height, height, head := ← b.getObjValAs? String "head" }
   let index ← b.getObjVal? "index"
   let read ← readKeys.foldlM (init := Snapshot.indexJson base) fun j k => do
     match index.getObjVal? k with
     | .ok v => return j.setObjVal! k v
-    | .error _ => if Snapshot.addedKeys.contains k then return j else throw s!"its index has no {k}"
+    | .error _ => throw s!"its index has no {k}"
   let w ← Snapshot.installIndex base read
-  let naming := Naming.ofEdition replay
-  let w ← Snapshot.install b w naming
+  let w ← Snapshot.install b w
   let w := { w with carriedIds := (src.genesis?.map carriedIdentities).getD {} }
-  Snapshot.checkAnchors w naming ((b.getObjValAs? String "edition").toOption == some Snapshot.edition)
+  Snapshot.checkAnchors w
   return w
 
 /-- A reason as a law clause's reading: one line, no quotes or backslashes, at most 200 bytes. -/
@@ -175,9 +172,6 @@ structure Carried where
   /-- Moved objects whose package's law changed but whose own law is not the package's as it was (an owner's
       amendment): their law is kept, each named with it. -/
   kept : List (String × String) := []
-  /-- Each object's state as the old edition named it and as this one does, when the editions name
-      states otherwise (`Naming.ofEdition`): the same state, renamed. -/
-  renamed : List (String × String × String) := []
 
 /-- The method a package declares to be told it was carried (`carried(state, input: {}, context)`), as a kind
     tells what it makes `made`: what the carry's move dropped (a self-ticking tide's waiting `due`) it starts
@@ -431,10 +425,6 @@ def droppedEnd (w : World) (e : Json) : Option Json := do
   let [("ended", d)] := endedField w id principal intent "broken" ledger 0 1 outcome | none
   return Json.mkObj ([("from", identity), ("principal", toJson principal)] ++ ((d.getObj?.toOption.map (·.toList)).getD []))
 
-def renamedJson (renamed : List (String × String × String)) : Json :=
-  Json.arr (renamed.toArray.map fun (id, before, after) =>
-    Json.mkObj [("object", toJson id), ("before", toJson before), ("after", toJson after)])
-
 /-! ## Makings
 
 A carried genesis keeps each object's making (`made`): who made it, under which intent, at which height of
@@ -600,7 +590,6 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
      (if c.kept.isEmpty then [] else [("kept", Json.arr (c.kept.toArray.map fun (id, law) =>
         Json.mkObj [("object", toJson id), ("law", toJson law)]))]) ++
      (if c.rearmed.isEmpty then [] else [("rearmed", toJson c.rearmed)]) ++
-     (if c.renamed.isEmpty then [] else [("renamed", renamedJson c.renamed)]) ++
      (if made.isEmpty then [] else [("made", Json.arr made)]) ++
      (if baseline.isEmpty then [] else [("baseline", Json.arr baseline)])) (height := height + 1)
 
@@ -638,10 +627,10 @@ def main (args : List String) : IO UInt32 := do
     | return ← fail (s!"{journal} has no snapshot at its head ({height}); " ++
         (match snapshots.head? with | some (h, _) => s!"the newest is at {h}; " | none => "") ++
         s!"write one with the binary of its edition ({replay}): deploy/verify.sh --snapshot")
-  let body ← match Snapshot.verifiedBody (← IO.FS.readBinFile file) height src [Snapshot.edition, Snapshot.previousEdition] with
+  let body ← match Snapshot.verifiedBody (← IO.FS.readBinFile file) height src [Snapshot.edition] with
     | .ok b => pure b
     | .error e => return ← fail s!"{file}: {e}"
-  let w ← match readWorld body src height replay with
+  let w ← match readWorld body src height with
     | .ok w => pure w
     | .error e => return ← fail s!"{file} does not read here: {e}"
   -- The library this host ships, sealed as serve seals it, beside the new journal; and its packages.
@@ -668,11 +657,6 @@ def main (args : List String) : IO UInt32 := do
   let carried ← match carryWorld w leave reason shipped with
     | .ok c => pure c
     | .error e => return ← fail e 64
-  let naming := Naming.ofEdition replay
-  let renamed := w.objects.toList.filterMap fun (id, o) =>
-    let before := naming.state o
-    if before == o.stateCid then none else some (id, before, o.stateCid)
-  let carried := { carried with renamed := (renamed.toArray.qsort (fun a b => a.1 < b.1)).toList }
   unless carried.refused.isEmpty do
     return ← fail ("refused, each by name (list an object as --leave OBJ to carry it retired):\n" ++
       "\n".intercalate (carried.refused.map fun (what, why) => s!"  {what}: {why}"))
@@ -706,7 +690,7 @@ def main (args : List String) : IO UInt32 := do
     ("dropped", Json.arr (carried.dropped.toArray.map fun (e, why) => Json.mkObj [("hash", (e.getObjVal? "hash").toOption.getD Json.null),
       ("object", toJson (Snapshot.suspendedObject e)), ("reason", toJson why)])),
     ("kept", Json.arr (carried.kept.toArray.map fun (id, law) => Json.mkObj [("object", toJson id), ("law", toJson law)])),
-    ("rearmed", toJson carried.rearmed), ("renamed", renamedJson carried.renamed)])
+    ("rearmed", toJson carried.rearmed), ("renamed", Json.arr #[])])
   return 0
 
 end Delvetalk.Host.Carry

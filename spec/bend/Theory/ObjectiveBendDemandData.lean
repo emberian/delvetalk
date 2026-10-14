@@ -457,13 +457,7 @@ def executeDataArgumentsWith (policy : State → Bool) (fetch : Fetch) (limits :
   executeStateWith policy fetch limits budget (initialDataArguments term arguments)
 
 def executeDataArguments := executeDataArgumentsWith (fun _ => true) Fetch.none
-/-- Existing clear preview behavior remains the unrestricted raw language. -/
-def force := forceWith (fun _ => true)
-def materialize := materializeWith (fun _ => true) Fetch.none
 def complete (fetch : Fetch) := completeWith (fun _ => true) fetch
-abbrev Extraction := ExtractionWith (fun _ => true) Fetch.none
-def extract := extractWith (fun _ => true) Fetch.none
-abbrev Execution := ExecutionWith (fun _ => true) Fetch.none
 def execute := executeWith (fun _ => true) Fetch.none
 
 /-! ## Activities: the yielded Plan is data; the response is typed data -/
