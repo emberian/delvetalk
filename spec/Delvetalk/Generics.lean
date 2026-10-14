@@ -1566,7 +1566,7 @@ def deriveForms (index : Nat) : M DerivedForms := do
     let mut resolved : Array ObjectiveBendSurface.FormField := #[]
     for f in block.fields do
       let (type, kind) ← match f.kind with
-        | .text .. | .source => pure ("String", f.kind)
+        | .text .. | .object .. | .source => pure ("String", f.kind)
         | .natural .. => pure ("Nat", f.kind)
         | .choice options =>
           let sum := block.choiceSum f.name

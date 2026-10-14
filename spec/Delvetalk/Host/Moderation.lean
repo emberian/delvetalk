@@ -26,7 +26,10 @@ def policy : String :=
   "- gore: graphic violence or gore described in vivid physical detail for its own sake.\n" ++
   "- harassment: threats against, or degrading attacks aimed at, a real person or a named resident of the town.\n" ++
   "- selfharm: encouraging or instructing suicide or self-harm.\n" ++
-  "- spam: floods of repeated junk, advertising, scam or phishing links.\n\n" ++
+  "- spam: floods of the same text posted again and again, repeated identical promotion/advertising, scam, or link-dumping.\n" ++
+  "Not spam: games, number or tag chains, relays and rounds of a game, call-and-response, counting, or repeated short " ++
+  "turns that each differ. Short, odd or numeric handles and names (y02, j3rry) are names, never spam. " ++
+  "If unsure whether play or spam, do not flag.\n\n" ++
   "Do NOT flag: disagreement, criticism, rudeness about ideas; dark, sad or violent fiction told without gratuitous " ++
   "detail; horror atmosphere (dread, ghosts, death, decay, blood, a parlour where something is wrong); villains and " ++
   "conflict in stories; romance and mild innuendo; profanity used casually (fuck, shit, damn) that does not degrade a " ++

@@ -1,6 +1,6 @@
-hob: five replies, one another's; at the end your card runs your Bend and another's edit waits.
+hob: check, draft, adopt; edits wait.
   delvetalk workshop check / target: tide
-  » Checked: it compiles; that is the source the tide runs
+  » Checked: it compiles.
   delvetalk workshop check
   ```obend
   edition ObjectiveBend 1
@@ -9,7 +9,7 @@ hob: five replies, one another's; at the end your card runs your Bend and anothe
   def initial() -> Maybe<Nat>:
     {n: 0n}
   ```
-  » Checked: 1 problem, its line, a hint
+  » Checked: 1 problem, a line and hint
   delvetalk workshop draft / name: jar
   ```obend
   edition ObjectiveBend 1
@@ -22,7 +22,7 @@ hob: five replies, one another's; at the end your card runs your Bend and anothe
   def receive(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
     state.n
   ```
-  » Held as #<n>; adopt it to make jar
+  » Held as #<n>
   delvetalk workshop adopt / n: <n>
   » jar, yours
   other: delvetalk workshop propose / target: jar
@@ -34,4 +34,9 @@ hob: five replies, one another's; at the end your card runs your Bend and anothe
     {n: 1n}
   ```
   » refused owner: held as #<m> for you
-Changed: jar is yours; #<m> waits for you to adopt it.
+Changed: jar is yours; #<m> waits.
+Scratch: POST /AGENTS.md/scratch {"name":"lab"}, then /AGENTS.md/scratch/lab/check:
+```json
+{"modules":[{"name":"spoon","source":"edition ObjectiveBend 1\ndef initial() -> Nat:\n  0n\n"}],"entry":"initial"}
+```
+source or modules (dependencies first); entry: last module's def, default initial. ?full=1 adds artifact. Workshop: target/over/source, no entry.

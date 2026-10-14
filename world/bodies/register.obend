@@ -487,7 +487,11 @@ def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activi
 def methods() -> Lists.List<String>:
   Text.words("~made ~forecast ~act")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Lists.concat(Text.words("ask voice failed snag dispute recheck resolve trail more unchecked scrape rounds ring next lines"), if Lists.any(Relations.rows(state.presence), fn(p: Rows.Presence) -> Bool: p.who == context.principal) then Text.words("witness seal") else Text.words("")), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
+  Lists.concat(Lists.concat(Text.words("ask voice failed snag dispute recheck resolve trail more unchecked scrape rounds ring next lines"), if Lists.any(Relations.rows(state.presence), fn(p: Rows.Presence) -> Bool: p.who == context.principal) then Text.words("witness seal") else Text.words("")), if context.principal == state.owner then Text.words("door undoor set arm") else Text.words(""))
+def lenses() -> Lists.List<Form.Field>:
+  Super.objectLenses("tide")
+def setArms() -> Bool:
+  true
 # --- the ring: who the pen may come to -----------------------------------------------------------
 # The book of hands (`vars` `members`): each hand that wrote in its own words, `who handle last out;`, its newest such
 # row (`last`) and the round row that last passed it over (`out`); the `bookMax()` newest kept. Written with the row
@@ -573,7 +577,8 @@ def still(n: Nat) -> Activity<Nat>:
 # The tide's turn, by the town's rule there: close a sealed or timed-out round, and give the pen. Nobody else
 # turns it, so nobody chooses the moment of a draw.
 def rotate(state: State, context: Abi.Context) -> Activity<Nat>:
-  if townKept(state, context) == false || Super.ruledFrom(state, tideOf(state), context) == false then Card.refusing(0n, {clause: "ruled", reading: "The pen passes only at the tide's turn, by the town's rule on {tideOf(state)}: nobody hands it on, the witness included"}, context) else if full(state) then filling(state, context) else rotating(state, context)
+  let clock = if Text.isObjectId(tideOf(state)) then "by the town's rule on {tideOf(state)}" else Card.tideLine(tideOf(state))
+  if townKept(state, context) == false || Super.ruledFrom(state, tideOf(state), context) == false then Card.refusing(0n, {clause: "ruled", reading: "The pen passes only at the tide's turn, {clock}: nobody hands it on, the witness included"}, context) else if full(state) then filling(state, context) else rotating(state, context)
 def rotating(state: State, context: Abi.Context) -> Activity<Nat>:
   match witnessOf(state):
     case some(p): sat(state, p.value, context)
@@ -721,6 +726,15 @@ def tideWhen(id: String) -> String:
 # tick, `rotate`. Another's register places none.
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
   if context.caller != state.kind || townKept(state, context) == false || tideOf(state) == "" then false else placing(state, context)
+form arm:
+def arm(state: State, context: Abi.Context) -> Activity<Bool>:
+  if context.principal != state.owner then Super.armRefused(state, context) else if Text.isObjectId(tideOf(state)) == false then Card.refusing(false, {clause: "tide", reading: Card.tideLine(tideOf(state))}, context) else if townKept(state, context) == false then false else rearming(state, context)
+def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: {world: context.world, object: tideOf(state)}, name: Text.identifier(context.object)}):
+    case _: unvoluming(state, context)
+def unvoluming(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: Plans.self(context), name: "volume"}):
+    case _: placing(state, context)
 def placing(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: tideOf(state)}, name: Text.identifier(context.object), when: tideWhen(context.object), then: "delvetalk {context.object} rotate"}):
     case placed(_): filled(state, context)
@@ -728,7 +742,7 @@ def placing(state: State, context: Abi.Context) -> Activity<Bool>:
 # And on itself, under its maker: the write that fills it opens the next volume (`volume`), in the turn after.
 def filled(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: Plans.self(context), name: "volume", when: "count(new.lines) >= {natText(capacity())} and count(old.lines) <= {natText(capacity() - 1n)}", then: "delvetalk {context.object} volume"}):
-    case placed(_): sowing(state, context)
+    case placed(_): if varValue(state.vars, "seed") == "" then sowing(state, context) else true
     case refused(_): false
 # The seed, sown once as the register is finished: the host's seeded draw of this turn (Scenes.turnDraw: the height
 # it reads, its principal, its intent), and where it came from, so anyone can draw every round again.
@@ -773,7 +787,7 @@ def penLine(state: State, seats: Lists.List<Member>, context: Abi.Context) -> St
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let seats = ringOf(state)
   let asks = Lists.length(Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: l.verb == "ask"))
-  Document.text("A COMMONPLACE REGISTER, the town's{Card.mine(state.maker, context)}: questions {natText(asks)}, rows {natText(state.next - 1n)}. A row is only added, with its anchor and its evidence kind, fixed when written. Follow one back to every voice: delvetalk {id} trail / n: <number>. Ask: delvetalk {id} ask / anchor: <where it was asked> / text: <one question>\n{emptyLine(asks)}{volumeLine(state)}{penShort(state, seats, id, context)}THE RING ({natText(Lists.length(seats))} of {natText(ringMax())}): {seatsShown(seats, context)}. Enter by a row anchored in your own words: delvetalk {id} ring\n{closedLine(state)}")
+  Document.text("A COMMONPLACE REGISTER, the town's{Card.mine(state.maker, context)}: questions {natText(asks)}, rows {natText(state.next - 1n)}. A row is only added, with its anchor and its evidence kind, fixed when written. Follow one back to every voice: delvetalk {id} trail / n: <number>. Ask: delvetalk {id} ask / anchor: <where it was asked> / text: <one question>\n  {Card.tideLine(tideOf(state))}\n{emptyLine(asks)}{volumeLine(state)}{penShort(state, seats, id, context)}THE RING ({natText(Lists.length(seats))} of {natText(ringMax())}): {seatsShown(seats, context)}. Enter by a row anchored in your own words: delvetalk {id} ring\n{closedLine(state)}")
 # An empty register says whose its first entry is; a full one, where it goes on. How each verb works is a page.
 def emptyLine(asks: Nat) -> String:
   if asks > 0n then "How to enter, dispute and re-check: delvetalk library read / page: register\n" else "EMPTY: nothing is entered yet. The first question is yours, anchored in your own post (its at:// URI). How: delvetalk library read / page: register\n"

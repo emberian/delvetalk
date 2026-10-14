@@ -140,13 +140,27 @@ def requestSources (j : Json) : List (String × String) :=
     | .ok source => [("Package", source)]
     | .error _ => []
 
-/-- A source refusal carries the dialect hint its source suggests, if any. -/
+/-- A source refusal carries an entry or dialect hint its source suggests, if any. -/
 def withHint (j : Json) (d : Diagnostic) : Diagnostic :=
   if d.stage == "package-request" || d.hint.isSome then d
   else
     let modules := (requestSources j).map fun (name, source) =>
       (name, source, (parsedModule name source).toOption.map (·.1))
-    { d with hint := Delvetalk.Hints.hintFor modules d.stage d.message d.sourceModule (d.span.map (·.line)) }
+    if d.message.startsWith "missing selected entry" then
+      match modules.getLast? with
+      | some (name, _, some ast) =>
+        let defs := ast.decls.filterMap fun decl => match decl with
+          | .function sig _ _ _ => some (sig.name, sig.params.isEmpty)
+          | _ => none
+        let zero := (defs.filter (·.2)).map (·.1)
+        let names := zero ++ (defs.filter fun defn => !defn.2).map (·.1)
+        let suggested := if zero.contains "initial" then some "initial" else names.head?
+        { d with hint := some (s!"entry names a definition of the last module, {name} (it defines: " ++
+            (if names.isEmpty then "none" else ", ".intercalate names) ++ "); zero-argument definitions come first" ++
+            (match suggested with | some entry => s!"; try entry: {entry}" | none => "; add a definition to select")) }
+      | _ => d
+    else
+      { d with hint := Delvetalk.Hints.hintFor modules d.stage d.message d.sourceModule (d.span.map (·.line)) }
 
 open Delvetalk.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
 /-- The first `n` parameter types of an elaborated function type and its result. -/
@@ -160,6 +174,7 @@ def formKindJson : Delvetalk.Compiler.ObjectiveBendSurface.FormKind → Json
     let range := fun (min max : Nat) => Delvetalk.Theory.ObjectiveBendDemandData.Data.record [("min", .natural min), ("max", .natural max)]
     let data : Delvetalk.Theory.ObjectiveBendDemandData.Data := match kind with
       | .text min max => .variant "text" (range min max)
+      | .object min max => .variant "object" (range min max)
       | .natural min max => .variant "natural" (range min max)
       | .source => .variant "source" (.record [])
       | .choice options => .variant "choice" (.record [("options", options.foldr

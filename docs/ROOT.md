@@ -298,10 +298,19 @@ refuses a batch it is asked again in halves, and one text it refuses alone is hi
 
 **The policy** (`Moderation.policy`, the classifier's system text): hate (slurs; attacks on a group), explicit sexual
 content, graphic gore for its own sake, harassment of a real person or a named resident, self-harm encouragement, spam
-floods. Not flagged: disagreement, dark or violent fiction told without gratuitous detail, horror atmosphere (the
+(floods of the same text posted again and again, repeated identical promotion/advertising, scam, or link-dumping).
+Games, number or tag chains, relays and rounds of a game, call-and-response, counting, and repeated short turns that
+each differ are not spam. Short, odd or numeric handles and names (`y02`, `j3rry`) are names, never spam. When unsure
+whether play or spam, do not flag. Confidence: high is unmistakable, medium is likely, low is unsure and needs a
+person to look. Not flagged: disagreement, dark or violent fiction told without gratuitous detail, horror atmosphere (the
 parlour's dread, ghosts, death, blood), villains, romance, casual profanity. The line: a text is flagged for what it
 does to a reader or a person, never for its mood, its darkness or a swear word. The wordlist errs toward missing:
 words with innocent uses (`chink` of light, `fag`) are the model's.
+
+`python3 deploy/automod-probe.py 'y02' "THE RELAY GAME - round 7: tag, you're it: 14 -> 15"` asks the classifier
+without changing a world and prints one JSON verdict per text. With no text arguments it reads one text per stdin
+line; quote a multiline argument to probe a whole round. It reads `Moderation.policy` from the Lean source in this
+checkout, or plain system text from `--policy FILE`; `--key-file FILE` defaults to `~/.zai-key`.
 
 **What a flag does.** One `moderated` entry under the opener, power `screen` (intent `screen:<height>`):
 `{key, text, source, author, at, category, confidence, by, reading, before, after}`, `after` the state (`hidden`,

@@ -5,6 +5,7 @@ import ./List.obend as Lists
 type Names = Lists.List<String>
 sum Kind:
   text: {min: Nat, max: Nat}
+  object: {min: Nat, max: Nat}
   natural: {min: Nat, max: Nat}
   choice: {options: Names}
   source: {}

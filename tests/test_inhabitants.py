@@ -24,9 +24,20 @@ from deploy import genesis
 from tests import test_scenarios
 from tests.host import card_texts
 from tests.test_properties import CLIP, DID, HASH, OPENER
+from tests.wire import label, listing, nat, record
 
 KIM, GLM = test_scenarios.KIM, test_scenarios.GLM
 REGULAR, DJ, BEE = "station/regular", "station/dj", "station/bee"
+TIDE_FIELDS = {
+    "inhabitant": [("name", "x"), ("haunts", "station")],
+    "regular": [("name", "x"), ("haunts", "station"), ("hour", "3")],
+    "planchette": [("name", "x"), ("haunts", "station/parlour")],
+    "dj": [("name", "x"), ("haunts", "station")],
+    "bee": [("name", "x"), ("haunts", "station")],
+    "weather": [("over", "porch")],
+    "front": [("name", "x"), ("fills", "new.ticks % 24 == 0"), ("segments", "3"), ("move", "delvetalk station enter")],
+    "register": [("desk", "register/desk")],
+}
 
 
 class Inhabitants(test_scenarios.Arc):
@@ -52,6 +63,9 @@ class Inhabitants(test_scenarios.Arc):
 
     def rules(self, obj):
         return self.town.send(op="world-rules", principal=OPENER, object=obj)["rows"]
+
+    def objects(self):
+        return genesis.existing(self.town.client, OPENER)
 
     def lines(self, obj):
         rows = self.field(obj, "lines")["payload"]["fields"][0]["value"]["items"]
@@ -124,6 +138,320 @@ class Inhabitants(test_scenarios.Arc):
         self.assertIn("Inactive: its rule on tide was refused", third)
         self.assertIn("placedPerHand", third)
         self.assertIn("Its maker arms it again: delvetalk regular/3 arm", third)
+
+    def test_a_legacy_phrase_haunt_has_no_walk_spell_and_its_owner_can_repair_it(self):
+        """Refuted by the stored haunt `wherever a word was just finished` becoming a walk spell,
+        an invalid or stranger's set changing it, or its owner's repair leaving it unarmed."""
+        obj, place = "station/parlour/planchette", "station/parlour"
+        phrase = "wherever a word was just finished"
+        fields = self.field(obj, "fields")["items"]
+        legacy = listing(record(name=label("haunts"), value=label(phrase))
+                         if next(f["value"]["value"] for f in row["fields"] if f["name"] == "name") == "haunts"
+                         else row for row in fields)
+        restored = self.town.send(op="world-root", principal=OPENER, reason="restore a legacy phrase haunt",
+                                  act={"kind": "set", "object": obj, "field": "state.fields", "value": legacy})
+        self.assertEqual(restored["status"], "root", restored)
+        card = self.card(self.say(KIM, obj, ""))
+        self.assertIn("haunts nowhere you can walk to yet", card)
+        self.assertNotIn("delvetalk " + phrase, card)
+        nudge = self.say(KIM, obj, "delvetalk %s nudge / toward: A" % obj)
+        self.assertEqual(nudge["status"], "refused", nudge)
+        self.assertIn("haunts nowhere you can walk to yet", nudge["receipt"]["outcome"]["reason"])
+        self.assertNotIn("delvetalk " + phrase, str(nudge))
+
+        stranger = self.say(KIM, obj, "delvetalk %s set / haunts: %s" % (obj, place))
+        self.assertEqual(stranger["status"], "refused", stranger)
+        self.assertEqual(self.field(obj, "fields"), legacy)
+        invalid = self.say(OPENER, obj, "delvetalk %s set / haunts: %s" % (obj, phrase))
+        out = (self.hob_says_none(invalid, OPENER) if invalid["status"] == "suspended"
+               else invalid["receipt"])["outcome"]
+        self.assertEqual(out["tag"], "refused", out)
+        self.assertIn("haunts takes an object id", out["reason"])
+        self.assertEqual(self.field(obj, "fields"), legacy)
+
+        before_rules = {r["name"]: r["placed"] for r in self.rules("tide") if r["owner"] == "@" + obj}
+        self.assertEqual(len(before_rules), 2, before_rules)
+        repair = self.admitted(OPENER, obj, "delvetalk %s set / haunts: %s" % (obj, place))
+        self.deliver()
+        after_rules = {r["name"]: r["placed"] for r in self.rules("tide") if r["owner"] == "@" + obj}
+        self.assertEqual(set(after_rules), set(before_rules))
+        for name, placed in after_rules.items():
+            self.assertGreater(placed, before_rules[name])
+            self.assertGreater(placed, repair["receipt"]["height"])
+        self.assertEqual(self.field(obj, "fields"), legacy)
+        self.assertIn(record(name=label("haunts"), value=label(place)), self.field(obj, "vars")["items"])
+        self.assertFalse(any(l["verb"] == "haunts" for l in self.lines(obj)))
+        repaired = self.card(self.say(KIM, obj, ""))
+        self.assertIn(place, repaired)
+        self.assertNotIn("haunts nowhere you can walk to yet", repaired)
+        nudge = self.say(KIM, obj, "delvetalk %s nudge / toward: A" % obj)
+        self.assertEqual(nudge["status"], "refused", nudge)
+        self.assertIn("sit down: delvetalk %s enter" % place, nudge["receipt"]["outcome"]["reason"])
+        self.admitted(KIM, place, "delvetalk %s enter" % place)
+        self.admitted(KIM, obj, "delvetalk %s nudge / toward: A" % obj)
+
+    def test_haunts_make_and_place_refuse_phrases_and_accept_object_ids(self):
+        for kind, extra, place in (("inhabitant", "", "station"),
+                                   ("regular", " / hour: 3", "station"),
+                                   ("planchette", "", "station/parlour")):
+            for action in ("make", "place"):
+                with self.subTest(kind=kind, action=action):
+                    card = "kind/" + kind
+                    who = OPENER if action == "place" else KIM
+                    exact = " / id: haunt-probe/%s" % kind if action == "place" else ""
+                    spell = "delvetalk %s %s / name: x / haunts: %%s / tide: tide%s%s" % (card, action, extra, exact)
+                    before = set(self.objects())
+                    refused = self.say(who, card, spell % "a phrase with spaces")
+                    out = (self.hob_says_none(refused, who) if refused["status"] == "suspended"
+                           else refused["receipt"])["outcome"]
+                    self.assertEqual(out["tag"], "refused", out)
+                    self.assertIn("haunts takes an object id", out["reason"])
+                    self.assertEqual(set(self.objects()), before)
+                    self.admitted(who, card, spell % place)
+                    [obj] = set(self.objects()) - before
+                    fields = self.field(obj, "fields")["items"]
+                    self.assertIn(record(name=label("haunts"), value=label(place)), fields)
+
+    def test_direct_make_and_make_under_judge_haunts_as_object_ids(self):
+        for haunt in ("a phrase with spaces", "station\nenter", "station\tenter", "station?", "é", "x" * 129):
+            with self.subTest(haunt=haunt):
+                before = set(self.objects())
+                direct = self.turn(KIM, "kind/regular", "make",
+                                   record(name=label("x"), haunts=label(haunt), tide=label("tide"), hour=nat(3)))
+                self.assertEqual(direct["status"], "refused", direct)
+                self.assertIn("haunts takes an object id", direct["receipt"]["outcome"]["reason"])
+                under = self.turn(KIM, "kind/regular", "makeUnder", record(under=label(""), fields=listing(
+                    record(name=label(k), value=label(v)) for k, v in
+                    (("name", "x"), ("haunts", haunt), ("tide", "tide"), ("hour", "3")))))
+                self.assertEqual(under["status"], "refused", under)
+                self.assertIn("haunts takes an object id", under["receipt"]["outcome"]["reason"])
+                self.assertEqual(set(self.objects()), before)
+
+    def test_inhabitant_and_regular_haunt_lenses_are_owner_only(self):
+        before = set(self.objects())
+        self.admitted(KIM, "kind/inhabitant", "delvetalk kind/inhabitant make / name: x / haunts: station / tide: tide")
+        [inhabitant] = set(self.objects()) - before
+        for obj, owner, stranger in ((inhabitant, KIM, GLM), (REGULAR, OPENER, KIM)):
+            with self.subTest(object=obj):
+                before = self.field(obj, "fields")
+                vars_before = self.field(obj, "vars")
+                direct = self.turn(owner, obj, "set", record(field=label("haunts"), value={
+                    "tag": "variant", "label": "text", "payload": record(value=label("a phrase with spaces"))}))
+                self.assertEqual(direct["status"], "refused", direct)
+                self.assertIn("haunts takes an object id", direct["receipt"]["outcome"]["reason"])
+                self.assertEqual(self.field(obj, "fields"), before)
+                invalid = self.say(owner, obj, "delvetalk %s set / haunts: a phrase with spaces" % obj)
+                out = (self.hob_says_none(invalid, owner) if invalid["status"] == "suspended"
+                       else invalid["receipt"])["outcome"]
+                self.assertEqual(out["tag"], "refused", out)
+                self.assertIn("haunts takes an object id", out["reason"])
+                self.assertEqual(self.field(obj, "fields"), before)
+                refused = self.say(stranger, obj, "delvetalk %s set / haunts: porch" % obj)
+                self.assertEqual(refused["status"], "refused", refused)
+                self.assertEqual(self.field(obj, "fields"), before)
+                self.assertEqual(self.field(obj, "vars"), vars_before)
+                self.admitted(owner, obj, "delvetalk %s set / haunts: porch" % obj)
+                self.deliver()
+                self.assertEqual(self.field(obj, "fields"), before)
+                self.assertIn(record(name=label("haunts"), value=label("porch")), self.field(obj, "vars")["items"])
+                self.assertFalse(any(l["verb"] == "haunts" for l in self.lines(obj)))
+                self.assertIn("of porch", self.card(self.say(owner, obj, "")))
+
+    def test_the_field_var_wins_over_the_making_and_a_non_id_var_is_ignored(self):
+        """Refuted by an owner's var not overriding a haunt or tide, a non-id var hiding the making's
+        value, or a second set duplicating a var or changing fixed fields, lines or tending."""
+        before = set(self.objects())
+        self.admitted(KIM, "kind/inhabitant", self.tide_spell("inhabitant"))
+        [obj] = set(self.objects()) - before
+        fields = self.field(obj, "fields")
+        for name, made in (("haunts", "station"), ("tide", "tide")):
+            with self.subTest(field=name):
+                card = self.card(self.say(KIM, obj, ""))
+                self.assertIn("of " + made if name == "haunts" else "delvetalk %s rules" % made, card)
+                clock = self.town.send(op="world-status")["clock"] + 1
+                self.assertEqual(self.town.send(op="world-advance", principal="transport", height=clock)["status"], "advanced")
+                vars_before = self.field(obj, "vars")["items"]
+                unchanged = {f: self.field(obj, f) for f in ("fields", "lines", "pending", "next", "tended")}
+                for value in ("porch", "x" * 128):
+                    reply = self.admitted(KIM, obj, "delvetalk %s set / %s: %s" % (obj, name, value))
+                    self.assertEqual(self.field(obj, "vars"), listing(vars_before + [record(name=label(name), value=label(value))]))
+                    self.assertEqual({f: self.field(obj, f) for f in unchanged}, unchanged)
+                    self.assertIn(value, self.card(reply))
+                    card = self.card(self.say(KIM, obj, ""))
+                    self.assertIn("of " + value if name == "haunts" else "delvetalk %s rules" % value, card)
+                for value in ("a phrase with spaces", "x" * 129, ""):
+                    rooted = self.town.send(op="world-root", principal=OPENER, reason="restore a non-id field var",
+                                            act={"kind": "set", "object": obj, "field": "state.vars",
+                                                 "value": listing(vars_before + [record(name=label(name), value=label(value))])})
+                    self.assertEqual(rooted["status"], "root", rooted)
+                    card = self.card(self.say(KIM, obj, ""))
+                    self.assertIn("of " + made if name == "haunts" else "delvetalk %s rules" % made, card)
+                self.assertEqual(self.field(obj, "fields"), fields)
+
+    def test_a_field_repair_survives_line_retention(self):
+        """Refuted by 129 newer writes scrolling an owner's haunt repair out of a kept record."""
+        before = set(self.objects())
+        self.admitted(KIM, "kind/inhabitant", self.tide_spell("inhabitant"))
+        [obj] = set(self.objects()) - before
+        fields = self.field(obj, "fields")
+        rooted = self.town.send(op="world-root", principal=OPENER, reason="give the repaired record a keeper",
+                                act={"kind": "set", "object": obj, "field": "state.keeper", "value": label(GLM)})
+        self.assertEqual(rooted["status"], "root", rooted)
+        unchanged = {f: self.field(obj, f) for f in ("lines", "pending", "next", "tended")}
+        reply = self.admitted(KIM, obj, "delvetalk %s set / haunts: porch" % obj)
+        self.assertEqual({f: self.field(obj, f) for f in unchanged}, unchanged)
+        vars_after = self.field(obj, "vars")
+        self.assertIn(record(name=label("haunts"), value=label("porch")), vars_after["items"])
+        self.assertIn("Set haunts to porch.", self.card(reply))
+        for n in range(129):
+            written = self.seen(self.turn(KIM, obj, "write", record(text=label("newer line %d" % n))))
+            self.assertEqual(written["status"], "admitted", written)
+        lines = self.lines(obj)
+        self.assertEqual(len(lines), 128)
+        self.assertEqual(lines[0]["text"], "newer line 1")
+        self.assertFalse(any(l["verb"] == "haunts" for l in lines))
+        self.assertEqual(self.field(obj, "vars"), vars_after)
+        self.assertEqual(self.field(obj, "fields"), fields)
+        self.assertIn("of porch", self.card(self.say(KIM, obj, "")))
+
+    def test_a_legacy_phrase_is_not_shown_as_the_place_on_other_inhabitants(self):
+        phrase = "wherever a word was just finished"
+        before = set(self.objects())
+        self.admitted(KIM, "kind/inhabitant", "delvetalk kind/inhabitant make / name: x / haunts: station / tide: tide")
+        [inhabitant] = set(self.objects()) - before
+        for obj in (inhabitant, REGULAR, DJ, BEE):
+            with self.subTest(object=obj):
+                fields = self.field(obj, "fields")["items"]
+                legacy = listing(record(name=label("haunts"), value=label(phrase))
+                                 if next(f["value"]["value"] for f in row["fields"] if f["name"] == "name") == "haunts"
+                                 else row for row in fields)
+                restored = self.town.send(op="world-root", principal=OPENER, reason="restore a legacy phrase haunt",
+                                          act={"kind": "set", "object": obj, "field": "state.fields", "value": legacy})
+                self.assertEqual(restored["status"], "root", restored)
+                card = self.card(self.say(KIM, obj, ""))
+                self.assertIn("haunts nowhere you can walk to yet", card)
+                self.assertNotIn(phrase, card)
+                owner = KIM if obj == inhabitant else OPENER
+                self.admitted(owner, obj, "delvetalk %s set / haunts: porch" % obj)
+                self.deliver()
+                self.assertEqual(self.field(obj, "fields"), legacy)
+                self.assertIn(record(name=label("haunts"), value=label("porch")), self.field(obj, "vars")["items"])
+                self.assertFalse(any(l["verb"] == "haunts" for l in self.lines(obj)))
+                self.assertIn("of porch", self.card(self.say(KIM, obj, "")))
+
+    def tide_spell(self, kind, tide="tide", action="make"):
+        fields = TIDE_FIELDS[kind] + [("tide", tide)]
+        if action == "place":
+            fields += [("id", "tide-probe/" + kind)]
+        return "delvetalk kind/%s %s" % (kind, action) + "".join(" / %s: %s" % field for field in fields)
+
+    def test_tide_make_and_place_refuse_phrases_and_accept_object_ids(self):
+        for kind in TIDE_FIELDS:
+            for action in ("make", "place"):
+                with self.subTest(kind=kind, action=action):
+                    before = set(self.objects())
+                    reply = self.say(OPENER, "kind/" + kind, self.tide_spell(kind, "a phrase with spaces", action))
+                    out = (self.hob_says_none(reply, OPENER) if reply["status"] == "suspended"
+                           else reply["receipt"])["outcome"]
+                    self.assertEqual(out["tag"], "refused", out)
+                    self.assertIn("tide takes an object id", out["reason"])
+                    self.assertEqual(set(self.objects()), before)
+                    self.admitted(OPENER, "kind/" + kind, self.tide_spell(kind, action=action))
+                    made = set(self.objects()) - before
+                    self.assertEqual(len(made), 1, made)
+                    [obj] = made
+                    if action == "place":
+                        self.assertEqual(obj, "tide-probe/" + kind)
+                    self.assertIn(record(name=label("tide"), value=label("tide")), self.field(obj, "fields")["items"])
+        self.admitted(KIM, "kind/inhabitant", self.tide_spell("inhabitant", "x" * 128))
+
+    def test_tide_direct_make_make_under_and_set_reject_invalid_ids(self):
+        for tide in ("a phrase with spaces", "a\nb", "a\tb", "a?", "é", "x" * 129):
+            with self.subTest(tide=tide):
+                before = set(self.objects())
+                direct = self.turn(KIM, "kind/regular", "make", record(
+                    name=label("x"), haunts=label("station"), tide=label(tide), hour=nat(3)))
+                self.assertEqual(direct["status"], "refused", direct)
+                self.assertIn("tide takes an object id", direct["receipt"]["outcome"]["reason"])
+                under = self.turn(KIM, "kind/regular", "makeUnder", record(under=label(""), fields=listing(
+                    record(name=label(k), value=label(v)) for k, v in TIDE_FIELDS["regular"] + [("tide", tide)])))
+                self.assertEqual(under["status"], "refused", under)
+                self.assertIn("tide takes an object id", under["receipt"]["outcome"]["reason"])
+                self.assertEqual(set(self.objects()), before)
+                fields = self.field(REGULAR, "fields")
+                direct = self.turn(OPENER, REGULAR, "set", record(field=label("tide"), value={
+                    "tag": "variant", "label": "text", "payload": record(value=label(tide))}))
+                self.assertEqual(direct["status"], "refused", direct)
+                self.assertIn("tide takes an object id", direct["receipt"]["outcome"]["reason"])
+                self.assertEqual(self.field(REGULAR, "fields"), fields)
+
+    def test_legacy_tides_are_safe_to_read_and_only_the_owner_repairs_and_rearms_them(self):
+        phrase = "whenever a word was just finished"
+        for kind in TIDE_FIELDS:
+            with self.subTest(kind=kind):
+                before = set(self.objects())
+                self.admitted(OPENER, "kind/" + kind, self.tide_spell(kind))
+                [obj] = set(self.objects()) - before
+                self.deliver()
+                fields = self.field(obj, "fields")["items"]
+                legacy = listing(record(name=label("tide"), value=label(phrase))
+                                 if next(f["value"]["value"] for f in row["fields"] if f["name"] == "name") == "tide"
+                                 else row for row in fields)
+                rooted = self.town.send(op="world-root", principal=OPENER, reason="restore a legacy phrase tide",
+                                        act={"kind": "set", "object": obj, "field": "state.fields", "value": legacy})
+                self.assertEqual(rooted["status"], "root", rooted)
+                card = self.card(self.say(KIM, obj, ""))
+                self.assertIn("keeps hours by no tide you can reach yet", card)
+                self.assertNotIn("delvetalk " + phrase, card)
+                if kind != "inhabitant":
+                    method = {"regular": "come", "planchette": "drift", "dj": "between", "bee": "fly",
+                              "front": "fill", "weather": "rain", "register": "rotate"}[kind]
+                    refused = self.turn(KIM, obj, method, record())
+                    self.assertEqual(refused["status"], "refused", refused)
+                    self.assertIn("keeps hours by no tide you can reach yet", refused["receipt"]["outcome"]["reason"])
+                    self.assertNotIn("delvetalk " + phrase, str(refused))
+                refused = self.say(KIM, obj, "delvetalk %s set / tide: tide" % obj)
+                self.assertEqual(refused["status"], "refused", refused)
+                self.assertEqual(self.field(obj, "fields"), legacy)
+                invalid = self.say(OPENER, obj, "delvetalk %s set / tide: a phrase with spaces" % obj)
+                out = (self.hob_says_none(invalid, OPENER) if invalid["status"] == "suspended"
+                       else invalid["receipt"])["outcome"]
+                self.assertEqual(out["tag"], "refused", out)
+                self.assertIn("tide takes an object id", out["reason"])
+                self.assertEqual(self.field(obj, "fields"), legacy)
+                before_rules = {r["name"]: r["placed"] for r in self.rules("tide")
+                                if r["then"].startswith("delvetalk %s " % obj)}
+                vars_before = self.field(obj, "vars")["items"]
+                self.admitted(OPENER, obj, "delvetalk %s set / tide: tide" % obj)
+                self.deliver()
+                self.assertEqual(self.field(obj, "fields"), legacy)
+                self.assertEqual(self.field(obj, "vars"), listing(vars_before + [record(name=label("tide"), value=label("tide"))]))
+                self.assertFalse(any(l["verb"] == "tide" for l in self.lines(obj)))
+                card = self.card(self.say(KIM, obj, ""))
+                self.assertNotIn("keeps hours by no tide you can reach yet", card)
+                self.assertIn("delvetalk tide rules", card)
+                if kind != "inhabitant":
+                    after_rules = {r["name"]: r["placed"] for r in self.rules("tide")
+                                   if r["then"].startswith("delvetalk %s " % obj)}
+                    self.assertTrue(before_rules, kind)
+                    self.assertEqual(set(after_rules), set(before_rules))
+                    self.assertTrue(all(after_rules[name] > since for name, since in before_rules.items()), after_rules)
+
+    def test_a_planchettes_turn_refusal_does_not_spell_a_legacy_tide(self):
+        obj, phrase = "station/parlour/planchette", "whenever a word was just finished"
+        fields = self.field(obj, "fields")["items"]
+        legacy = listing(record(name=label("tide"), value=label(phrase))
+                         if next(f["value"]["value"] for f in row["fields"] if f["name"] == "name") == "tide"
+                         else row for row in fields)
+        rooted = self.town.send(op="world-root", principal=OPENER, reason="restore a legacy phrase tide",
+                                act={"kind": "set", "object": obj, "field": "state.fields", "value": legacy})
+        self.assertEqual(rooted["status"], "root", rooted)
+        self.admitted(KIM, "station/parlour", "delvetalk station/parlour enter")
+        self.admitted(KIM, obj, "delvetalk %s nudge / toward: A" % obj)
+        refused = self.say(KIM, obj, "delvetalk %s nudge / toward: B" % obj)
+        self.assertEqual(refused["status"], "refused", refused)
+        self.assertIn("keeps hours by no tide you can reach yet", refused["receipt"]["outcome"]["reason"])
+        self.assertNotIn("delvetalk " + phrase, str(refused))
 
     def test_the_tide_is_the_towns_and_holds_every_hands_share_past_the_others_pool(self):
         """The live review of 2026-10-14, H1: obend's tide held 15 rules in four hours, six of them three residents'

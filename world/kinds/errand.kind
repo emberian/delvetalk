@@ -3,7 +3,7 @@ voice: what is asked and what it pays; a ping is not a debt
 about: a request with a pay, settled when its condition comes true
 form: <<END
 asks: text 1..200
-on: text 1..128
+on: object 1..128
 done: text 1..400
 pays: text 1..400
 END

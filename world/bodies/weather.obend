@@ -12,7 +12,7 @@ import ./Rows.obend as Rows
 import ./Relation.obend as Relations
 import ./Text.obend as Text
 # The weather's body, over RECORD (docs/METAPHYSICS.md §7.2, §7.4 "feed"; TENURE §2): a record made
-# over a place and the tide it reads (`over`, `tide`, fixed). As its kind finishes it, it places a rule
+# over a place (`over`) and the tide it reads (`tide`), which its owner can set again. As its kind finishes it, it places a rule
 # on its tide under its maker (`made`): at every twenty-fourth tick, a clock day, while someone has
 # been at the place within the day (it was tended: a garden's planting, a room's entering), the tide
 # casts `delvetalk <weather> rain`. A rain writes the weather's line, the place's weather line when the
@@ -47,7 +47,11 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(if context.principal == state.owner then Text.words("rain write lines door undoor") else Text.words("rain write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
+  Lists.concat(if context.principal == state.owner then Text.words("rain write lines door undoor set") else Text.words("rain write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
+def lenses() -> Lists.List<Form.Field>:
+  Super.objectLenses("tide")
+def setArms() -> Bool:
+  true
 def methods() -> Lists.List<String>:
   Text.words("~made ~act ~drizzle")
 # The place it is over: `over`, or `garden` for a weather made before a weather could be over any place.
@@ -67,7 +71,7 @@ def placing(state: State, context: Abi.Context) -> Activity<Bool>:
     case refused(r): Super.unarmed(state, tide(state), r.clause, r.reading, context)
 # Its maker places its rule again (taken off first, if it stood).
 def arm(state: State, context: Abi.Context) -> Activity<Bool>:
-  if context.principal != state.maker then Super.armRefused(state, context) else rearming(state, context)
+  if context.principal != state.maker then Super.armRefused(state, context) else if Text.isObjectId(tide(state)) == false then Card.refusing(false, {clause: "tide", reading: Card.tideLine(tide(state))}, context) else rearming(state, context)
 def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.unrule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object)}):
     case _: placing(state, context)
@@ -76,7 +80,8 @@ def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
 def rain(state: State, context: Abi.Context) -> Activity<Nat>:
   if Super.ruledFrom(state, tide(state), context) == false then unruled(state, context) else tended(state, context)
 def unruled(state: State, context: Abi.Context) -> Activity<Nat>:
-  Card.refusing(0n, {clause: "ruled", reading: "the weather rains by its rule on {tide(state)}, once a clock day while someone has been at {over(state)}: delvetalk {tide(state)} rules"}, context)
+  let rule = if Text.isObjectId(tide(state)) then "the weather rains by its rule on {tide(state)}, once a clock day while someone has been at {over(state)}: {Card.tideLine(tide(state))}" else Card.tideLine(tide(state))
+  Card.refusing(0n, {clause: "ruled", reading: rule}, context)
 # The place was tended within the day, read again as the rain comes.
 def tended(state: State, context: Abi.Context) -> Activity<Nat>:
   match world.viewField::<Nat>({object: placeOf(state, context), field: "tended"}):
@@ -131,4 +136,5 @@ def drizzle(state: State, input: DrizzleInput, context: Abi.Context) -> Activity
   if context.sender != context.object then Card.refusing(0n, {clause: "ruled", reading: "the drizzle is the weather's own; delvetalk {context.object} rain"}, context) else reaching(state, input.from, input.rained, context)
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let rains = if Relations.count(state.lines) == 0n then "; it has not rained yet." else ". Its rains:"
-  Document.text("WEATHER over {over(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: once a clock day, while someone has been at {over(state)} that day, it rains on every bell {over(state)} holds or hangs a door to, by its rule on {tide(state)}:\n  delvetalk {tide(state)} rules\n{Super.inactiveLine(state, id)}A bell nobody has been near takes nothing{rains}\n")
+  let rule = if Text.isObjectId(tide(state)) then ", by its rule on {tide(state)}:\n  {Card.tideLine(tide(state))}" else "; {Card.tideLine(tide(state))}"
+  Document.text("WEATHER over {over(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: once a clock day, while someone has been at {over(state)} that day, it rains on every bell {over(state)} holds or hangs a door to{rule}\n{Super.inactiveLine(state, id)}A bell nobody has been near takes nothing{rains}\n")

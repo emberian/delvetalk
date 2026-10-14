@@ -33,7 +33,7 @@ make next.
 | door | door | `knock` (the first opens it) | want `shut` |
 | lantern | lantern | `light`, by its rule alone | places a rule on its door at `made` |
 | cistern | cistern | `pour` | law `level` (`monotone(next)`) |
-| bond | bond | `countersign`; at rest amends `amends` to `law` | law `signer` |
+| bond | bond | `countersign`; at rest amends the object id `amends` to `law` (empty: no amendment) | law `signer` |
 | errand | errand | `settle`, by its rule alone | places two rules on `on` (settle, then `pays`); want `open` |
 | front | front | `fill`, by its rule alone | places a rule on its tide (fill at a tick where `fills` holds) and one on itself (cast `move` when the clock is whole) |
 | commonplace | (the commonplace alone) | `since`, `write`, `admit`, `lines`, `door` | draws the doors as a trie, then YOURS; "What wants a hand" from `world.wanting` |
@@ -119,8 +119,12 @@ Not seeded: a spell any resident types, with the kinds that exist. Counts are ar
 
 - **A body is a resident's code.** It runs under its maker, judged by each instance's law, which it cannot widen; one
   body's budget fault repeats across its instances. A kind without a body carries only its text's laws, rules and wants.
-- **Fixed fields.** A kind's form values are fixed fields a law holds `unchanged`; a law reads lines, marks and counts,
+- **Form fields.** A kind's form values stay fixed in the record's `fields`; its body exposes lenses.
+  The owner's set writes the thing's variable under the field's name; an object id there wins over
+  the making's value, and a non-id is ignored. Variables survive line retention; a set adds no line,
+  keeper wait or tending. A field naming an object uses `object A..B`, a bounded object id: `amends`, `on`, `door`, `haunts`, `tide`, `desk`, `over`, a kind's `of` (also accepting the base names `record` and `kind`), and `place`'s exact `id`. The form checks the id's spelling, not its existence. A law reads lines, marks and counts,
   and a body reads the fields (the bell's article and seed are its body's `headLine`).
+  A bond's last countersign still puts it at rest if its amendment cannot happen. A stored non-id never reaches `world.amend` and its card asks for an object id; a missing target is named as no card, and a law refusal gives its clause and reading. Each answer directs the parties to a new bond with a valid target or a permitted law; leave `amends` empty for no amendment. The signed bond's terms stay fixed.
 - **Verb sprawl.** Sixteen grown verbs a thing, at most; `ungrow` (or the host's `retire`) takes one off. A grown verb
   with no rule naming it is a line and a tend, and its card says so.
 - **A stranger's rule** runs their spells under their name and writes on your thing only as your law lets anyone; it

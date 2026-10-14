@@ -795,11 +795,12 @@ def methodForms (id : String) (methods : Json) (declared : List (String × List 
       (given.lookup n <|> formKind member).map fun k => Data.record [("name", .label n), ("kind", k)]
     return .record [("card", .label id), ("action", .label name), ("fields", listData kinds)]
 
-/-- A declared form field's kind as the host reads it: `text`, `natural` and `choice` as given, and
+/-- A declared form field's kind as the host reads it: `text`, `object`, `natural` and `choice` as given, and
     `source` (Bend source) as text of 1 to `Limits.formSourceMax` characters. -/
 def declaredKind : Data → Option Data
   | .variant "source" _ => some (.variant "text" (.record [("min", .natural 1), ("max", .natural Limits.formSourceMax)]))
   | k@(.variant "text" _) => some k
+  | k@(.variant "object" _) => some k
   | k@(.variant "natural" _) => some k
   | k@(.variant "choice" _) => some k
   | _ => none
@@ -824,6 +825,15 @@ def declaredForms (o : Object) : M (List (String × List (String × Data)) × Li
     | _ => none
   return (forms.map fun (a, fs) => (a, fs.filterMap fun (n, k) => (declaredKind k).map (n, ·)),
           forms.map fun (a, fs) => (a, fs.filterMap fun (n, k) => match k with | .variant "source" _ => some n | _ => none))
+
+/-- A raw direct argument's declared text fields, decoded as posted spell fields are. -/
+def declaredArgument (method : String) (argument : Data) (declared : List (String × List (String × Data))) : Data :=
+  match declared.lookup method, argument with
+  | some fields, .record values => .record (values.map fun (name, value) =>
+      (name, match fields.lookup name, value with
+        | some (.variant "text" _), .label text => .label (Spell.unwrap text)
+        | _, _ => value))
+  | _, _ => argument
 
 /-- Why `argument` misfits the form the card declares for `method` (`declaredForms`), judged as a
     spell's field is (`Spell.judge`): a text's length, a natural's range, a choice's options (a
@@ -1134,6 +1144,8 @@ the host with the card's usage and journals nothing. -/
 def spellHint : Spell.Kind → String
   | .text 0 b => s!"<optional text, up to {b} characters>"
   | .text a b => s!"<text, {a} to {b} characters>"
+  | .object 0 b => s!"<optional object id, up to {b} characters>"
+  | .object a b => s!"<object id, {a} to {b} characters>"
   | .natural a b => s!"<a number from {a} to {b}>"
   | .choice options => s!"<{", ".intercalate options}>"
 
@@ -1378,23 +1390,13 @@ def lensSpell (w : World) (id : String) (argument : Data) (target : Object) (car
   | _ => .refuse id "unknownField"
       s!"set takes one field a spell, not {", ".intercalate (fields.map (·.name))}" (spellUsage card [] lenses)
 
-/-- The first ```obend fenced block of a reply: the lines after the opening fence up to a line that
-    starts with ```; none when there is none or it is never closed. -/
-def firstFence (text : String) : Option String := Id.run do
-  let lines := text.splitOn "\n"
-  let some start := lines.findIdx? (fun l => (l.dropWhile (· == ' ')).startsWith "```obend") | return none
-  let body := lines.drop (start + 1)
-  let some stop := body.findIdx? (fun l => (l.dropWhile (· == ' ')).startsWith "```") | return none
-  return some ("\n".intercalate (body.take stop))
-
-/-- The first code fence of a reply tagged exactly `tag` (```spween): the lines after it up to a line that starts with
-    ```; none when there is none or it is never closed. -/
+/-- The content of the first closed code fence tagged exactly `tag`. -/
 def taggedFence (tag : String) (text : String) : Option String := Id.run do
   let lines := text.splitOn "\n"
   let some start := lines.findIdx? (fun l => l.trimAscii.toString == "```" ++ tag) | return none
   let body := lines.drop (start + 1)
-  let some stop := body.findIdx? (fun l => (l.dropWhile (· == ' ')).startsWith "```") | return none
-  return some ("\n".intercalate (body.take stop))
+  let some stop := body.findIdx? (fun l => l.trimAscii.toString == "```") | return none
+  return some (Spell.unwrap ("\n".intercalate ((lines.drop start).take (stop + 2))))
 
 /-- The fence tags the spell grammar reads as its own (a spell fenced whole, a plan, Bend): never a field's block. -/
 def fenceWords : List String := ["text", "delvetalk", "plan", "obend"]
@@ -1406,7 +1408,7 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   let text := match argument with
     | .record fs => ((fs.lookup "text").bind labelOf).getD ""
     | _ => ""
-  match sources.find? (fun n => !fields.any (·.name == n)), firstFence text with
+  match sources.find? (fun n => !fields.any (·.name == n)), taggedFence "obend" text with
   | some name, some code => fields ++ [{ name, value := code }]
   | _, _ => fields
 
@@ -2037,11 +2039,28 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   recordCells id obj.version { scalar := true }
   let held := Held.of id obj.version obj
   let compiled ← compiledMethod obj method
+  let declared ← if depth == 0 && s.direct then (·.1) <$> declaredForms obj else pure []
+  let argument ← if depth == 0 && s.direct && s.origin == "request" then do
+      let decoded := declaredArgument method argument declared
+      modify fun st => { st with argument := decoded }
+      pure decoded
+    else pure argument
   -- `receive` is heard with what the host fills where the sender left it out (`heardArgument`: `fields` empty, the
   -- `spell` read from the text, none for a mention, which is heard and never cast; `misfit` none), whoever sends it:
-  -- a mention, a rule's firing or a send of `{text, post}`.
-  let argument ← if method != "receive" || argumentFits compiled argument then pure argument else
-    match heardArgument world obj argument [] (if s.reach == "mentioned" then some (castData "" "") else none) with
+  -- a mention, a rule's firing or a send of `{text, post}`. A direct `publishPage` defaults a missing `page`
+  -- to empty text when the method's input admits that record.
+  let argument ← if argumentFits compiled argument then pure argument else
+    let filled := if method == "receive" then
+        heardArgument world obj argument [] (if s.reach == "mentioned" then some (castData "" "") else none)
+      else if method == "publishPage" && depth == 0 && s.direct then
+        match argument with
+        | .record fs => if (fs.lookup "page").isNone then
+            let filled := Data.record (fs ++ [("page", .label "")])
+            if argumentFits compiled filled then some filled else none
+          else none
+        | _ => none
+      else none
+    match filled with
     | some filled => do modify (fun st => { st with argument := filled }); pure filled
     | none => pure argument
   -- What the method takes, with the card's declared bounds: built only for a refusal.
@@ -2064,7 +2083,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   -- A direct turn's argument is held to the card's declared form bounds as a spell is (codex host
   -- 12, agent 3): one advertised action, one bound, whichever way it is asked.
   if depth == 0 && s.direct then
-    if let some why := declaredMisfit method argument (← declaredForms obj).1 then
+    if let some why := declaredMisfit method argument declared then
       throw (.refused "typeMismatch" why (some (← expectedNow)))
   match r with
   | .computation .. =>
@@ -3671,7 +3690,7 @@ def OfferedForm.ofData : Data → Option OfferedForm
 def spellVerdict (offered : List OfferedForm) (text : String) : Option (Except (List String) (String × String × Data)) :=
   -- A reply's ```obend block is the value of the form's first `source` field the spell lacks, as
   -- `withFence` binds it for a typed spell: a block and a fenced reply are one value.
-  let fence := firstFence text
+  let fence := taggedFence "obend" text
   let fitted := fun (offer : OfferedForm) (fields : List Spell.Binding) =>
     let form := offer.form
     match offer.sources.find? (fun n => !fields.any (·.name == n)), fence with

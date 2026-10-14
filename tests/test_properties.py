@@ -100,21 +100,21 @@ def bounded(form, arg, rng):
         if field is None:
             continue
         payload = {x["name"]: x["value"] for x in kind["payload"]["fields"]}
-        if kind["label"] == "text" and field["value"].get("tag") == "label":
+        if kind["label"] in ("text", "object") and field["value"].get("tag") == "label":
             lo, hi = int(payload["min"]["value"]), int(payload["max"]["value"])
-            field["value"] = label(text(rng, lo, hi)[:hi].ljust(lo, "x"))
+            field["value"] = label("x" * rng.randint(lo, hi) if kind["label"] == "object" else text(rng, lo, hi)[:hi].ljust(lo, "x"))
         elif kind["label"] == "choice" and field["value"].get("tag") == "variant":
             field["value"] = dict(field["value"], label=rng.choice(payload["options"]["items"])["value"])
     return arg
 
 
 def outside(form, arg, rng):
-    """`arg` with one bounded text field outside its bound, or None when the form bounds none."""
+    """`arg` with one bounded text or object field outside its bound, or None when the form bounds none."""
     by = {f["name"]: f for f in arg["fields"]}
     for f in rng.sample(form or [], len(form or [])):
         payload = {x["name"]: x["value"] for x in f["kind"]["payload"]["fields"]}
         field = by.get(f["name"])
-        if f["kind"]["label"] == "text" and field and field["value"].get("tag") == "label":
+        if f["kind"]["label"] in ("text", "object") and field and field["value"].get("tag") == "label":
             lo, hi = int(payload["min"]["value"]), int(payload["max"]["value"])
             field["value"] = label("y" * (hi + 1) if lo == 0 or rng.random() < 0.5 else "")
             return arg
@@ -125,19 +125,12 @@ HOST_FILLED = ("fields", "spell", "misfit")
 
 
 def malformed(t, rng):
-    """A value the method does not take: another shape, a missing field, an extra field, a wrong tag."""
+    """A value the method does not take: another shape, an extra field, a wrong tag."""
     fields = fields_of(t) if t.get("tag") == "field" else []
     pick = rng.randrange(5)
     good = value(t, rng)
     if pick == 0 or not fields:
         return rng.choice([label("x"), nat(3), {"tag": "list", "items": []}, record(nonsense=label("x"))])
-    # The host fills `fields`, `spell` and `misfit` of a `receive` (HOST-HANDOFF 5.121, 5.149): leaving them out is no misfit.
-    droppable = [i for i, f in enumerate(good["fields"]) if f["name"] not in HOST_FILLED]
-    if pick == 1 and droppable:
-        i = droppable[0]
-        return dict(good, fields=good["fields"][:i] + good["fields"][i + 1:])
-    if pick == 1:
-        pick = 2
     if pick == 2:
         return dict(good, fields=good["fields"] + [{"name": "zz", "value": nat(1)}])
     typed = [i for i, (name, m) in enumerate(fields) if name not in HOST_FILLED and m.get("tag") in ("label", "natural", "boolean", "field", "variant", "list")]

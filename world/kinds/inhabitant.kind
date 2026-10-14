@@ -6,11 +6,11 @@
 of: record
 form: <<END
 name: text 1..64
-haunts: text 1..128
-tide: text 1..128
+haunts: object 1..128
+tide: object 1..128
 END
 head: {name}
 voice: one who lives here and keeps its own hours; what it does it has done before, and does again
 about: lives in a place by its own hours: its own rules on the tide move it, and it leaves lines where it goes
-text: rule haunts "places its own rules where it haunts, as itself, when it is made or armed": request.method == "made" or request.method == "arm" then delvetalk {request.object} haunt
+text: rule haunts "places its own rules where it haunts, as itself, when it is made, armed or its haunt or tide is set": request.method == "made" or request.method == "arm" or request.method == "set" then delvetalk {request.object} haunt
 body: inhabitant

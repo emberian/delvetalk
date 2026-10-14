@@ -29,6 +29,7 @@ inductive Parsed where
 
 inductive Kind where
   | text (min max : Nat)
+  | object (min max : Nat)
   | natural (min max : Nat)
   | choice (options : List String)
   deriving Repr, BEq
@@ -279,6 +280,21 @@ def lastOpens (bs : List Binding) : Option (List Binding × String × T) := do
 def closesBlock (delimiter line : T) : Bool :=
   line == delimiter || (line.take (line.length - 1) == delimiter && line.drop (line.length - 1) == ['\r'])
 
+/-- The content of exactly one whole block or code fence; other text stays verbatim. -/
+def unwrap (value : String) : String := Id.run do
+  let lines := value.splitOn "\n"
+  let lines := if lines.getLastD "" == "" then lines.dropLast else lines
+  let opening := (lines.headD "").trimAscii.toString
+  let closer := match blockValue opening.toList with
+    | some delimiter => some (fun (line : String) => closesBlock delimiter line.toList)
+    | none => if opening.startsWith "```" && !(opening.drop 3).toString.contains '`' then
+        some (fun (line : String) => line.trimAscii.toString == "```") else none
+  let some closes := closer | return value
+  let body := lines.drop 1
+  let some stop := body.findIdx? closes | return value
+  if stop + 2 != lines.length then return value
+  return "\n".intercalate (body.take stop)
+
 mutual
 partial def fieldLines (text : T) : Fields2 :=
   if text.isEmpty then .found [] else spellLine text (span text [' ', '\t']) (brk text ['\n'])
@@ -341,7 +357,8 @@ partial def block (name : String) (delimiter rest : T) (lines : List T) : Fields
     let line := rest.take (brk rest ['\n'])
     let after := rest.drop (brk rest ['\n'] + 1)
     if closesBlock delimiter line then
-      consed ⟨name, "\n".intercalate (lines.reverse.map str)⟩ (fieldLines after)
+      let value := "\n".intercalate (s!"<<{str delimiter}" :: (lines.reverse.map str ++ [str line]))
+      consed ⟨name, unwrap value⟩ (fieldLines after)
     else block name delimiter after (line :: lines)
 end
 
@@ -660,6 +677,10 @@ def judge (field : Field) (value : String) : Option (Clause × String) :=
   | .text min max =>
       if value.length < min || value.length > max then wrong s!"{field.name} takes {min} to {max} characters; this one is {value.length}."
       else none
+  | .object min max =>
+      if value.length < min || value.length > max || !(value.isEmpty && min == 0 || isCardName value.toList) then
+        wrong s!"{field.name} takes an object id of {min} to {max} characters."
+      else none
   | .natural min max =>
       match number value.toList with
       | none => wrong s!"{field.name} takes a natural number in plain digits."
@@ -688,19 +709,19 @@ def valueOf (bindings : List Binding) (name : String) : String :=
 
 def typed (kind : Kind) (value : String) : Value :=
   match kind with
-  | .text .. => .text value
+  | .text .. | .object .. => .text value
   | .natural .. => .natural ((number value.toList).getD 0)
   | .choice .. => .choice value
 
 def isText : Kind → Bool
-  | .text .. => true
+  | .text .. | .object .. => true
   | _ => false
 
-/-- A text field whose bound starts at 0 may be left out of a spell: it reads as the empty text; a natural one from 0,
-    as 0 (`lines` with no `from` is the newest page). -/
+/-- A text or object field whose bound starts at 0 may be left out of a spell: it reads as the empty text; a natural one
+    from 0, as 0 (`lines` with no `from` is the newest page). -/
 def Field.optional (f : Field) : Bool :=
   match f.kind with
-  | .text 0 _ | .natural 0 _ => true
+  | .text 0 _ | .object 0 _ | .natural 0 _ => true
   | _ => false
 
 def rebound (bindings : List Binding) (form : Form) : List Binding :=
@@ -810,6 +831,10 @@ def Form.ofData : Data → Option Form
                 let .natural a ← k.lookup "min" | none
                 let .natural b ← k.lookup "max" | none
                 pure (Kind.text a b)
+            | .variant "object" (.record k) => do
+                let .natural a ← k.lookup "min" | none
+                let .natural b ← k.lookup "max" | none
+                pure (Kind.object a b)
             | .variant "natural" (.record k) => do
                 let .natural a ← k.lookup "min" | none
                 let .natural b ← k.lookup "max" | none
@@ -834,12 +859,15 @@ def Form.ofJson (j : Json) : Except String Form := do
       match k.getObjVal? "text" with
       | .ok t => pure (Kind.text (← t.getObjValAs? Nat "min") (← t.getObjValAs? Nat "max"))
       | .error _ =>
-        match k.getObjVal? "natural" with
-        | .ok t => pure (Kind.natural (← t.getObjValAs? Nat "min") (← t.getObjValAs? Nat "max"))
+        match k.getObjVal? "object" with
+        | .ok t => pure (Kind.object (← t.getObjValAs? Nat "min") (← t.getObjValAs? Nat "max"))
         | .error _ =>
-          let c ← k.getObjVal? "choice"
-          let opts ← (← c.getObjVal? "options").getArr?
-          pure (Kind.choice (← opts.toList.mapM fun o => o.getStr?))
+          match k.getObjVal? "natural" with
+          | .ok t => pure (Kind.natural (← t.getObjValAs? Nat "min") (← t.getObjValAs? Nat "max"))
+          | .error _ =>
+            let c ← k.getObjVal? "choice"
+            let opts ← (← c.getObjVal? "options").getArr?
+            pure (Kind.choice (← opts.toList.mapM fun o => o.getStr?))
     pure (Field.mk name kind)
   return ⟨card, action, fields⟩
 
@@ -925,6 +953,14 @@ private def plant : Form :=
   .spell "kind/room" "make" [⟨"name", "jar"⟩, ⟨"spween", "---\nid: jar\n---\n=== start\nHoney.\n* [Taste] -> start"⟩]
 #guard parse "delvetalk w c / a: 1 / b: <<B\nx\nB\nc: 2" == .spell "w" "c" [⟨"a", "1"⟩, ⟨"b", "x"⟩, ⟨"c", "2"⟩]
 #guard parse "delvetalk w c / b: <<B\nx\n" == .notASpell "The block <<B for b needs a last line that is exactly B." true
+#guard unwrap "<<END\n=== start\nHoney.\nEND\n" == "=== start\nHoney."
+#guard unwrap "```spween\n=== start\nHoney.\n```" == "=== start\nHoney."
+#guard unwrap "```\n lead\n\n```\n" == " lead\n"
+#guard unwrap "<<END\n```spween\nHoney.\n```\nEND" == "```spween\nHoney.\n```"
+#guard ["<<END", "<<END\nHoney.", "```spween\nHoney.", "Before <<END\nHoney.\nEND",
+  "<<END\nHoney.\nEND\nAfter", "<<END\nHoney.\nEND\n<<END\nMore.\nEND",
+  "Before\n```spween\nHoney.\n```", "```spween\nHoney.\n```\nAfter",
+  "```spween\nHoney.\n```\n```spween\nMore.\n```"].all fun v => unwrap v == v
 #guard segments "delvetalk w c / b: <<B\ndelvetalk p q\nB\ndelvetalk r s" == ["delvetalk w c / b: <<B\ndelvetalk p q\nB", "delvetalk r s"]
 #guard (renderChecked "me" "note" [⟨"text", "<<END"⟩]).isSome
 #guard ["", " lead", "trail ", "a\nb", "END", "END\nEND_0\nEND_1", "<<END", "x\ndelvetalk p s / o: e", "---", "# h", "> q", "```", "a, b: c", "/ x", "tab\tx", "r\r\nEND\r"].all fun v =>

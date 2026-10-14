@@ -100,6 +100,7 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
 def kindText(kind: Form.Kind) -> String:
   match kind:
     case text(t): "text of {natText(t.min)} to {natText(t.max)} characters"
+    case object(o): "an object id of {natText(o.min)} to {natText(o.max)} characters"
     case natural(n): "a natural number from {natText(n.min)} to {natText(n.max)}"
     case choice(c): "one of {Text.joined(c.options)}"
     case source(_): "Bend source of 1 to 131072 characters, as a <<BEND block or the reply's ```obend block"

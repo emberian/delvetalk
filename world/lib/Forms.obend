@@ -2,6 +2,7 @@ edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Text.obend as Text
 import ./Rows.obend as Rows
+import ./Form.obend as Form
 # The make form of a kind, as data and as the source of a layer (docs/CATALOGUE.md section 3):
 # a kind's `form` is one `name: kind` line a field, and the make layer a kind grafts on itself
 # is generated from those lines. Pure; KIND imports it.
@@ -48,7 +49,7 @@ def spellField(s: Spec) -> String:
 # A field's blank as a card says it (docs/VOICE.md): `1 to 80 characters`, `up to 200 characters`,
 # `amber, violet or silver`, `a number from 1 to 9`.
 def blank(kind: String) -> String:
-  if isChoice(kind) then choiceWords(options(kind)) else if isNatural(kind) then "a number from {natText(low(kind))} to {natText(high(kind))}" else if Text.starts(kind, "text") then textBlank(low(kind), high(kind)) else kind
+  if isChoice(kind) then choiceWords(options(kind)) else if isNatural(kind) then "a number from {natText(low(kind))} to {natText(high(kind))}" else if Text.starts(kind, "object") then "an object id, {textBlank(low(kind), high(kind))}" else if Text.starts(kind, "text") then textBlank(low(kind), high(kind)) else kind
 def textBlank(low: Nat, high: Nat) -> String:
   if low == 0n then "up to {natText(high)} characters" else "{natText(low)} to {natText(high)} characters"
 def choiceWords(options: Lists.List<String>) -> String:
@@ -68,6 +69,13 @@ def letters() -> String:
 record Fault:
   clause: String
   reading: String
+def fieldFault(field: Form.Field, value: String) -> Lists.Maybe<Fault>:
+  match field.kind:
+    case text(t): textFault({name: field.name, kind: "text {natText(t.min)}..{natText(t.max)}"}, value)
+    case object(o): objectFault({name: field.name, kind: "object {natText(o.min)}..{natText(o.max)}"}, value)
+    case natural(n): naturalFault({name: field.name, kind: "natural {natText(n.min)}..{natText(n.max)}"}, value)
+    case choice(c): choicesFault(field.name, c.options, value)
+    case source(_): textFault({name: field.name, kind: "text 1..131072"}, value)
 def fault(form: String, fields: Lists.List<Rows.Field>) -> Lists.Maybe<Fault>:
   firstFault(specs(form), fields)
 def firstFault(items: Lists.List<Spec>, fields: Lists.List<Rows.Field>) -> Lists.Maybe<Fault>:
@@ -80,18 +88,20 @@ def faultOr(found: Lists.Maybe<Fault>, rest: Lists.List<Spec>, fields: Lists.Lis
     case none(_): firstFault(rest, fields)
 def specFault(spec: Spec, fields: Lists.List<Rows.Field>) -> Lists.Maybe<Fault>:
   match Lists.find(fields, fn(f: Rows.Field) -> Bool: f.name == spec.name):
-    case none(_): Lists.Maybe.some({value: {clause: "missing", reading: "Still needs {spec.name}."}})
+    case none(_): if (Text.starts(spec.kind, "text") || Text.starts(spec.kind, "object")) && low(spec.kind) == 0n then Lists.Maybe.none({}) else Lists.Maybe.some({value: {clause: "missing", reading: "Still needs {spec.name}."}})
     case some(f): valueFault(spec, f.value.value)
 def valueFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
-  if isChoice(spec.kind) then choiceFault(spec, value) else if isNatural(spec.kind) then naturalFault(spec, value) else if Text.starts(spec.kind, "text") then textFault(spec, value) else Lists.Maybe.none({})
+  if isChoice(spec.kind) then choiceFault(spec, value) else if isNatural(spec.kind) then naturalFault(spec, value) else if Text.starts(spec.kind, "object") then objectFault(spec, value) else if Text.starts(spec.kind, "text") then textFault(spec, value) else Lists.Maybe.none({})
 def options(kind: String) -> Lists.List<String>:
   Lists.map(split(kind, "|"), Text.trim)
 def choiceFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
-  let listed = textJoin(options(spec.kind), ", ")
-  if Lists.any(options(spec.kind), fn(o: String) -> Bool: o == value) then Lists.Maybe.none({}) else bad("{spec.name} is one of: {listed}")
+  choicesFault(spec.name, options(spec.kind), value)
+def choicesFault(name: String, options: Lists.List<String>, value: String) -> Lists.Maybe<Fault>:
+  let listed = textJoin(options, ", ")
+  if Lists.any(options, fn(o: String) -> Bool: o == value) then Lists.Maybe.none({}) else bad("{name} is one of: {listed}")
 def bad(reading: String) -> Lists.Maybe<Fault>:
   Lists.Maybe.some({value: {clause: "badValue", reading: reading}})
-# A kind's bounds, `text 1..80` or `natural 0..9`: the low and the high end.
+# A kind's bounds, `text 1..80`, `object 1..128` or `natural 0..9`: the low and the high end.
 def range(kind: String) -> String:
   Text.trim(textDrop(kind, textBreak(kind, " ")))
 def low(kind: String) -> Nat:
@@ -100,6 +110,8 @@ def high(kind: String) -> Nat:
   Text.digits(textDrop(range(kind), textBreak(range(kind), "..") + 2n), 0n)
 def textFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
   if textLength(value) < low(spec.kind) || textLength(value) > high(spec.kind) then bad("{spec.name} is {natText(low(spec.kind))} to {natText(high(spec.kind))} characters; this one is {natText(textLength(value))}.") else Lists.Maybe.none({})
+def objectFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
+  if textLength(value) < low(spec.kind) || textLength(value) > high(spec.kind) || (Text.isObjectId(value) == false && (value != "" || low(spec.kind) != 0n)) then bad("{spec.name} takes an object id of {natText(low(spec.kind))} to {natText(high(spec.kind))} characters.") else Lists.Maybe.none({})
 def naturalFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
   if textLength(value) == 0n || textSpan(value, "0123456789") != textLength(value) || Text.digits(value, 0n) < low(spec.kind) || Text.digits(value, 0n) > high(spec.kind) then bad("{spec.name} is a number from {natText(low(spec.kind))} to {natText(high(spec.kind))}; this one is {textTake(value, 24n)}.") else Lists.Maybe.none({})
 # A layer as the workshop writes it around a body of forms and defs (docs/AUTHORING.md §3 (c)): the

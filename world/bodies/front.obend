@@ -15,7 +15,7 @@ import ./Text.obend as Text
 # TENURE §3C, a visible clock): a record made with a name, the condition that fills a segment
 # (`fills`, in the law grammar, judged on its tide at each tick: `new.ticks % 24 == 0` is a clock
 # day), how many segments its clock has (`segments`), the spell it casts when the clock is full
-# (`move`) and the tide it reads (`tide`), all fixed. As its kind finishes it, it places two rules
+# (`move`) and the tide it reads (`tide`); its owner can set the tide again. As its kind finishes it, it places two rules
 # under its maker (`made`): on the tide, `request.method == "tick" and (<fills>)` casts `delvetalk
 # <front> fill`; on itself, a fill that brings its count of segments to a whole clock casts `move`.
 # So the move is the maker's turn, judged by the law of whatever it touches, and the clock empties
@@ -44,7 +44,11 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(if context.principal == state.owner then Text.words("fill write lines door undoor") else Text.words("fill write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
+  Lists.concat(if context.principal == state.owner then Text.words("fill write lines door undoor set") else Text.words("fill write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
+def lenses() -> Lists.List<Form.Field>:
+  Super.objectLenses("tide")
+def setArms() -> Bool:
+  true
 def methods() -> Lists.List<String>:
   Text.words("~made ~act")
 def tide(state: State) -> String:
@@ -75,7 +79,7 @@ def moving(state: State, context: Abi.Context) -> Activity<Bool>:
     case refused(r): Super.unarmed(state, context.object, r.clause, r.reading, context)
 # Its maker places its rules again (taken off first, where they stood).
 def arm(state: State, context: Abi.Context) -> Activity<Bool>:
-  if context.principal != state.maker then Super.armRefused(state, context) else rearming(state, context)
+  if context.principal != state.maker then Super.armRefused(state, context) else if Text.isObjectId(tide(state)) == false then Card.refusing(false, {clause: "tide", reading: Card.tideLine(tide(state))}, context) else rearming(state, context)
 def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.unrule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object)}):
     case _: unmoving(state, context)
@@ -88,7 +92,8 @@ def moveWhen(n: Nat) -> String:
 # Its maker's rule on the tide fills a segment; anyone else, or another's rule there, is told what does.
 def fill(state: State, context: Abi.Context) -> Activity<Nat>:
   let fills = Super.field(state, "fills")
-  if Super.ruledFrom(state, tide(state), context) == false then Card.refusing(0n, {clause: "ruled", reading: "a segment fills at a tick of {tide(state)} when {fills}: delvetalk {tide(state)} rules"}, context) else filled(state, context)
+  let clock = if Text.isObjectId(tide(state)) then "a segment fills at a tick of {tide(state)} when {fills}: {Card.tideLine(tide(state))}" else Card.tideLine(tide(state))
+  if Super.ruledFrom(state, tide(state), context) == false then Card.refusing(0n, {clause: "ruled", reading: clock}, context) else filled(state, context)
 def filled(state: State, context: Abi.Context) -> Activity<Nat>:
   let at = fills(state) % segments(state) + 1n
   let written(_) = write {lines: insert {author: context.sender, handle: "", verb: "fill", text: "segment {natText(at)} of {natText(segments(state))}, at clock {natText(context.clock)}", at: context.height, n: state.next}, next: add 1n}
@@ -117,4 +122,5 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   let name = if state.head == "" then "A FRONT" else state.head
   let fills = Super.field(state, "fills")
   let move = Super.field(state, "move")
-  Document.text("{name}, a front set by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: a slow pressure with a clock that fills while its condition holds, and casts its move when full. Its clock: {clock(state)}.\nA segment fills at a tick of {tide(state)} when: {fills}\nWhen full: {move}\nIts move's firing and delivery receipt: delvetalk {id} rules\n{Super.inactiveLine(state, id)}")
+  let ticks = if Text.isObjectId(tide(state)) then "A segment fills at a tick of {tide(state)} when: {fills}\n  {Card.tideLine(tide(state))}" else Card.tideLine(tide(state))
+  Document.text("{name}, a front set by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: a slow pressure with a clock that fills while its condition holds, and casts its move when full. Its clock: {clock(state)}.\n{ticks}\nWhen full: {move}\nIts move's firing and delivery receipt: delvetalk {id} rules\n{Super.inactiveLine(state, id)}")

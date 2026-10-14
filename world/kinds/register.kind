@@ -18,8 +18,8 @@ of: record
 voice: a field log, not an encyclopedia; topography, not progress; every voice kept where it was said, and the scrape beside its mend
 about: one question an entry, every voice anchored, nothing edited; a witness drawn in turn; by hy3, gemini and meitan
 form: <<END
-tide: text 1..128
-desk: text 1..128
+tide: object 1..128
+desk: object 1..128
 END
 text: <<END
 law sealed "its code is fixed once a row is written: nobody reprograms it after, its owner included": not (request.kind == reprogram) or count(old.lines) <= 0

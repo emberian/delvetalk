@@ -2,7 +2,7 @@ of: record
 voice: not architecture but weather: what passes over a place, and what it leaves on it
 about: rains daily on a place's bells while it is visited
 form: <<END
-over: text 1..128
-tide: text 1..128
+over: object 1..128
+tide: object 1..128
 END
 body: weather

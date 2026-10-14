@@ -182,8 +182,8 @@ replays only the tail. A journal at `J` is two files: the chain `J`, one link a 
 previous}`), and the block store `J.blocks`, each entry's canonical record at `at`; an append writes and syncs the
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
-Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 17: 14 component bodies
-replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226; 15 bounded want-transition drains; 16 the moderation's `screen` act and `screened` index, ROOT §2.4; 17 `!=`, `<`, `>` in the law and a direct action that is a grown verb or host spell cast as that spell), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 19: 14 component bodies
+replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226; 15 bounded want-transition drains; 16 the moderation's `screen` act and `screened` index, ROOT §2.4; 17 `!=`, `<`, `>` in the law and a direct action that is a grown verb or host spell cast as that spell; 18 a made thing's lineage bodies by CID, the libraries in use kept, hob's prose asked again; 19 whole block/fence values in direct declared text fields decoded before bounds and execution, and an omitted `publishPage` `page` filled as empty), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -562,8 +562,12 @@ declares `renderWanting(state, context, wanting: World.WantPage)` instead, and t
 hands it the reader. One state renders a member's card and a stranger's. A reply is the card plus the receipt line the bridge stamps, within 1,400 characters, where readers
 clip: a card takes `Card.limit(context)` (1,400 less twice the id and 120) and every renderer clips its lists with
 `Card.left`/`Card.clippedWithin`, "… and N more" counted; a list alone keeps at most 1,200 (`Card.budget`).
-`publishPage {page}` drafts the card as `wiki: <Page>`; a package that declares
-no page gets the host's (`## Card`, `## How to reply`).
+`publishPage` takes an optional `page` text field and drafts the card as
+`wiki: <Page>`. An omitted or empty `page` uses the object's default: an instance's
+own id, or the name its declared method passes to `Card.pageName` (`kinds` for a
+kind, `workshop` for the workshop, `register` for the register). A supplied name
+overrides it. A package that declares no `publishPage` gets the host's page
+(`## Card`, `## How to reply`).
 
 **The State is the schema** (KERNEL-HANDOFF §23). A module declaring `record
 State` and importing `Plan.obend`, with neither `Edits` nor `keep()`, gets both
@@ -579,14 +583,30 @@ writes one. `initial()` is the only constructor; a creator's seed is a partial
 record laid over it.
 
 **Form blocks are inputs.** `form plant as planting:` with field lines `name:
-text A..B | natural A..B | source | a | b | c | T` declares the Form value, the
+text A..B | object A..B | natural A..B | source | a | b | c | T` declares the Form value, the
 method's input record `PlantInput` (a choice of empty cases, or a closed sum
 `T` already in scope) and, when the module writes none, `forms()` in source
 order (it needs `import ./List.obend`). A module that declares the input
 record itself, or a method that does not take its form's input, is refused
 `(form-input)` (`checkFormInputs`), and so is a hand-written `forms()` beside
 blocks `(derived-forms)`. The method table carries each form's fields; the host
-judges spells and direct turns by their bounds. `?`, `inspect`'s forms and a
+judges spells and direct turns by their bounds. `object A..B` is a String that names an object:
+1 to 128 ASCII characters from `[A-Za-z0-9._:/-]`, within its declared bounds;
+`object 0..B` also accepts empty text and may be omitted. It checks the id's shape,
+not whether an object exists. Makes, places, lenses and front controls use the same field kind.
+An inhabitant's `haunts` and `tide` take `object 1..128`; its owner can set either through its lens
+(`delvetalk <thing> set / haunts: <id>` or `set / tide: <id>`), which re-arms its haunt rule.
+Weather, fronts and registers also take an object id in `tide`; their owner's set sends their
+existing `arm` to re-place their rules. A register keeps the seed of its witness draw when re-armed. RECORD's
+form values stay fixed in `fields`; each body exposes the fields it allows through `lenses()`.
+The owner's set writes the thing's variable under the field's name, amending it
+if present and appending it otherwise. RECORD's `field` reads that variable for every body
+when its value is an object id, else the making's value. Variables survive line retention;
+the set adds no line, pending admission or tending. The `methods` law keeps variables
+changeable only by spells, never proposals. A legacy haunt with another shape reads
+"haunts nowhere you can walk to yet" and supplies no walk spell until repaired.
+A legacy tide reads "keeps hours by no tide you can reach yet" and supplies no tide spell until repaired.
+`?`, `inspect`'s forms and a
 reader's controls list only the actions the law, judged on the state as it
 stands, and the card's own `actions(state, context)` leave that reader.
 

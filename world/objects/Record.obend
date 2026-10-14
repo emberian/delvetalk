@@ -3,6 +3,7 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Form.obend as Form
+import ./Forms.obend as Forms
 import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
@@ -34,7 +35,8 @@ import ./Harmony.obend as Harmony
 # A room is a record whose body (world/bodies/room.obend) reads the rest: `start`, `passages`,
 # `cooldown` and `requires` are its scene (world/lib/Scenes.obend), set when it is made and
 # changed only by its owner's reprogram; `presence` who is in it and at which passage; `vars`
-# what its choices set, `mine` what they set for one reader (`my.<name>`); `left` when each reader last left; `things` what lies in it; `chose` the
+# the thing's named values, set by its choices or its owner's lenses; `mine` what choices set
+# for one reader (`my.<name>`); `left` when each reader last left; `things` what lies in it; `chose` the
 # last choice taken here, `<passage>.<n>`, which the rules its scene's casts are read (Scenes.ruleText).
 #
 # A record is tended (`tend`, or its body's own attention: a bell's rain) at a clock minute
@@ -261,13 +263,44 @@ def mark(state: State, name: String, context: Abi.Context) -> Activity<Bool>:
 def markWritten(m: Rows.Mark) -> Activity<Bool>:
   let written(_) = write {marks: insert m}
   true
-# A value the kind's form took when the record was made ("" when none).
+# A variable naming an object, else its making's value.
 def field(state: State, name: String) -> String:
-  fieldIn(state.fields, name)
+  match Lists.find(state.vars, fn(v: Scenes.Var) -> Bool: v.name == name):
+    case some(v): if Text.isObjectId(v.value.value) then v.value.value else fieldIn(state.fields, name)
+    case none(_): fieldIn(state.fields, name)
 def fieldIn(fields: Lists.List<Rows.Field>, name: String) -> String:
   match Lists.find(fields, fn(f: Rows.Field) -> Bool: f.name == name):
     case some(f): f.value.value
     case none(_): ""
+def lenses() -> Lists.List<Form.Field>:
+  Lists.List.nil()
+def objectLenses(names: String) -> Lists.List<Form.Field>:
+  Lists.map(Text.words(names), fn(name: String) -> Form.Field: {name: name, kind: Form.Kind.object({min: 1n, max: 128n})})
+def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Card.Replied>:
+  if context.principal != state.owner then Card.refusing(Card.Replied.done({action: "set"}), {clause: "owner", reading: "Only {Card.name(state.owner, context)} sets its fields"}, context) else setting(state, input.field, Card.valueText(input.value), context)
+def setting(state: State, name: String, value: String, context: Abi.Context) -> Activity<Card.Replied>:
+  match Lists.find(lenses(), fn(f: Form.Field) -> Bool: f.name == name):
+    case none(_): Card.refusing(Card.Replied.done({action: "set"}), {clause: "unknownField", reading: "No field {name} in this spell"}, context)
+    case some(f): setField(state, f.value, value, context)
+def setField(state: State, field: Form.Field, value: String, context: Abi.Context) -> Activity<Card.Replied>:
+  match Forms.fieldFault(field, value):
+    case some(f): Card.refusing(Card.Replied.done({action: "set"}), {clause: f.value.clause, reading: f.value.reading}, context)
+    case none(_): fieldSet(state, field.name, value, context)
+def fieldSet(state: State, name: String, value: String, context: Abi.Context) -> Activity<Card.Replied>:
+  let written(_) = world.write(extend(keep(), {vars: fieldEdit(state.vars, name, value)}))
+  if setArms() then fieldArmed(name, value, context) else fieldTold(name, value)
+def fieldEdit(vars: Lists.List<Scenes.Var>, name: String, value: String) -> Plans.Entries<Scenes.Var, Scenes.Var>:
+  match Lists.find(vars, fn(v: Scenes.Var) -> Bool: v.name == name):
+    case some(v): Plans.Entries.amendItem({item: v.value, change: {name: name, value: value}})
+    case none(_): Plans.Entries.append({item: {name: name, value: value}})
+def setArms() -> Bool:
+  false
+def fieldArmed(name: String, value: String, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.send({object: Plans.self(context), method: "arm", argument: {}}):
+    case delivery(_): fieldTold(name, value)
+    case refused(r): Card.refusing(Card.Replied.done({action: "set"}), {clause: r.clause, reading: "{context.object} could not arm its rules again: {r.clause}"}, context)
+def fieldTold(name: String, value: String) -> Activity<Card.Replied>:
+  Card.tell(Card.Replied.done({action: "set"}), Document.text("Set {name} to {value}.\n"))
 # What it rings, as a card says it ("" when it sounds nothing).
 def ringing(state: State) -> String:
   if state.tone == "" then "" else "Rings {state.tone}.\n"

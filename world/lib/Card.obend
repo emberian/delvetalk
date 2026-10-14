@@ -39,9 +39,12 @@ def hasField(form: Form.Form, name: String) -> Bool:
 def hint(kind: Form.Kind) -> String:
   match kind:
     case text(t): "<text, {natText(t.min)} to {natText(t.max)} characters>"
+    case object(o): if o.min == 0n then "<optional object id, up to {natText(o.max)} characters>" else "<object id, {natText(o.min)} to {natText(o.max)} characters>"
     case natural(n): "<a number from {natText(n.min)} to {natText(n.max)}>"
     case choice(c): "<{Text.joined(c.options)}>"
     case source(_): "<Bend source, 1 to 131072 characters, as a <<BEND block or a ```obend block>"
+def tideLine(tide: String) -> String:
+  if Text.isObjectId(tide) then "delvetalk {tide} rules" else "keeps hours by no tide you can reach yet"
 # One form as the spell a reader copies.
 def template(card: String, form: Form.Form) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\n    delvetalk {card} {form.action}\n"), tail: Lists.map(form.fields, fn(field: Form.Field) -> Document.Document: Document.text("    {field.name}: {hint(field.kind)}\n"))})})

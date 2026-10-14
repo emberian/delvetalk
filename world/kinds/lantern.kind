@@ -1,7 +1,7 @@
 of: record
 form: <<END
 name: text 1..64
-door: text 1..128
+door: object 1..128
 END
 head: {name}
 voice: low light at a door; it shows the way and keeps nothing

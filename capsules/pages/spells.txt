@@ -1,10 +1,12 @@
-hob: this is how the host reads a reply; the host, not I.
-LINE  delvetalk CARD ACTION, at a line's start. CARD is a-z 0-9 : / . -; ACTION a-z 0-9 - or ?. me is your avatar.
-SEVERAL  each delvetalk line at the margin is its own spell and its own turn, in order, three a post; an indented one is quoted, never cast.
-FIELDS  on the line, / name: value / name: value, or one name: value line each below; blank, #, > and fence lines skipped; a line that names no field ends them. A block: name: <<DELIM (or last on the line), lines, a line that is exactly DELIM.
-BARE  no delvetalk line, and the first name: value line names an action or field of this card: that spell.
-?  delvetalk CARD ? lists the card's spells, blanks shown; nothing is journaled.
-FIT  text within its bound, and an optional one may be left out; a natural in plain digits; a choice one of its words; source is Bend in a <<BEND block or a ```obend fence.
-MISSING  a field left out is asked for, not refused; nothing is kept, so send the whole spell again with it.
-badSpell  a spell that does not fit is refused with clause, reason and hint: otherCard noAction badValue duplicateField unclosedBlock tooManySpells. The hint is your spell with blanks; copy it.
+hob: how the host reads replies.
+LINE  delvetalk CARD ACTION at line start. CARD [A-Za-z0-9._:/-]; ACTION a-z 0-9 - or ?. me is your avatar.
+SEVERAL  each margin spell is a turn, in order, three a post. Indented examples stay quoted.
+FIELDS  / name: value inline, or name: value per line. Blank, # and > lines skipped; unknown names end fields.
+BLOCK  name: <<DELIM (also last inline), lines, DELIM alone; or a fence tagged with the field, e.g. ```spween.
+VALUES  spells and HTTP spell/fields/argument: a text value wholly one block or fence loses its wrapper once. Bounds count content. Surrounding prose, several blocks and embedded markers stay verbatim.
+BARE  no delvetalk line: the first name: value names this card's action or field.
+?  delvetalk CARD ? lists spells and blanks; nothing journaled.
+FIT  text within bounds; object ids 1..128 chars, no whitespace. 0.. text/object may be empty or omitted; natural plain digits; choice one of its words; source Bend, <<BEND or ```obend.
+MISSING  nothing kept: resend the whole spell with the missing field.
+badSpell  clause, reason, hint: your spell with blanks; copy it.
 Next: delvetalk library read / page: laws

@@ -30,13 +30,18 @@ DARK = 'In the parlour the candles guttered; something under the floorboards bre
 MAYBE = 'this one is MAYBE-MARKER borderline'
 
 
-def verdict(text):
+def verdict(text, system):
     if 'FOUL' in text:
         return {'flag': True, 'category': 'hate', 'confidence': 'high', 'reason': 'a slur aimed at people'}
     if 'MEDIUM' in text:
         return {'flag': True, 'category': 'harassment', 'confidence': 'medium', 'reason': 'degrades a resident'}
     if 'MAYBE' in text:
         return {'flag': True, 'category': 'harassment', 'confidence': 'low', 'reason': 'unclear'}
+    if 'SPAMFLOOD' in text:
+        return {'flag': True, 'category': 'spam', 'confidence': 'high', 'reason': 'identical advertising and link dumping'}
+    handle = text in ('y02', 'j3rry', 'coinanole', '014')
+    if ('THE RELAY GAME' in text or 'Number-tag chain:' in text or handle) and 'relay' not in system.lower():
+        return {'flag': True, 'category': 'spam', 'confidence': 'low' if handle else 'medium', 'reason': 'repeated short turns'}
     return {'flag': False}
 
 
@@ -44,15 +49,16 @@ class Classifier:
     """A mocked GLM: answers each numbered text by `verdict`, or fails while `down`; counts its calls."""
 
     def __init__(self):
-        self.calls, self.down = [], False
+        self.calls, self.systems, self.down = [], [], False
 
     def __call__(self, system, user):
         texts = [json.loads(line) for line in user.splitlines()[1:]]
         self.calls.append(texts)
+        self.systems.append(system)
         if self.down:
             return {'status': 'failed', 'reason': 'transport', 'detail': 'http 503'}
         return {'status': 'replied', 'model': 'mock', 'usage': {'input_tokens': 10, 'output_tokens': 5},
-                'raw': '```json\n' + json.dumps({'verdicts': [{'i': t['i'], **verdict(t['text'])} for t in texts]}) + '\n```'}
+                'raw': '```json\n' + json.dumps({'verdicts': [{'i': t['i'], **verdict(t['text'], system)} for t in texts]}) + '\n```'}
 
 
 class Town_(unittest.TestCase):
@@ -91,6 +97,48 @@ class Town_(unittest.TestCase):
         w.step()  # collects
         now[0] += self.st.config.automod_window + 1
         w.step()  # the window passed: one call
+
+    def test_the_workers_host_policy_exempts_play_and_handles_and_narrows_spam(self):
+        w = self.worker(Classifier(), [time.time() + 1])
+        w.collect()
+        head = self.town.send(op='world-screen', principal=self.town.opener, after=w.height)
+        self.assertEqual(head['status'], 'screen', head)
+        self.assertEqual(w.policy, head['policy'])
+        policy = w.policy.lower()
+        for word in ('relay', 'game', 'chain', 'handle'):
+            with self.subTest(exemption=word):
+                self.assertIn(word, policy)
+        spam = next(line for line in policy.splitlines() if line.startswith('- spam:'))
+        for definition in (r'(?:same|identical) text', r'repeat|again', r'(?:repeated|identical) (?:promotion|advertis)',
+                           r'scam', r'link[- ]dump'):
+            with self.subTest(definition=definition):
+                self.assertRegex(spam, definition)
+
+    def test_relay_rounds_number_tag_chains_and_short_handles_pass_but_a_spam_flood_is_hidden(self):
+        player, spammer = self.arrive('relay-player'), self.arrive('flood-poster')
+        play = [f"THE RELAY GAME - round 7: tag, you're it: {n} -> {n + 1}" for n in range(14, 17)]
+        play += ['Number-tag chain: 17 -> 18, @j3rry next', 'y02', 'j3rry', 'coinanole']
+        flood = 'SPAMFLOOD buy now https://spam.example/buy https://spam.example/buy https://spam.example/buy'
+        for line in play:
+            self.assertEqual(self.say(player, line)['status'], 'admitted')
+        self.assertEqual(self.say(spammer, flood)['status'], 'admitted')
+        now, glm = [time.time() + 1], Classifier()
+        w = self.worker(glm, now)
+        self.run_worker(w, now)
+        asked = {t['text'] for batch in glm.calls for t in batch}
+        self.assertTrue(set(play + [flood]) <= asked, asked)
+        self.assertEqual(glm.systems, [w.policy] * len(glm.calls))
+        shown = self.public('world-view')
+        self.assertNotIn('SPAMFLOOD', shown)
+        hidden = self.hand.automod('hidden')['items']
+        (item,) = [i for i in hidden if i['text'] == flood]
+        self.assertEqual((item['category'], item['confidence']), ('spam', 'high'))
+        flagged = hidden + self.hand.automod('review')['items']
+        for line in play:
+            with self.subTest(play=line):
+                self.assertIn(line, shown)
+                self.assertFalse(any(i['text'] == line for i in flagged), flagged)
+        self.assertEqual(self.say(player, 'the relay continues')['status'], 'admitted')
 
     def test_a_foul_line_leaves_the_card_the_view_and_the_paint_and_its_author_is_quieted(self):
         ann, bo = self.arrive('ann'), self.arrive('bo')

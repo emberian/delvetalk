@@ -101,13 +101,13 @@ def seated(toward: String, state: State, context: Abi.Context) -> Activity<Nat>:
     case returned(r): if r.result then turnOf(toward, state, context) else unseated(state, context)
     case _: unseated(state, context)
 def unseated(state: State, context: Abi.Context) -> Activity<Nat>:
-  Card.refusing(0n, {clause: "table", reading: "fingertips on it from the table only; sit down: delvetalk {Super.place(state)} enter"}, context)
+  Card.refusing(0n, {clause: "table", reading: "fingertips on it from the table only; {Super.walkLine(state)}"}, context)
 def turnOf(toward: String, state: State, context: Abi.Context) -> Activity<Nat>:
   match nudges(state, context.object):
     case cons(c): if c.head.author == context.principal then notYourTurn(state, context) else nudged(toward, state, context)
     case nil(_): nudged(toward, state, context)
 def notYourTurn(state: State, context: Abi.Context) -> Activity<Nat>:
-  Card.refusing(0n, {clause: "turn", reading: "NOT YOUR TURN. Another hand nudges it next, or it moves on its own clock at the tide's turn: delvetalk {Super.tide(state)} rules"}, context)
+  Card.refusing(0n, {clause: "turn", reading: "NOT YOUR TURN. Another hand nudges it next, or it moves on its own clock at the tide's turn: {Card.tideLine(Super.tide(state))}"}, context)
 def nudged(toward: String, state: State, context: Abi.Context) -> Activity<Nat>:
   let line = {author: context.principal, handle: context.handle, verb: "nudge", text: toward, at: context.height, n: state.next}
   match agreedOn(newestEach(Lists.List.cons({head: line, tail: nudges(state, context.object)}))):
@@ -162,7 +162,8 @@ def leaningText(state: State, id: String, context: Abi.Context) -> String:
 def handsText(state: State, context: Abi.Context) -> String:
   textJoin(Lists.map(Lists.take(hands(state), 8n), fn(l: Rows.Line) -> String: Card.shown(l.author, l.handle, context)), ", ")
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
+  let where = if Text.isObjectId(Super.place(state)) then "on the board in {Super.place(state)}" else Super.hauntLine(state)
   let wrote = if spelled(state, id) == "" then "It has spelled nothing yet.\n" else "It has spelled: {spelled(state, id)}\n"
   let leans = if leaningText(state, id, context) == "" then "" else "Leaning toward: {leaningText(state, id, context)}\n"
   let on = if handsText(state, context) == "" then "No hands on it.\n" else "Hands on it: {handsText(state, context)}\n"
-  Document.text("{Super.title(state)}, on the board in {Super.place(state)}: fingertips on it, barely touching. Each hand nudges it toward one letter; it moves when two hands agree, or on its own clock at the tide's turn: delvetalk {Super.tide(state)} rules\n{wrote}{leans}{on}GOOD BYE: unmoved.\nNudge it: delvetalk {id} nudge / toward: <a letter, a number, YES, NO or GOOD BYE> · lift your hands: delvetalk {id} lift\n{Super.inactiveLine(state, id)}")
+  Document.text("{Super.title(state)}, {where}: fingertips on it, barely touching. Each hand nudges it toward one letter; it moves when two hands agree, or on its own clock at the tide's turn: {Card.tideLine(Super.tide(state))}\n{wrote}{leans}{on}GOOD BYE: unmoved.\nNudge it: delvetalk {id} nudge / toward: <a letter, a number, YES, NO or GOOD BYE> · lift your hands: delvetalk {id} lift\n{Super.inactiveLine(state, id)}")

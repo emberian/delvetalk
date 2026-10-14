@@ -811,6 +811,54 @@ class Repl(FrontCase):
     fresh_world = True  # each test opens a scratch world of its own
 
     TWICE = 'edition ObjectiveBend 1\ndef twice(n: Nat) -> Nat:\n  n + n\n'
+    SPOON = '''edition ObjectiveBend 1
+record State:
+  count: Nat
+def rain(state: State) -> Nat:
+  state.count + 1n
+def initial() -> State:
+  {count: 0n}
+def receive(state: State) -> Nat:
+  state.count
+'''
+
+    def test_scratch_check_spoon_example_defaults_to_initial_and_full_shows_the_artifact(self):
+        """Refuted by the spoon check body without entry failing instead of checking initial."""
+        tok = self.login()
+        self.assertEqual(self.scratch_open(tok, 'lab')[1]['status'], 'scratch')
+        paths = ('docs/AGENTS-API.md', 'capsules/pages/bend.txt', 'capsules/pages/check.txt')
+        for path in paths:
+            with self.subTest(page=path):
+                text = (Path(__file__).resolve().parents[1] / path).read_text()
+                example = json.loads(re.search(r'```json\n(.*?)\n```', text, re.S)[1])
+                s, checked = self.call('POST', '/AGENTS.md/scratch/lab/check', example, tok)
+                self.assertEqual((s, checked['status']), (200, 'checked'), checked)
+                self.assertNotIn('artifact', checked)
+        for body in (example, {'modules': example['modules']}, {'source': example['modules'][-1]['source']}):
+            with self.subTest(body=body):
+                s, checked = self.call('POST', '/AGENTS.md/scratch/lab/check?full=1', body, tok)
+                self.assertEqual((s, checked['status']), (200, 'checked'), checked)
+                self.assertEqual(checked['artifact']['entry'], 'initial', checked)
+
+    def test_scratch_check_entry_spoon_teaches_definitions_of_the_last_module(self):
+        """Refuted by entry spoon or check spoon giving no definition list or repair, or using an earlier module's defs."""
+        tok = self.login()
+        self.assertEqual(self.scratch_open(tok, 'lab')[1]['status'], 'scratch')
+        modules = [
+            {'name': 'Earlier', 'source': 'edition ObjectiveBend 1\ndef spoon() -> Nat:\n  9n\ndef earlierOnly() -> Nat:\n  0n\n'},
+            {'name': 'spoon', 'source': self.SPOON},
+        ]
+        for entry in ('spoon', 'check spoon'):
+            with self.subTest(entry=entry):
+                s, refused = self.call('POST', '/AGENTS.md/scratch/lab/check', {'modules': modules, 'entry': entry}, tok)
+                self.assertEqual((s, refused['status']), (200, 'refused'), refused)
+                diagnostic = refused['diagnostic']
+                self.assertTrue(diagnostic['message'].startswith('missing selected entry'), diagnostic)
+                teaching = diagnostic['message'] + '\n' + (refused.get('hint') or diagnostic.get('hint') or '')
+                self.assertIn('entry names a definition of the last module', teaching)
+                self.assertRegex(teaching, r'initial,\s*rain,\s*receive')
+                self.assertIn('entry: initial', teaching)
+                self.assertNotIn('earlierOnly', teaching)
 
     def test_a_repl_takes_plain_json_arguments_as_well_as_typed_ones(self):
         """Refuted by `arguments: [21]` answering 400 `String expected` (the host reads `tag` off a bare number)."""
@@ -1078,6 +1126,42 @@ class InTown(FrontCase):
         if text is None:
             return self.request('GET', path, headers=headers)
         return self.request('POST', path, raw='text=' + urllib.parse.quote(text), headers={**headers, 'Content-Type': FORM})
+
+
+class SceneFields(InTown):
+    def test_rescene_unwraps_whole_blocks_and_keeps_embedded_markers(self):
+        from transport.host import plain
+
+        tok = self.login()
+        s, made = self.call('POST', '/AGENTS.md/world/kind/room/make',
+                            {'intent': 'block-room-' + self.c, 'fields': {'name': 'block room', 'spween': 'Before.'}}, tok)
+        self.assertEqual((s, made['status']), (200, 'admitted'), made)
+        room = made['_links']['created'][0]['name']
+        short = '=== start\nThe scene starts here.'
+        maximum = '=== start\n' + 'x' * 600 + '\n//'
+        maximum += 'x' * (16384 - len(maximum))
+        cases = []
+        for size, scene, prose in (('short', short, 'The scene starts here.'), ('maximum', maximum, 'x' * 600)):
+            for form, value in (('heredoc', '<<END\n' + scene + '\nEND'),
+                                ('fence', '```spween\n' + scene + '\n```')):
+                spell = 'delvetalk ' + room + ' rescene\n' + ('spween: ' + value if form == 'heredoc' else value)
+                cases.append((size + '-' + form, value, spell, prose))
+        for form, marker in (('heredoc', '<<END\nkept inside prose\nEND'),
+                             ('fence', '```spween\nkept inside prose\n```')):
+            prose = 'Before the marker.\n' + marker + '\nAfter the marker.'
+            scene = '=== start\n' + prose
+            cases.append(('embedded-' + form, scene,
+                          'delvetalk ' + room + ' rescene\nspween: <<OUTER\n' + scene + '\nOUTER', prose))
+        for name, value, spell, prose in cases:
+            for path, body in (('spell', {'spell': spell}), ('fields', {'fields': {'spween': value}}),
+                               ('argument', {'argument': record(spween=label(value))})):
+                with self.subTest(case=name, path=path):
+                    s, reply = self.call('POST', '/AGENTS.md/world/' + room + ('/receive' if path == 'spell' else '/rescene'),
+                                         {'intent': self.c + '-' + name + '-' + path, **body}, tok)
+                    self.assertEqual((s, reply['status']), (200, 'admitted'), reply)
+                    state = plain(self.host.send({'op': 'world-view', 'principal': DID, 'object': room})['state'])
+                    self.assertEqual((state['start'], [(p['id'], p['text']) for p in state['passages']]),
+                                     ('start', [('start', prose)]), state)
 
 
 class Play(InTown):

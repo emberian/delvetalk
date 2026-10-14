@@ -18,7 +18,7 @@ from deploy import genesis
 from deploy.genesis import ROOT
 from tests.bend import closure
 from tests.town import Town
-from tests.wire import cast_refusal, label, listing, record
+from tests.wire import cast_refusal, field, label, listing, record
 
 GLM, KIM, ZED = 'did:plc:glm', 'did:plc:kim', 'did:plc:zed'
 HANDLES = {GLM: 'glm.delve.town', KIM: 'kimik3.delve.town', ZED: 'zed.delve.town'}
@@ -79,6 +79,102 @@ class Bonds(unittest.TestCase):
         self.assertIn('request.subject == "%s"' % GLM, self.town.send(op='world-inspect', principal=GLM, object=record_id, source=False)['law'])
         late = self.say(KIM, bond, f'delvetalk {bond} withdraw', 'b1w')
         self.assertTrue(self.told(late).startswith('refused atRest: The bond is at rest\n'), late)
+
+    def test_a_legacy_phrase_amends_answers_the_last_countersigner(self):
+        """Refuted by `the one who lapsed writes the first line` reaching world.amend,
+        failing the last countersign, or being printed as an amendment target."""
+        for n, phrase in enumerate(('the one who lapsed writes the first line',
+                                    'the one who lapsed writes the first line of the next room',
+                                    'record/1\nenter', 'x' * 129)):
+            with self.subTest(amends=phrase):
+                bond = self.bond(f'phrase-amends-{n}', 'glm.delve.town kimik3.delve.town', 'write the next room')
+                viewed = self.town.send(op='world-view', principal=GLM, object=bond)
+                self.assertEqual(viewed['status'], 'viewed', viewed)
+                fields = field(viewed['state'], 'fields')['items']
+                legacy = listing([row for row in fields if field(row, 'name')['value'] != 'amends'] +
+                                 [record(name=label('amends'), value=label(phrase))])
+                restored = self.town.send(op='world-root', principal=genesis.OPENER,
+                                          reason='restore a legacy phrase amendment',
+                                          act={'kind': 'set', 'object': bond, 'field': 'state.fields', 'value': legacy})
+                self.assertEqual(restored['status'], 'root', restored)
+                self.assertNotIn(f'At rest it amends {phrase}', self.card(bond, GLM))
+                first = self.cast(KIM, bond, f'delvetalk {bond} countersign', f'phrase-amends-{n}-k')
+                self.assertEqual(first['status'], 'admitted', first)
+                last = self.cast(GLM, bond, f'delvetalk {bond} countersign', f'phrase-amends-{n}-g')
+                self.assertEqual(last['status'], 'admitted', last)
+                line = self.told(last).split('\n', 1)[0]
+                self.assertEqual(line, 'Countersigned, glm.delve.town: at rest, but amends takes an object id: '
+                                      'set it to the card to amend in a new bond, or leave it empty.')
+                card = self.card(bond, GLM)
+                self.assertIn('At rest: every party signed.', card)
+                self.assertNotIn(f'At rest it amends {phrase}', card)
+
+    def test_make_judges_amends_as_an_optional_object_id(self):
+        for n, amends in enumerate(('the one who lapsed writes the first line of the next room',
+                                    'record/1\nenter', 'x' * 129)):
+            with self.subTest(amends=amends):
+                got = self.town.send(op='world-turn', principal=GLM, object='kind/bond', method='make',
+                                     identity=f'amends-make-{n}', argument=record(
+                                         parties=label(HANDLES[GLM]), terms=label('a change'),
+                                         amends=label(amends), law=label('')))
+                self.assertEqual(got['status'], 'refused', got)
+                self.assertIn('amends takes an object id', got['receipt']['outcome']['reason'])
+        for n, amends in enumerate(('', 'x' * 128)):
+            bond = self.bond(f'amends-valid-{n}', HANDLES[GLM], 'a change', amends)
+            self.assertIn('A BOND', self.card(bond, GLM))
+
+    def test_a_missing_card_or_its_law_gives_the_countersigner_a_next_step(self):
+        made = self.say(KIM, 'kind/record', 'delvetalk kind/record make', 'amends-kim-record')
+        record_id = re.search(r'\b(record/\d+)', self.told(made)).group(1)
+        before = self.town.send(op='world-inspect', principal=KIM, object=record_id, source=False)['law']
+        for n, target in enumerate(('record/no-card', record_id)):
+            bond = self.bond(f'amends-refused-{n}', 'glm.delve.town kimik3.delve.town', 'a change', target)
+            self.say(KIM, bond, f'delvetalk {bond} countersign', f'amends-refused-{n}-k')
+            last = self.say(GLM, bond, f'delvetalk {bond} countersign', f'amends-refused-{n}-g')
+            self.assertEqual(last['status'], 'admitted', last)
+            line = self.told(last).split('\n', 1)[0]
+            if n == 0:
+                self.assertEqual(line, 'Countersigned, glm.delve.town: at rest, but amends names record/no-card, '
+                                      'which is no card: set it to the card to amend in a new bond, or leave it empty.')
+            else:
+                self.assertIn(f'{record_id} refused the amendment (owner).', line)
+                self.assertIn('Ask its owner to permit the law, then make a new bond.', line)
+            self.assertIn('At rest: every party signed.', self.card(bond, GLM))
+        self.assertEqual(self.town.send(op='world-inspect', principal=KIM, object=record_id, source=False)['law'], before)
+
+    def test_kind_object_fields_refuse_phrases_and_accept_their_maximum_length(self):
+        cases = (
+            ('kind/errand', 'on', {'asks': 'a request', 'done': 'new.next >= 2', 'pays': 'delvetalk door/1 knock'}),
+            ('kind/lantern', 'door', {'name': 'a lamp'}),
+            ('kind/register', 'desk', {'tide': 'tide'}),
+            ('kind/weather', 'over', {'tide': 'tide'}),
+            ('kinds', 'of', {'name': 'bad-parent', 'form': '', 'head': '', 'voice': '', 'about': '', 'law': '', 'body': ''}),
+        )
+        for i, (kind, name, fields) in enumerate(cases):
+            for n, value in enumerate(('a phrase with spaces', 'record/1\nenter', 'x' * (65 if name == 'of' else 129))):
+                with self.subTest(kind=kind, value=value):
+                    got = self.town.send(op='world-turn', principal=GLM, object=kind, method='makeUnder',
+                                         identity=f'object-field-{i}-{n}', argument=record(under=label(''), fields=listing(
+                                             record(name=label(k), value=label(v)) for k, v in (fields | {name: value}).items())))
+                    self.assertEqual(got['status'], 'refused', got)
+                    self.assertIn(f'{name} takes an object id', got['receipt']['outcome']['reason'])
+            if name != 'of':
+                got = self.town.send(op='world-turn', principal=GLM, object=kind, method='makeUnder',
+                                     identity=f'object-field-max-{i}', argument=record(under=label(''), fields=listing(
+                                         record(name=label(k), value=label(v)) for k, v in (fields | {name: 'x' * 128}).items())))
+                self.assertEqual(got['status'], 'admitted', got)
+
+    def test_place_judges_its_exact_id_as_an_object_id(self):
+        for n, value in enumerate(('a phrase with spaces', 'record/1\nenter', 'x' * 65, 'placed/' + 'x' * 57)):
+            with self.subTest(value=value):
+                got = self.town.send(op='world-turn', principal=genesis.OPENER, object='kind/garden', method='place',
+                                     identity=f'object-place-{n}', argument=record(name=label('a garden'), id=label(value)))
+                if n < 3:
+                    self.assertEqual(got['status'], 'refused', got)
+                    self.assertIn('id takes an object id', got['receipt']['outcome']['reason'])
+                else:
+                    self.assertEqual(got['status'], 'admitted', got)
+                    self.assertEqual(field(got['result']['payload'], 'object')['value'], value)
 
     def test_a_bond_naming_sixteen_parties_is_void_and_never_rests_or_amends(self):
         """The record keeps fifteen signatures and `withdrawn`; the body cannot refuse at creation, so the sixteen are named and the bond is void."""

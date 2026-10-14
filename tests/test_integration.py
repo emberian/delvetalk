@@ -55,6 +55,7 @@ def fields(items: Lists.List<Form.Field>) -> String:
 def kind(k: Form.Kind) -> String:
   match k:
     case text(_): "text"
+    case object(_): "object"
     case natural(_): "natural"
     case choice(_): "choice"
     case source(_): "source"
