@@ -1,11 +1,15 @@
 """Moderation for an open door (docs/DEPLOY.md "A second instance"): the town's slow switch, a guest quieted from the
 hand's guest list, an arrival from a flagged address held for the owner (let in, or turned away), and the hand's flags;
-each act a line in the hand's log and, where the world changes, an entry in the journal.
+each act a line in the hand's log and, where the world changes, an entry in the journal. A guest revoked or quieted
+leaves every place it was present in, each through the place's own leave (`vacate`); the hand's overview reads the town
+back: arrivals, the busiest hands, refusals, budgets, the quiets, the feed.
 
-Evidence for docs/DEPLOY.md "A second instance" (layer: transport). Refuted by a slow town admitting a hand's turn past
-its slow hour, slow off not restoring the open town's hour, a quieted guest's turn admitted, a held key opening anything
-before it is let in, a let-in guest not arriving in the world, a turned-away name able to act, or a moderation act the
-journal does not hold.
+Evidence for docs/DEPLOY.md "A second instance" and "Open the hand" (layer: transport). Refuted by a slow town admitting
+a hand's turn past its slow hour, slow off not restoring the open town's hour, a quieted guest's turn admitted, a held
+key opening anything before it is let in, a let-in guest not arriving in the world, a turned-away name able to act, a
+moderation act the journal does not hold, a revoked or quieted guest still present in a room, a leave the journal does
+not hold as root's, another guest's presence touched, or an overview that misses an arrival, a turn, a refusal, a quiet
+or a feed post.
 """
 import json
 import tempfile
@@ -18,6 +22,8 @@ from tests.test_http import FrontCase
 from tests.town import Town
 from tests.wire import label, record
 from transport import hand
+from transport.feed import Feed
+from transport.host import CLOCK
 from transport.config import Config
 from transport.host import HostClient
 from transport.state import State
@@ -144,6 +150,95 @@ class Door(FrontCase):
         self.worlds({'guest': 'unquiet', 'name': got['handle'], 'reading': 'calmer now'})
         s, r = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': {'tag': 'record', 'fields': []}, 'intent': 'q2'}, got['credential'])
         self.assertEqual(r['status'], 'admitted', r)
+
+
+
+class Gone(unittest.TestCase):
+    """Guests leaving the porch when revoked or quieted, and the overview of the same town, over genesis's town."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+        st = State(cls.town.state, config=Config(root_socket=cls.town.process.root, host_socket=cls.town.process.sock, opener=cls.town.opener,
+                                                 origin='https://obend.example', arrival='open', slow_turns=6))
+        cls.hand = hand.Hand(st, cls.town.client, token='t')
+
+    def arrive(self, name):
+        """A guest invited, accepted and arrived (as the front tells the host), then on the porch."""
+        got = self.hand.invite_guest(name)
+        self.hand.identity.accept(got['code'])
+        self.town.send(op='world-arrive', principal=CLOCK, did=got['principal'], handle=name)
+        entered = self.town.send(op='world-turn', principal=got['principal'], object='porch', method='enter', identity=f'{name}-enter', argument=record())
+        self.assertEqual(entered['status'], 'admitted', entered)
+        return got['principal']
+
+    def present(self):
+        view = self.town.send(op='world-view', principal=self.town.opener, object='porch')
+        return {r['who'] for r in hand.pages.rows(hand.pages.state_of(view).get('presence'))}
+
+    def entry(self, height):
+        from transport import journal
+        return next(x for x in journal.entries(self.town.journal) if x['height'] == height)
+
+    def test_a_revoked_guest_leaves_the_porch_through_its_leave_and_the_others_stay(self):
+        kim, lee = self.arrive('kim'), self.arrive('lee')
+        self.assertLessEqual({kim, lee}, self.present())
+        code, page, _ = self.hand.handle('POST', '/hand/', f'{hand.HAND_COOKIE}=t', {'guest': 'revoke', 'name': 'kim'})
+        self.assertEqual(code, 200)
+        self.assertIn('revoked kim', page)
+        self.assertIn('left porch (entry ', page)
+        self.assertNotIn(kim, self.present())
+        self.assertIn(lee, self.present())
+        (left,) = [x for x in json.loads(Path(self.town.state, 'hand-log.jsonl').read_text().splitlines()[-1])['left']]
+        self.assertEqual((left['object'], left['principal'], left['status']), ('porch', kim, 'admitted'))
+        e = self.entry(left['entry'])
+        self.assertEqual((e['identity']['principal'], e['outcome']['tag']), (kim, 'admitted'))
+        self.assertIn('vacated: kim revoked', json.dumps(e))  # root's turn under the guest, the reason on it
+        self.assertEqual(self.hand.vacate(kim, 'again'), [])  # nowhere left to leave
+
+    def test_a_guest_revoked_before_vacate_existed_is_swept_from_the_root_page(self):
+        """The live defect: revoked at the identity store alone, the guest stayed listed as here. The root page's vacate,
+        blank, finds every revoked guest still present and walks each out."""
+        dee = self.arrive('dee')
+        self.hand.identity.revoke_invitation('dee')  # the store alone, as the v15 check's revoke did
+        self.assertIn(dee, self.present())
+        code, _, headers = self.hand.handle('POST', '/hand/town/vacate', f'{hand.HAND_COOKIE}=t', {'who': '', 'reading': 'the v15 check'})
+        self.assertEqual(code, 303)
+        self.assertIn('left+porch', dict(headers)['Location'])
+        self.assertNotIn(dee, self.present())
+        line = json.loads(Path(self.town.state, 'hand-log.jsonl').read_text().splitlines()[-1])
+        self.assertEqual((line['what'], line['who'], line['reading']), ('vacate', '(every one gone)', 'the v15 check'))
+
+    def test_a_quieted_guest_leaves_first_and_the_overview_reads_the_town(self):
+        ash = self.arrive('ash')
+        busy = self.arrive('bea')
+        for n in range(3):
+            said = self.town.send(op='world-turn', principal=busy, object='porch', method='say', identity=f'bea-say-{n}', argument=record(line=label(f'line {n}')))
+            self.assertEqual(said['status'], 'admitted', said)
+        self.hand.quiet_guest('ash', 2, 'shouting on the porch')
+        self.assertNotIn(ash, self.present())
+        refused = self.town.send(op='world-turn', principal=ash, object='porch', method='enter', identity='ash-again', argument=record())
+        self.assertEqual((refused.get('receipt') or {}).get('outcome', {}).get('class') or refused.get('class'), 'quiet', refused)
+        Feed(self.hand.st).post({'did': busy, 'handle': 'bea'}, 'a line for the feed')
+        o = self.hand.overview()
+        names = {a['name']: a for a in o['arrivals']}
+        self.assertEqual((names['ash']['came'], names['ash']['standing']), ('by invitation', 'in'))
+        top = {b['name']: b for b in o['busiest']}
+        self.assertGreaterEqual(top['bea']['turns'], 4)  # the enter and three says
+        self.assertEqual(o['busiest'][0]['name'], 'bea')
+        self.assertGreaterEqual(o['refusals']['lastDay'].get('quiet', 0), 1)
+        self.assertEqual([q['name'] for q in o['moderation']['quiets']], ['ash'])
+        self.assertEqual(o['moderation']['quiets'][0]['reading'], 'shouting on the porch')
+        self.assertEqual(o['feed'][0]['text'], 'a line for the feed')
+        self.assertTrue({'hob', 'paints'} <= set(o['budgets']))
+        self.assertIn('mod:quiet', [a['what'] for a in o['acts']])
+        code, page, _ = self.hand.handle('GET', '/hand/town/overview', f'{hand.HAND_COOKIE}=t')
+        self.assertEqual(code, 200)
+        for part in ('<h2>Arrivals in the last day</h2>', 'shouting on the porch', 'a line for the feed', '<h2>The busiest hands</h2>', 'bea'):
+            self.assertIn(part, page)
+        self.assertIn(ash, self.hand.gone())
 
 
 if __name__ == '__main__':

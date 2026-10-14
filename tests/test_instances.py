@@ -91,6 +91,25 @@ class Instances(unittest.TestCase):
         self.assertIn('DELVETALK_TOWNS=/var/lib/delvetalk-open\n', env)  # genesis's guard looks at this instance's towns
         self.assertIn('reverse_proxy 10.10.1.10:8775 {', self.open.caddy())
 
+    def test_each_hand_is_behind_the_anchors_password_with_its_token_from_the_anchors_file(self):
+        """No `respond @hand 404` left on an instance's name: `/hand` asks the password, the client's own token header is
+        stripped on every path, and the hand on the private address gets the token Caddy reads from its own file, never
+        the Authorization; no secret is in the block."""
+        files = set()
+        for i in self.all.values():
+            site = i.caddy()
+            self.assertNotIn('respond @hand 404', site)
+            for line in ('request_header -X-Delvetalk-Hand-Token', f'import {instance.HAND_USERS}', 'header Cache-Control "no-store"',
+                         f'reverse_proxy {instance.PRIVATE_IP}:{i.hand_port} {{', 'header_up -Authorization',
+                         f'header_up X-Delvetalk-Hand-Token {{file.{i.hand_token_at_edge}}}'):
+                self.assertIn(line, site, (i.name, line))
+            self.assertLess(site.index('handle @hand {'), site.index(f'reverse_proxy {instance.PRIVATE_IP}:{i.http_port} {{'))
+            files.add(i.hand_token_at_edge)
+        self.assertEqual(len(files), len(self.all))  # each hand its own token
+        hand = (ROOT / 'deploy' / 'compose.hand.yml').read_text()
+        self.assertIn('- "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"', hand)
+        self.assertIn('- "127.0.0.1:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"', hand)  # root's ssh forward
+
     def test_check_refuses_two_instances_on_one_port_or_path(self):
         self.assertEqual(instance.check(self.all), [])
         twin = instance.Instance(name='twin', origin='https://twin.example', data='v1', http_port=8775, hand_port=8796,
