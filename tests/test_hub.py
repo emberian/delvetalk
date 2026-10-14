@@ -8,7 +8,7 @@ The commonplace hears the §11 hour (rehearsal run 4, finding A).
 The seven posts FOUNDATION §11 calls the first integration test reach the commonplace as
 replies under its hub posts. They carry no delvetalk line: glm plants with field lines (`plant: … /
 colour: silver`), gemini with the same lines in a bare fence, rains are `rain: …`. The commonplace
-answers only a door's word; any other words it leaves silent are the host's (HOST-HANDOFF 5.163): field
+answers only a door's word; any other words it leaves silent are the host's (HOST-HANDOFF §5.4): field
 lines that fit a form offered by the commonplace, its doors' cards or the first three under each run at
 once as that card's spell; other prose is read once by hob under the world's `policy`, offered those
 forms; a spell in its answer runs as the speaker's turn on the card it names, `none` gets no offer, and
@@ -126,7 +126,7 @@ class Hub(test_chain.Chain):
         self.heard(self.interpret("none"))
 
     def test_with_a_policy_prose_is_read_once_by_hob_against_the_doors_forms(self):
-        """FLEX §2: every prose reply to the root with a policy goes to hob, once, offered the
+        """FLEX §4: every prose reply to the root with a policy goes to hob, once, offered the
         commonplace's forms and every door's; there is no mention gate and no second attempt. An ask
         naming no offered field is one fixed line; a question it reads nothing into is the card."""
         self.policy()
@@ -140,7 +140,7 @@ class Hub(test_chain.Chain):
         self.assertEqual([o["text"] for o in asked["receipt"]["offers"]], ["hob: none of commonplace's spells takes that; its spells: delvetalk commonplace ?\n"], asked)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # A question hob reads nothing into (`card` is no answer of hob's, read as no spell; `none`) is answered by
-        # the card itself, exact (HOST-HANDOFF 5.171).
+        # the card itself, exact (HOST-HANDOFF §5.4).
         card = self.host.send(op="world-card", principal=KIMI, object="commonplace")["text"]
         for n, (question, raw) in enumerate((("is there a map of the town?", "card"), ("is the garden open on the wiki today?", "none"))):
             self.assertEqual(self.say(question, KIMI, uri="at://x/post/%d" % (4 - n))["status"], "suspended")
@@ -229,7 +229,7 @@ class Hub(test_chain.Chain):
         self.assertEqual(len(self.children()), 1)
 
     def test_prose_in_a_turn_with_no_reach_costs_no_model(self):
-        """The host's reach (HOST-HANDOFF 118): an interpret in a turn with no reach answers
+        """The host's reach (HOST-HANDOFF §5.4): an interpret in a turn with no reach answers
         `unclear: not addressed` at once, so the commonplace is quiet and nothing is pending."""
         self.policy()
         self.commonplace()
@@ -332,7 +332,7 @@ class CardsReadFieldLines(test_chain.Chain):
     def test_the_archived_fenced_rains_are_read_and_held_to_the_rain_bound(self):
         """The host reads a fenced `rain: …` as the bell's rain. Both archived rains (197 and 145
         characters) are longer than the rain form's 120 (the bound that lets 1,024 rains fit the
-        state bound, HOST-HANDOFF 108), so both are refused by the form, with its reason."""
+        state bound, HOST-HANDOFF §4), so both are refused by the form, with its reason."""
         self.bell()
         for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
@@ -390,7 +390,7 @@ class ProseAtABellIsHobs(test_chain.Chain):
 
 
 class RootReadsDoorForms(test_chain.Chain):
-    """FLEX §2: prose at the commonplace is read once by hob, offered what inspect's `offered` gives
+    """FLEX §4: prose at the commonplace is read once by hob, offered what inspect's `offered` gives
     the speaker of each door's card and of the first cards under it; hob's none is silence."""
     policy = test_policy.PolicyObject.policy
 

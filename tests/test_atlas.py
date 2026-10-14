@@ -1,4 +1,4 @@
-"""The town unfolded, every thing inspected, the library read (docs/WEB.md "The town unfolded"; transport/atlas.py): /town
+"""The town unfolded, every thing inspected, the library read (docs/WEB.md "The town at a glance"; transport/atlas.py): /town
 draws every door a reader may see and every room as a panel, /inspect/<id> sets a thing's Bend in type beside its spells,
 its law's verdicts, its rules and fields, and hands the workshop its check spell; /library, /lib and /kinds read the
 library's pages, the town's modules and its kinds; /live tells a page the journal moved.

@@ -1,7 +1,7 @@
-"""With `DELVETALK_COMPILE_CACHE` the compile caches are also the disk's (HOST-HANDOFF 5.59, 5.66):
+"""With `DELVETALK_COMPILE_CACHE` the compile caches are also the disk's (HOST-HANDOFF §5.3 "Compile caches"):
 every key is a content address, and a damaged file is compiled again, never used.
 
-Evidence for HOST-HANDOFF 5.66 (layer: host). Refuted by a damaged file being used.
+Evidence for HOST-HANDOFF §5.3 (layer: host). Refuted by a damaged file being used.
 
     python3 -W error -m unittest tests.test_compile_cache -v
 """

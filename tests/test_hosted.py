@@ -1,4 +1,4 @@
-"""Hosted public request repositories (ATPROTO §4/L7), real keys, fake world.
+"""Hosted public request repositories (ATPROTO §4), real keys, fake world.
 
 Refuted by a principal/DID collision, another Host seeing a guest's document,
 a forged proof becoming a turn, a wrong credential changing any file, a put

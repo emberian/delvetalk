@@ -1,4 +1,4 @@
-"""Words a card heard (docs/OVERHAUL.md §2.7; docs/FOUNDATION.md §10; HOST-HANDOFF 5.163): words that reach a
+"""Words a card heard (docs/OVERHAUL.md §2.7; docs/FOUNDATION.md §10; HOST-HANDOFF §5.4): words that reach a
 card and run none of its spells go to the card's `receive`, and what it leaves `silent` the host gives hob for that
 card, never the card's Bend: hob is offered the card's table (its forms and grown verbs) and its doors' (each door's
 card and the first three under it), and its answer runs as the speaker's turn on that card under the suspension's
@@ -243,7 +243,7 @@ class Heard(HeardCase):
         self.assertEqual((self.value("here", "room"), self.value("said", "room")), ("1", "1 here: hello"))
 
     def test_hob_may_answer_with_a_plan_that_runs_as_one_turn_and_stands_or_falls_whole(self):
-        """HOST-HANDOFF 5.203: hob's spell answer may be a plan; its acts run in one turn read as they come, and a refused act
+        """HOST-HANDOFF §5 "Plans and try": hob's spell answer may be a plan; its acts run in one turn read as they come, and a refused act
         refuses them all."""
         self.make("room", ROOM, record(owner=label("ember")))
         self.assertEqual(self.say("I come in, say hello, and it rains", card="room", identity="post-plan")["status"], "suspended")

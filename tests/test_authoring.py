@@ -480,7 +480,7 @@ class Authoring(unittest.TestCase):
         self.admitted(YUE, "kind/stall", "delvetalk kind/stall make / wares: a gemstone that sometimes sparkles / thing: porch/gemstone")
         self.admitted(YUE, "stall/1", "delvetalk stall/1 grow / name: promise / reading: what you will bring, in your words / takes: text")
         # The trade moves what its keeper holds, so it is the keeper's rule, placed on the stall: a rule the stall
-        # carries from its kind acts as the stall, which holds nothing (docs/review/astra-2026-10-12 world 1).
+        # carries from its kind acts as the stall, which holds nothing.
         self.admitted(YUE, "stall/1", 'delvetalk stall/1 rule / name: trade / reading: a promise buys the thing / when: request.verb == "promise" / '
                       'then: delvetalk {new.thing} offer / to: {request.subject} / until: {request.clock + 1440}')
         promised = self.admitted(KES, "stall/1", "delvetalk stall/1 promise / text: three rains on your bell by Sunday")
