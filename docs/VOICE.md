@@ -104,6 +104,7 @@ its own words.
 | a walk | its first line | `hob: five replies, one another's; at the end the bell has rung and your avatar has two notes.` (bell) |
 | a carry | `transport/carry.py`, the hand's line | `hob: the world was carried to a newer host at entry {n}; everything is where it was, and the carry is receipt {slug}.` |
 | the quiet line | `transport/static/pages.html` `quiet` | `— quiet (no reply)` |
+| a text moderation hid | every public projection (`Screen.placeholder`, ROOT.md 2.4) | `[hidden by moderation]` |
 
 A page that is not there is the library's refusal, no hob line: `refused noPage: No page called {name}. …` and the
 shelf.
@@ -442,7 +443,7 @@ The reply line is `refused <clause>: <reading>` (`transport/http.py` `turn_line`
 | duplicateKey | `the write names one key twice.` |
 | budgetExhausted | `the run of sends spent its {depth, work or storage}.` |
 | duplicateIdentity | `{intent} already names a different turn; choose a new intent.` |
-| quiet | `the hand quieted you until clock {till}: {reading}`, with `next` (ROOT.md) |
+| quiet | `the hand quieted you until clock {till}: {reading}`, with `next` (ROOT.md); the automatic moderation's reading is `automod {category}: {reason}` |
 | noMethod | `{object} has no method {method}; reply delvetalk {object} ? for its spells.` |
 
 `badSpell` (`Spell.lean`, `castSpell`; the `hint` is the spell with blanks, then hob's tail line):

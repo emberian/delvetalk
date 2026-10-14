@@ -91,6 +91,16 @@ class Config:
     slow_turns: int = field(6, "the turns one hand may start a clock hour while the town is slow (`hand slow on`; any town)")
     hob_budget: int = field(300, "open town: hob's readings a clock day, the whole town's (host `modelQuota`; when spent, words are refused "
                             "with the card's spells to send instead)")
+    automod: bool = field(True, "run the automatic moderation worker (`transport automod`, docs/ROOT.md section 2.4): residents' public texts "
+                          "screened after they are admitted, a flagged one hidden and its author quieted; on by default on every town")
+    zai_key_file: str = field('', "the file holding the Z.ai API key the moderation's classifier uses (never the Anthropic key's budget)")
+    automod_model: str = field('glm-4.7-flash', "the classifier: a GLM chat model at `automod_url` (glm-4.7-flash: free, about 3 s for a batch)")
+    automod_fallback: str = field('glm-4.5-flash', "the classifier asked once more when `automod_model` answers that Z.ai is loaded (429); '' for none")
+    automod_url: str = field('https://api.z.ai/api/paas/v4/chat/completions', "Z.ai's OpenAI-compatible chat endpoint")
+    automod_window: float = field(5.0, "seconds the worker holds a new text for others to join its batch before it asks; a full batch goes at once")
+    automod_batch: int = field(24, "texts one classifier call reads, each answered by its number (each clipped to 2 KiB, a batch to 32 KiB)")
+    automod_daily_calls: int = field(2000, "classifier calls a UTC day, this world's; when spent, texts wait (the wordlist still acts)")
+    automod_quiet_hours: int = field(24, "hours a high-confidence flag quiets the text's author (the host's `quiet`; 0: never)")
     paint_budget: int = field(400, "open town: paints a clock day, the whole town's (host `paintQuota`; when spent, a card is read "
                               "exact, and the page says why)")
 

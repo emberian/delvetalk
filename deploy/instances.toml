@@ -23,8 +23,9 @@ http_port = 8775
 hand_port = 8776
 firehose_port = 8777
 backup_minute = 27
-# The same Anthropic key and watch bot as the town: spend is tallied per state directory (model-spend.jsonl).
+# The same Anthropic and Z.ai keys and watch bot as the town: spend is tallied per state directory (model-spend.jsonl).
 anthropic_key = "/etc/delvetalk/anthropic.key"
+zai_key = "/etc/delvetalk/zai.key"  # the moderation classifier's, shared too (automod-spend.jsonl is per state)
 watch_zuliprc = "/etc/delvetalk/watch.zuliprc"
 
 # <state>/delvetalk.toml of this instance (transport/config.py names every field), written by `render`.

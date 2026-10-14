@@ -13,7 +13,7 @@ import threading
 import time
 from collections import Counter
 
-from transport import journal, model
+from transport import automod, journal, model
 from transport.host import CLOCK
 from transport.measure import counted
 
@@ -174,7 +174,23 @@ def overview(h):
         'acts': [{'what': l.get('what'), 'at': time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(l.get('at', 0))),
                   'about': l.get('name') or l.get('address') or l.get('reason') or l.get('draft') or ''} for l in acts[-ACTS:]][::-1],
         'feed': feed_posts(st),
+        'automod': automod_of(h),
     }
+
+
+def automod_of(h, n=8):
+    """The automatic moderation as it stands: the worker's status (whether the classifier answers, what waits, the day's
+    calls), the host's counts of screened texts and the newest of them."""
+    screened = h.host.send({'op': 'world-screened', 'principal': h.owner, 'limit': n})
+    s = automod.status(h.st)
+    if s is None:
+        state = 'off: the worker never ran' if h.st.config.automod else 'off in the config'
+    elif s['stale']:
+        state = f"stopped: no step since {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(s['at']))}"
+    else:
+        state = {'ok': 'the classifier answers', 'idle': 'idle', 'down': f"the classifier is down ({s.get('lastError')}); texts wait, the wordlist still acts",
+                 'budget': "the day's calls are spent; texts wait, the wordlist still acts", 'no key': 'no key: only the wordlist acts'}.get(s['glm'], s['glm'])
+    return {'state': state, 'status': s, 'counts': screened.get('counts') or {}, 'newest': screened.get('items') or []}
 
 
 def clock_text(minute):
@@ -190,4 +206,6 @@ def summary(o):
             f"{sum(o['refusals']['lastHour'].values())} refused in the hour, {sum(o['refusals']['lastDay'].values())} in the day",
             f"hob's readings today {used(b['hob'])}", f"paints today {used(b['paints'])}",
             'slow on' if m['slow'] else 'slow off', counted(len(m['quiets']), 'quiet'), counted(len(m['flagged']), 'flag'),
-            counted(len(m['held']), 'held arrival')]
+            counted(len(m['held']), 'held arrival'),
+            f"automod: {o['automod']['state']}" + (f", {o['automod']['status']['pending']} waiting" if o['automod']['status'] else ''),
+            f"{o['automod']['counts'].get('hidden', 0)} hidden, {o['automod']['counts'].get('review', 0)} for review"]
