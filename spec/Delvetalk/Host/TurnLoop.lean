@@ -3252,7 +3252,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
 
 /-- `publishPage {page}` asked of a card whose package declares no `publishPage` (WORLD-REVIEW
     finding 16): the host publishes the card's default page as `Card.defaultPage` wrote it, the card as
-    a stranger sees it and how to reply (the host's usage of its forms and lenses), under `page`, else
+    a stranger sees it and how to reply (the host's usage of the forms offered a stranger, and its lenses), under `page`, else
     the object's id. The result is the post id, as
     `Card.publishPage`'s. The page is public, so a card whose read policy names principals has none:
     refused `noMethod` (codex host 2). -/
@@ -3269,7 +3269,7 @@ def defaultPublishPage (id : String) (argument : Data) : M Data := do
   let card ← match ← renderCard id o "" "" s.intent with
     | .ok doc => liftEval (Delvetalk.Document.render doc)
     | .error clause => evaluation s!"publishPage: the card does not render ({clause})"
-  let usage := spellUsage id (spellForms s.world id o) (declaredLenses s.world o)
+  let usage := spellUsage id (usageForms s.world id o "" (spellForms s.world id o)) (declaredLenses s.world o)
   let body := s!"## Card\n\n{card}\n## How to reply\n\n{usage}"
   if title.utf8ByteSize > Limits.maxTitleBytes || title.any (· == '\n') then evaluation "publishPage: the title is not one line of at most 256 bytes"
   if body.utf8ByteSize > Delvetalk.Document.maxOutputBytes then evaluation "publishPage: the page exceeds its capacity"
