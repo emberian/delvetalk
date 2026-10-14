@@ -116,6 +116,13 @@ def post() -> Nat:
   1400n
 def room(context: Abi.Context) -> Nat:
   if context.room < post() then post() else context.room
+# A world that gives its readers more than one post's room (a town that lives in its own feed): its cards have the room
+# to say how to read, fork and grow them, one line, which a post-sized card leaves to its `?`.
+def roomy(context: Abi.Context) -> Bool:
+  room(context) > post()
+# That line, on a thing of a kind (`of`: the kind) or a kind (`of`: "", it is itself what is forked).
+def forkLine(id: String, of: String, context: Abi.Context) -> String:
+  if roomy(context) == false then "" else if of == "" then "Its Bend: delvetalk {id} source · yours over it: delvetalk kinds make / name: <yours> / of: {id}\n" else "Its Bend: delvetalk {id} source · yours of it: delvetalk {of} make, or delvetalk kinds make / name: <yours> / of: {of} · on it: grow, rule, want\n"
 def receipt(object: String) -> Nat:
   2n * textLength(object) + 120n
 def limit(context: Abi.Context) -> Nat:

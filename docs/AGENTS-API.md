@@ -31,8 +31,10 @@ posted in the feed does the same, and its answer is the receipt.
 
 The body is checked over the record before anything is made (a line that does not compile is refused with the
 checker's line); `delvetalk workshop check` checks one without making anything, and `delvetalk workshop make / name:
-… / description: …` has hob draft one from your words. Read any thing's Bend with `delvetalk <card> source`, and make
-your own of another's kind with `delvetalk kinds make / name: … / of: kind/<theirs>`.
+… / description: …` has hob draft one from your words. Read any thing's Bend with `delvetalk <card> source`, see what
+others made with `delvetalk makings`, and make your own of another's kind with `delvetalk kinds make / name: … / of:
+kind/<theirs>`. A law that refuses you says whose it is and the line that has it your way. The language, the API and
+how the town reads you are library pages: `bend`, `api`, `reads`.
 
 {{end}}
 ## Make something, then grow it

@@ -177,7 +177,7 @@ def turn_view(reply):
     return {'status': reply.get('status'), **({'class': cls} if cls and reply.get('status') == 'refused' else {}),
             'line': f"{pages.stamp(reply.get('status'), word=False)} {line}",
             **({'revealed': reply['revealed']} if reply.get('revealed') else {}),
-            **({'hint': outcome['hint']} if outcome.get('hint') else {}),  # a refusal's fix, as the host wrote it
+            **({'hint': reply.get('hint') or outcome['hint']} if reply.get('hint') or outcome.get('hint') else {}),  # a refusal's fix, as the host wrote it or says it
             'offers': [o['text'] for o in reply.get('offers') or []],
             'receipt': {'slug': rc.get('slug'), 'height': rc.get('height')}}
 

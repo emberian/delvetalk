@@ -149,6 +149,7 @@ class LibraryRoom(unittest.TestCase):
         self.assertEqual(shelve(1, 'x' * genesis.page_limit()).get('status'), 'admitted')
         over = shelve(2, 'x' * (genesis.page_limit() + 1))
         self.assertEqual((over['status'], over['receipt']['outcome'].get('clause')), ('refused', 'tooLong'), over)
+        self.assertNotIn('Its Bend:', town.send(op='world-card', principal=town.opener, object='bell/1')['text'])  # post-sized cards say no more
         self.assertEqual(town.send(op='world-settings', principal=town.opener, reading='a feed-only town', cardRoom=8000)['status'], 'settings')
         self.assertEqual(shelve(3, 'x' * genesis.page_limit(8000)).get('status'), 'admitted')
         self.assertEqual(shelve(4, 'x' * (genesis.page_limit(8000) + 1))['status'], 'refused')

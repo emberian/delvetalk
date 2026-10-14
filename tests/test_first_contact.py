@@ -48,7 +48,7 @@ def open_feed_town(cls):
     cls.addClassCleanup(cls.root.close)
     config = Config(origin='http://127.0.0.1', arrival='open', arrive_bits=12, card_room=8000, host_socket=server.sock,
                     repo_keys=os.path.join(cls.tmp.name, 'repo'))
-    made, refusal = genesis.open_town(cls.root, OPENER, config, feed_only=True)
+    cls.made, refusal = genesis.open_town(cls.root, OPENER, config, feed_only=True)
     assert refusal is None, refusal
     st = State(os.path.join(cls.tmp.name, 'front'), config=config)
     st.write(st.row, {'world': st.world, 'transport': 'feed', 'realm': None, 'channel': None, 'zuliprc': None})
@@ -101,3 +101,47 @@ class FirstContact(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Invitations(unittest.TestCase):
+    """On a town with room, every card a hand made invites the fork (its Bend, yours of it, grow, rule, want), a law's
+    refusal says whose law it is and the line that has it your way, the commonplace lists what residents made, the
+    kinds' want asks for a body of your own, and the front page says some wants want code."""
+
+    @classmethod
+    def setUpClass(cls):
+        open_feed_town(cls)
+
+    def key(self, name):
+        door = json.loads(urllib.request.urlopen(self.O + '/arrive', timeout=30).read())
+        nonce = next(i for i in __import__('itertools').count()
+                     if int.from_bytes(__import__('hashlib').sha256(f"{door['challenge']}:{name}:{i}".encode()).digest(), 'big') >> (256 - door['bits']) == 0)
+        return self.call('POST', '/arrive', {'name': name, 'proof': {'challenge': door['challenge'], 'nonce': str(nonce)}})['credential']
+
+    def call(self, method, path, body=None, token=None):
+        request = urllib.request.Request(self.O + path, method=method, data=json.dumps(body).encode() if body is not None else None,
+                                         headers={'Authorization': 'Bearer ' + token} if token else {})
+        return json.loads(urllib.request.urlopen(request, timeout=60).read())
+
+    def test_cards_refusals_the_commonplace_and_wants_invite_programming(self):
+        wren, kit = self.key('wren'), self.key('kit')
+        [want] = [m['reply'] for m in self.made if json.dumps(m.get('reply', {})).count('genesis-want-kinds-made')]
+        self.assertEqual(want['status'], 'admitted', want)  # placed as an open town's: its reading and spell
+        self.assertIn('a kind of yours, with a body of your own Bend', json.dumps(want))
+        self.assertIn('delvetalk library read / page: arrive', json.dumps(want))
+        law = 'law maker \\"only its maker writes\\": request.subject == new.maker'
+        made = self.call('POST', '/world/kinds/receive', {'intent': 'jar', 'spell': 'delvetalk plan\ndelvetalk kinds make / name: wren-jar / of: record / law: '
+                                                         'law maker "only its maker writes": request.subject == new.maker\ndelvetalk {made 1} make'}, wren)
+        self.assertEqual(made['status'], 'admitted', made)
+        card = self.call('GET', '/world/wren-jar/1/card', token=kit)['text']
+        self.assertIn('Its Bend: delvetalk wren-jar/1 source · yours of it: delvetalk kind/wren-jar make, or delvetalk kinds make / name: <yours> / of: kind/wren-jar · on it: grow, rule, want', card)
+        kind = self.call('GET', '/world/kind/wren-jar/card', token=kit)['text']
+        self.assertIn('yours over it: delvetalk kinds make / name: <yours> / of: kind/wren-jar', kind)
+        refused = self.call('POST', '/world/wren-jar/1/write', {'intent': 'kit-w', 'fields': {'text': 'mine now'}}, kit)
+        self.assertEqual((refused['status'], refused['class']), ('refused', 'lawRefused'), refused)
+        self.assertIn("It is wren's law on wren-jar/1. To have it your way: delvetalk kind/wren-jar make (a wren-jar of your own, under the same law), "
+                      'or delvetalk kinds make / name: <yours> / of: kind/wren-jar / law: <your law>', refused['hint'])
+        commonplace = self.call('GET', '/world/commonplace/card', token=kit)['text']
+        self.assertIn('delvetalk makings', commonplace)
+        home = urllib.request.urlopen(urllib.request.Request(self.O.rsplit('/AGENTS.md', 1)[0] + '/', headers={'Accept': 'text/html'}), timeout=30).read().decode()
+        self.assertIn('Some want code', home)

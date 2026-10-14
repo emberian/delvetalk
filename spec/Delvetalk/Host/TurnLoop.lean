@@ -2941,6 +2941,22 @@ def inPublic (w : World) (entry : Json) : List (String × Json) :=
     (·.getObjValAs? String "object" |>.toOption)
   [("inPublic", toJson (objects.all (viewable w "" ·)))]
 
+/-- A law's refusal that teaches (a world with more than one post's room, `cardRoom`): whose law it is, and the one line
+    that has it your way, your own thing of its kind or your own kind over it; none for any other refusal, or a world
+    whose cards are post-sized (its refusal reads as before). Said in the reply, never journaled. -/
+def teaching (w : World) (entry : Json) : Option String := do
+  guard (w.cardRoom > Limits.cardShownChars && tagOf entry == "refused")
+  let outcome ← (entry.getObjVal? "outcome").toOption
+  guard ((outcome.getObjValAs? String "class").toOption == some "lawRefused")
+  let id ← (outcome.getObjValAs? String "object").toOption
+  let o ← w.objects[id]?
+  let owner := ownerOf o.state
+  let whose := if owner.isEmpty then s!"{id}'s law" else s!"{shownName w owner}'s law on {id}"
+  let kind := (text? (fieldsOf o.state) "kind").getD ""
+  let over := if kind.isEmpty then (if id.startsWith "kind/" then id else "record") else kind
+  let yours := if kind.isEmpty then "" else s!"delvetalk {kind} make (a {kind.drop 5} of your own, under the same law), or "
+  return s!"It is {whose}. To have it your way: {yours}delvetalk kinds make / name: <yours> / of: {over} / law: <your law>; its law read whole: delvetalk library laws / card: {id}"
+
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
     offers the entry retains for the turn's own principal (others are read with `world-offers`), and an
     admitted entry's three lines (`revealed`) and whether they may be posted (`inPublic`). -/
@@ -2962,8 +2978,9 @@ def turnReply (w : World) (r : Json) : Json :=
       ((entry.getObjVal? "plan").toOption.map fun p => [("plan", match planRefusedAct entry with
         | some (n, _) => p.setObjVal! "refused" (toJson n)
         | none => p)]).getD [] ++
-      -- What a refusal may say in public, for transport to draft from.
-      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
+      -- What a refusal may say in public, for transport to draft from; a law's, on a roomy world, how to have it otherwise.
+      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
+      ((teaching w entry).map fun t => [("hint", toJson t)]).getD [])
 
 /-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
     reader, `identity`), projected under the reader's authority; a refusal with its `public` projection.

@@ -458,7 +458,7 @@ def credit(state: State) -> String:
 def renderFrom(state: State, context: Abi.Context, from: Nat, used: Nat) -> Document.Document:
   let id = Card.called(context, "record")
   let head = Document.concat(headLine(state, context, id), Document.text(credit(state)))
-  let doors = Card.doorLines(state.cites)
+  let doors = Lists.concat(Card.doorLines(state.cites), if state.kind == "" || Card.roomy(context) == false then Document.Documents.nil() else Document.Documents.cons({head: Document.text(Card.forkLine(id, state.kind, context)), tail: Document.Documents.nil()}))
   let left = Card.left(context, used + Document.size(head) + Document.size(Document.Document.sequence({items: doors})))
   let room = if left < Card.budget() then left else Card.budget()
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(numbered(state, context, Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: l.n >= from), 8n, if room < left then room else left, id), doors)})})

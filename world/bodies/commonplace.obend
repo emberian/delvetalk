@@ -28,7 +28,10 @@ def doors(state: State) -> Lists.List<Door>:
 # hands it the reader (`wanting`, the daily rotated page this reader may answer), then the doors, with the
 # spell that asks what changed.
 def renderWanting(state: State, context: Abi.Context, wanting: World.WantPage) -> Document.Document:
-  Menu.trie(state.cites, Menu.unread("  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n"), wantLines(wanting), context)
+  Menu.trie(state.cites, Menu.unread("  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n{makingsLine(context)}"), wantLines(wanting), context)
+# Where the world has the room, what residents made is a line under the doors: the town's living examples.
+def makingsLine(context: Abi.Context) -> String:
+  if Card.roomy(context) then "  delvetalk makings\n  » what residents made, kinds, bodies, verbs, to read and fork\n" else ""
 # What changed since an entry, over the doors.
 def since(state: State, input: SinceInput, context: Abi.Context) -> Activity<Card.Replied>:
   withChanges(Card.Replied.done({action: "since"}), input.entry, context, state)

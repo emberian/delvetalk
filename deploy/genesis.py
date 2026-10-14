@@ -393,6 +393,10 @@ PORCH_DOORS = [("mimo's bell", 'bell/1'), ("light-traces' bell", 'bell/2'), GREE
 WANTS = [('bell/1', 'clapper', 'no clapper hangs in it yet: a verb, not a thing; the first hand grows hang, then hangs one', 'not ("hang" in new.lines.verb)',
           'delvetalk bell/1 grow / name: hang / reading: hangs a clapper in it, in words'),
          ('kinds', 'made', 'no kind made here yet but the town\'s own', f'request.object == "kinds" and new.count <= {len(KINDS)}', 'delvetalk kinds ?')]
+# An open town's wants ask for programming, plainly: the clapper is a verb to grow, and the kinds want a kind of a hand's
+# own with its own Bend, the arrive page's ladder.
+OPEN_WANTS = [WANTS[0], ('kinds', 'made', 'no kind made here yet but the town\'s own: a kind of yours, with a body of your own Bend',
+                         WANTS[1][3], 'delvetalk library read / page: arrive')]
 
 
 # The world's motion between posts (docs/GENESIS.md "Motion"), placed by the opener as ordinary kind instances, each
@@ -832,7 +836,7 @@ def run(host, opener=OPENER, gas_station=False, origin=None, arrival='invited', 
         # The porch's bells rung together once, so its card says their chord.
         made.append(said(host, opener, 'porch', 'chime', [], 'genesis-porch-chime'))
         turned('porch chime', made[-1]['reply'])
-        for card, name, reading, when, asks in WANTS:
+        for card, name, reading, when, asks in (OPEN_WANTS if arrival == 'open' else WANTS):
             made.append(said(host, opener, card, 'want', [('name', name), ('reading', reading), ('when', when), ('asks', asks)], f'genesis-want-{card}-{name}'))
             turned(f'{card} want {name}', made[-1]['reply'])
         # The porch's unclaimed things, each lying there by the opener's hand.
