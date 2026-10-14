@@ -118,8 +118,8 @@ its list. Every word of a view is then drawn as escaped text, so a hidden text's
   in the record's variable `count`, a line per move) and `kind/hexboard` (`hexboard.obend`: `place / cell: N` marks
   `hex N` for the placer, once a hex, RECORD's law keeping marks; each hand's colour the order it first placed; the
   card prints the board in letters). `deploy/genesis.py` `playthings` makes both kinds and places `counter` and
-  `hexboard` (7 by 7) in an open town's genesis (obend's profile); a carried obend gets them by running `playthings` at
-  its next refresh (left to the deploy lane).
+  `hexboard` (7 by 7) in an open town's genesis (obend's profile); a carried open town that lacks them gets them in the
+  carry's refresh (`genesis.placed_playthings`, rows `placed`; an invited town such as gsb gets none).
 - **Tests** (`tests/test_view_pages.py`, 13): deterministic drawing; an attack in every word and attribute read back
   tag by tag against an allowlist; the bounds; acts only of offered forms; `noView`, `viewTooLarge`, a 600-cell list;
   a click cast as its reader, a forged `do` refused; a hexboard placing replayed after a restart; no-script reading
