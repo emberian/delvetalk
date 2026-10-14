@@ -1014,6 +1014,17 @@ def texts(opener):
     return out
 
 
+def placed_texts(host, opener):
+    """{(object, `.law`): genesis's text today} of the kinds a town is given beside genesis's own (the station's, the
+    parlour's, the playthings') that run RECORD (`of: record`), for those the town has: a refresh gives them the text the
+    image ships (kind/inhabitant's rule on `repair` and its want `stranded`) as it gives KINDS theirs. A kind of a kind
+    (`of: kind/inhabitant`) keeps its text as its making laid it, which is not the file's (the stack's), so it is left
+    to a reshape of its own; one the town lacks is not made here."""
+    have = set(existing(host, opener))
+    return {('kind/' + name, '.law'): f.get('text', '') for kinds in (STATION_KINDS, PARLOUR_KINDS, PLAY_KINDS)
+            for name, f in kinds.items() if f.get('of') == 'record' and 'kind/' + name in have}
+
+
 def ancestry(path):
     """The journal at `path` and, through each carried genesis's `carriedFrom.world`, the journals it was carried from,
     oldest first, as far as each is on this disk (a relative `world` is read beside the journal, then as given)."""
@@ -1095,7 +1106,7 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
     digest differs from the shipped wings. -> [{object, slot, status, reading?, reply?}] in genesis's
     order: `refreshed`, `current` (genesis's text already), `left` (the reading says why), `absent`, or the host's
     status for a turn not admitted."""
-    gave, today, out = given(journals, opener), texts(opener), rebased(host, opener)
+    gave, today, out = given(journals, opener), texts(opener) | placed_texts(host, opener), rebased(host, opener)
     for obj in dict.fromkeys(o for o, _ in today):
         now = standing(host, opener, obj)
         if now is None and obj.startswith('kind/'):  # a kind genesis makes now and the town never had: made

@@ -750,5 +750,35 @@ class Refresh(test_scenarios.Arc):
         self.assertEqual([r for r in again if r.get("reading", "").startswith("placed: ")], [])
 
 
+    def test_a_refresh_gives_the_station_kinds_the_text_the_image_ships(self):
+        """A town given the station before edition 20 keeps kind/inhabitant's old text: its rule does not answer
+        `repair` and it wants nothing stranded. Refuted by a refresh that leaves the station kinds' text as genesis gave
+        it then (the refresh read KINDS alone), or by a repaired board whose rules are not placed again."""
+        old = 'rule haunts "places its own rules where it haunts, as itself, when it is made, armed or its haunt or tide is set": ' \
+              'request.method == "made" or request.method == "arm" or request.method == "set" then delvetalk {request.object} haunt'
+        real = genesis.STATION_KINDS["inhabitant"]
+        genesis.STATION_KINDS["inhabitant"] = {**real, "text": old}
+        try:
+            made = genesis.gas_station(self.town.client, OPENER)
+        finally:
+            genesis.STATION_KINDS["inhabitant"] = real
+        self.assertTrue(all(m["status"] in ("created", "admitted") for m in made))
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+        self.seen = lambda reply: Inhabitants.seen(self, reply)
+        self.admitted = lambda who, card, text: Inhabitants.admitted(self, who, card, text)
+        board = Stranded.made(self, KIM, "a board", "planchette", "station/parlour")
+        Stranded.legacy(self, board, haunts="The Parlour, by the lamp")
+        placed = {r["name"]: r["placed"] for r in self.town.send(op="world-rules", principal=OPENER, object="tide")["rows"] if r["owner"] == "@" + board}
+        rows = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
+        self.assertIn({"object": "kind/inhabitant", "slot": ".law", "status": "refreshed"}, rows)
+        for _ in range(3):
+            self.town.send(op="world-deliver", principal="transport", limit=16)
+        now = {r["name"]: r["placed"] for r in self.town.send(op="world-rules", principal=OPENER, object="tide")["rows"] if r["owner"] == "@" + board}
+        self.assertEqual(set(now), set(placed))
+        self.assertTrue(all(now[n] > placed[n] for n in placed), (placed, now))
+        wants = self.town.send(op="world-wanting", principal=OPENER, limit=64)["rows"]
+        self.assertNotIn("stranded", [w["name"] for w in wants])
+
+
 if __name__ == "__main__":
     unittest.main()

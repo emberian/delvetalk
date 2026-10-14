@@ -130,7 +130,7 @@ class RefreshRegressions(unittest.TestCase):
 
     def refresh(self, today=None, journals=(), station=False):
         with patch.multiple(genesis, texts=lambda _: today or {}, MOTION=[], listed=lambda *_: [], shelved=lambda *_: [], harmonic=lambda *_: [],
-                            placed_register=lambda *_: [], placed_mending=lambda *_: [], repaired=lambda *_: []):  # tests/test_register.py Placed carries the register, test_mending the basket, test_inhabitants Stranded the repair
+                            placed_register=lambda *_: [], placed_mending=lambda *_: [], repaired=lambda *_: [], placed_texts=lambda *_: {}):  # tests/test_register.py Placed carries the register, test_mending the basket, test_inhabitants Stranded and Refresh the repair and the station kinds' text
             return genesis.refresh(self.host, genesis.OPENER, journals, station=station)
 
     def test_unknown_carried_baseline_preserves_kind_law_form_voice_and_about(self):
