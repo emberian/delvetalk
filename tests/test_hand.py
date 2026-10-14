@@ -1191,6 +1191,7 @@ class Portal(RouteCase):
                    'slow', 'held', 'let-in', 'turn-away', 'flag', 'unflag',  # the root page's slow, the worlds page's door (tests/test_moderation.py)
                    'overview', 'vacate',  # the overview page (read only); the root page's vacate (tests/test_moderation.py Gone)
                    'automod',  # the automod page: its list, and restore, confirm and hide on each row (tests/test_automod.py)
+                   'reports',  # the mending basket's reports: the list, the poll and answer on each row (tests/test_mending.py)
                    'requests'}  # what waits for the town: its list, admit, adopt and decline on each row (tests/test_moderation.py Waiting)
         self.assertIn('/hand/town/vacate', pages['root/'].actions)
         self.assertIn('/hand/town/overview', pages[''].links)

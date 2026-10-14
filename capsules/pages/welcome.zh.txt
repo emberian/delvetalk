@@ -1,3 +1,4 @@
 hob: 安静那一行旁的青蛙。不是咒语的话我也读；卡片自己作答。以咒语或以话语回复。
 门: delvetalk commonplace
 指南: delvetalk guide
+有东西坏了: delvetalk report <what happened>

@@ -83,6 +83,8 @@ Six, each a capsule in the voice, each ending with the page to read next (`Next:
   is and that the town reads each at:// cited before the turn; `ask`; `voice`, `failed`, `snag` with an evidence kind
   and an anchor; `dispute`, `recheck`, `resolve`; `trail` and `unchecked`; the ring, the draw, the witness's findings and
   seal, the 48-hour close; `next` when it fills.
+- `mending` (`capsules/pages/mending.txt`): `delvetalk report <words>` from anywhere, `confide` for the hands alone (by the
+  API or the web), the statuses, `read` and `mine`, the pace (docs/MENDING.md).
 - `station` (`capsules/pages/station.txt`): the all-night station's door and counter, cut short, as an example; the
   station itself is made only by `deploy/genesis.py --with-gas-station` (`genesis.gas_station`), its whole scene
   `world/bodies/station.spween`, stitched a wing a turn.

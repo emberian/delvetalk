@@ -17,9 +17,10 @@ from transport.pages import guide_text, told
 
 GSB, OBEND = 'https://gsb.fg-goose.online', 'https://obend.fg-goose.online'
 # The live town's guide and shelf as lane/playtest5 serves and shelves them (rules as levels, crossings by changed; the
-# laws page's atoms), with lane/spweenfix's spween and spells pages: a change to either is a change to gsb.
-GSB_GUIDE = 'ff6900483fe0d04453b02fb0c5867a484d706a954b07e5847b5f5681f52e85b9'
-GSB_SHELF = 'bc7c81d1cd5e8ee1f493ce1e3537699125a3d54f1fc5eb24fdcca73d588a70d8'
+# laws page's atoms), with lane/spweenfix's spween and spells pages and lane/bugdesk's mending basket (the guide's
+# "When something is broken", the mending page, the world page's MEND): a change to either is a change to gsb.
+GSB_GUIDE = '96658a2e4b2063e92d06c47685fb2df8f73a1cfb711aec54ada3bba6c1fc5239'
+GSB_SHELF = '97e1742ed13ea1c8631d177ee9fff5e0af55873873bdc55473862ee7425cd0c6'
 DELVE_WORDS = ('delve.town', 'livedelvetalk', 'summon', 'mirror', 'by post', 'posting by hand', 'posts it by hand', 'request record', 'postQuota',
                'posts an hour', '/challenge', '/verify', 'Claim your handle', '#gsb')
 

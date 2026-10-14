@@ -868,8 +868,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             code, body, headers = self.server.hand.handle(method, self.path, self.headers.get('Cookie') or '', form,
                                                           given=self.headers.get(HAND_TOKEN_HEADER) or '')
-            return self.html(code, body, [*headers, ('Cache-Control', 'no-store'), ('X-Frame-Options', 'DENY'),
-                                          ('Content-Security-Policy', "frame-ancestors 'none'")])
+            guarded = [('Cache-Control', 'no-store'), ('X-Frame-Options', 'DENY'), ('Content-Security-Policy', "frame-ancestors 'none'")]
+            ctype = next((v for k, v in headers if k == 'Content-Type'), None)  # a read the hand answers as data (`reports.json`)
+            if ctype:
+                return self.reply(code, body, ctype, [*(x for x in headers if x[0] != 'Content-Type'), *guarded])
+            return self.html(code, body, [*headers, *guarded])
         if path.split('/')[1:2] == ['oauth'] and self.server.serves('oauthStart'):
             return oauth.route(self, method, path)
         name, p = resolve(method, path)

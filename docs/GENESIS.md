@@ -83,10 +83,12 @@ In order (`run`):
    on the tide as its kind finishes it (below, "Motion").
 9. The opener's first `tide tick`: the tide then ticks itself every 60 clock minutes (an `awaitUntil` chain). What
    happens at a tick is the rules written on it: the weather's and the lamp's.
-10. The library shelves `PAGES`: ten pages (spells, laws, object, relations, protocol, world, kinds: each kind and a spell that
-   makes one, register, spween, station) and six walks (bell, check, enter, scene, tide, kind), each `capsules/pages/<name>.txt`,
+10. The library shelves `PAGES`: eleven pages (spells, laws, object, relations, protocol, world, kinds: each kind and a spell that
+   makes one, register, mending, spween, station) and six walks (bell, check, enter, scene, tide, kind), each `capsules/pages/<name>.txt`,
    at most what a library reply holds (1,266 characters at one post's room); then the guide in parts and the welcome.
 11. **The town's register** (`town_register`; below, "The register").
+11b. **The mending basket** (`town_mending`; docs/MENDING.md): `mending/drawer`, read by the opener alone, then `mending`,
+   public, both of `Mending.obend`; a carried town's refresh places them once (`placed_mending`).
 12. Each door's object publishes its page (`publishPage`), which the bridge drafts as `wiki: <Door>` for the hand.
 
 The commonplace's card (`docs/previews/commonplace-card.txt` is it verbatim):
