@@ -987,7 +987,7 @@ def sourceTypeUncached (c : Ctx) : Nat → String → String → List String →
       match parts with
       | [_, _, resultText] => do
         typeError ("refused (old-dialect): Activity<Plan, Response, Result> is withdrawn; write Activity<" ++
-          trimStr resultText ++ "> and yield by world calls (docs/WHOLENESS.md section 1)")
+          trimStr resultText ++ "> and yield by world calls (docs/FOUNDATION.md section 1)")
         return none
       | [resultText] =>
         -- `Activity<Result>`: yields `World.Message`s, each world call resumed at its own result.
@@ -2646,7 +2646,7 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : Array (Str
     if r.startsWith "Activity<" && r.endsWith ">" &&
         (splitTop (dropEndStr (dropStr r "Activity<".length) 1) ",").length == 3 then
       fail ("refused (old-dialect): Activity<Plan, Response, Result> is withdrawn; write Activity<Result> " ++
-        "and yield by world calls (docs/WHOLENESS.md section 1)")
+        "and yield by world calls (docs/FOUNDATION.md section 1)")
   if let .function _ [] resultType _ := d then
     if (trimStr resultType).startsWith "Activity<" then
       fail ("refused (nullary-activity): " ++ key ++ " has no parameters, so it is a shared lazy value; an Activity needs a parameter, e.g. (start: {})")
