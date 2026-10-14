@@ -19,7 +19,7 @@ def initial() -> State:
   {owner: "", coins: Relations.empty()}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "coins", key: Text.words("n who"), limit: 64n})
-law owner: request.kind == 0 or request.subject == new.owner
+law owner "anyone drops; the owner reprograms": request.kind == 0 or request.subject == new.owner
 form drop:
   line: text 1..140
 def drop(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:
@@ -27,6 +27,5 @@ def drop(state: State, input: {line: String}, context: Abi.Context) -> Activity<
   Relations.count(state.coins) + 1n
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("{natText(Relations.count(state.coins))} coins\n")
-METHODS  a form's action, methods() names, receive, set, publishPage.
-publishPage {page?}: wiki; empty/absent: instance id, kind kinds, workshop, register.
+METHODS form actions, methods(), receive, set, publishPage {page?}: wiki; empty/absent: id, or kinds/workshop/register.
 Next: delvetalk library read / page: relations

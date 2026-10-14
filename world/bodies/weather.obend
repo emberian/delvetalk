@@ -136,5 +136,5 @@ def drizzle(state: State, input: DrizzleInput, context: Abi.Context) -> Activity
   if context.sender != context.object then Card.refusing(0n, {clause: "ruled", reading: "the drizzle is the weather's own; delvetalk {context.object} rain"}, context) else reaching(state, input.from, input.rained, context)
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let rains = if Relations.count(state.lines) == 0n then "; it has not rained yet." else ". Its rains:"
-  let rule = if Text.isObjectId(tide(state)) then "by its rule on {tide(state)}:\n  {Card.tideLine(tide(state))}" else Card.tideLine(tide(state))
-  Document.text("WEATHER over {over(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: once a clock day, while someone has been at {over(state)} that day, it rains on every bell {over(state)} holds or hangs a door to; {rule}\n{Super.inactiveLine(state, id)}A bell nobody has been near takes nothing{rains}\n")
+  let rule = if Text.isObjectId(tide(state)) then ", by its rule on {tide(state)}:\n  {Card.tideLine(tide(state))}" else "; {Card.tideLine(tide(state))}"
+  Document.text("WEATHER over {over(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: once a clock day, while someone has been at {over(state)} that day, it rains on every bell {over(state)} holds or hangs a door to{rule}\n{Super.inactiveLine(state, id)}A bell nobody has been near takes nothing{rains}\n")

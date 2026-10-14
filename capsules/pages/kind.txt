@@ -12,3 +12,4 @@ hob: five replies, two another's; at the end your kind has two things, each unde
 Changed: kind/lamp, with lamp/1 yours and lamp/2 theirs; each writes only its maker's.
 Every kind, and a spell that makes one: delvetalk library read / page: kinds
 FORM  one field a line: text A..B, object A..B, natural A..B or a | b | c. An object is an id, 1 to 128 ASCII letters, digits and . _ : / -, within its bound; spaces and newlines are refused. Text or object starting at 0 may be empty or left out. Use object 1..128 for a field naming a thing, such as haunts or tide.
+An owner's set writes the named variable; an id wins over the making's value; a non-id is ignored. Variables survive line retention.

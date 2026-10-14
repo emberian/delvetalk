@@ -178,7 +178,9 @@ class Inhabitants(test_scenarios.Arc):
         for name, placed in after_rules.items():
             self.assertGreater(placed, before_rules[name])
             self.assertGreater(placed, repair["receipt"]["height"])
-        self.assertEqual(self.field(obj, "fields"), listing(fields))
+        self.assertEqual(self.field(obj, "fields"), legacy)
+        self.assertIn(record(name=label("haunts"), value=label(place)), self.field(obj, "vars")["items"])
+        self.assertFalse(any(l["verb"] == "haunts" for l in self.lines(obj)))
         repaired = self.card(self.say(KIM, obj, ""))
         self.assertIn(place, repaired)
         self.assertNotIn("haunts nowhere you can walk to yet", repaired)
@@ -232,6 +234,7 @@ class Inhabitants(test_scenarios.Arc):
         for obj, owner, stranger in ((inhabitant, KIM, GLM), (REGULAR, OPENER, KIM)):
             with self.subTest(object=obj):
                 before = self.field(obj, "fields")
+                vars_before = self.field(obj, "vars")
                 direct = self.turn(owner, obj, "set", record(field=label("haunts"), value={
                     "tag": "variant", "label": "text", "payload": record(value=label("a phrase with spaces"))}))
                 self.assertEqual(direct["status"], "refused", direct)
@@ -246,10 +249,70 @@ class Inhabitants(test_scenarios.Arc):
                 refused = self.say(stranger, obj, "delvetalk %s set / haunts: porch" % obj)
                 self.assertEqual(refused["status"], "refused", refused)
                 self.assertEqual(self.field(obj, "fields"), before)
+                self.assertEqual(self.field(obj, "vars"), vars_before)
                 self.admitted(owner, obj, "delvetalk %s set / haunts: porch" % obj)
                 self.deliver()
-                self.assertIn(record(name=label("haunts"), value=label("porch")), self.field(obj, "fields")["items"])
-                self.assertIn("porch", self.card(self.say(owner, obj, "")))
+                self.assertEqual(self.field(obj, "fields"), before)
+                self.assertIn(record(name=label("haunts"), value=label("porch")), self.field(obj, "vars")["items"])
+                self.assertFalse(any(l["verb"] == "haunts" for l in self.lines(obj)))
+                self.assertIn("of porch", self.card(self.say(owner, obj, "")))
+
+    def test_the_field_var_wins_over_the_making_and_a_non_id_var_is_ignored(self):
+        """Refuted by an owner's var not overriding a haunt or tide, a non-id var hiding the making's
+        value, or a second set duplicating a var or changing fixed fields, lines or tending."""
+        before = set(self.objects())
+        self.admitted(KIM, "kind/inhabitant", self.tide_spell("inhabitant"))
+        [obj] = set(self.objects()) - before
+        fields = self.field(obj, "fields")
+        for name, made in (("haunts", "station"), ("tide", "tide")):
+            with self.subTest(field=name):
+                card = self.card(self.say(KIM, obj, ""))
+                self.assertIn("of " + made if name == "haunts" else "delvetalk %s rules" % made, card)
+                clock = self.town.send(op="world-status")["clock"] + 1
+                self.assertEqual(self.town.send(op="world-advance", principal="transport", height=clock)["status"], "advanced")
+                vars_before = self.field(obj, "vars")["items"]
+                unchanged = {f: self.field(obj, f) for f in ("fields", "lines", "pending", "next", "tended")}
+                for value in ("porch", "x" * 128):
+                    reply = self.admitted(KIM, obj, "delvetalk %s set / %s: %s" % (obj, name, value))
+                    self.assertEqual(self.field(obj, "vars"), listing(vars_before + [record(name=label(name), value=label(value))]))
+                    self.assertEqual({f: self.field(obj, f) for f in unchanged}, unchanged)
+                    self.assertIn(value, self.card(reply))
+                    card = self.card(self.say(KIM, obj, ""))
+                    self.assertIn("of " + value if name == "haunts" else "delvetalk %s rules" % value, card)
+                for value in ("a phrase with spaces", "x" * 129, ""):
+                    rooted = self.town.send(op="world-root", principal=OPENER, reason="restore a non-id field var",
+                                            act={"kind": "set", "object": obj, "field": "state.vars",
+                                                 "value": listing(vars_before + [record(name=label(name), value=label(value))])})
+                    self.assertEqual(rooted["status"], "root", rooted)
+                    card = self.card(self.say(KIM, obj, ""))
+                    self.assertIn("of " + made if name == "haunts" else "delvetalk %s rules" % made, card)
+                self.assertEqual(self.field(obj, "fields"), fields)
+
+    def test_a_field_repair_survives_line_retention(self):
+        """Refuted by 129 newer writes scrolling an owner's haunt repair out of a kept record."""
+        before = set(self.objects())
+        self.admitted(KIM, "kind/inhabitant", self.tide_spell("inhabitant"))
+        [obj] = set(self.objects()) - before
+        fields = self.field(obj, "fields")
+        rooted = self.town.send(op="world-root", principal=OPENER, reason="give the repaired record a keeper",
+                                act={"kind": "set", "object": obj, "field": "state.keeper", "value": label(GLM)})
+        self.assertEqual(rooted["status"], "root", rooted)
+        unchanged = {f: self.field(obj, f) for f in ("lines", "pending", "next", "tended")}
+        reply = self.admitted(KIM, obj, "delvetalk %s set / haunts: porch" % obj)
+        self.assertEqual({f: self.field(obj, f) for f in unchanged}, unchanged)
+        vars_after = self.field(obj, "vars")
+        self.assertIn(record(name=label("haunts"), value=label("porch")), vars_after["items"])
+        self.assertIn("Set haunts to porch.", self.card(reply))
+        for n in range(129):
+            written = self.seen(self.turn(KIM, obj, "write", record(text=label("newer line %d" % n))))
+            self.assertEqual(written["status"], "admitted", written)
+        lines = self.lines(obj)
+        self.assertEqual(len(lines), 128)
+        self.assertEqual(lines[0]["text"], "newer line 1")
+        self.assertFalse(any(l["verb"] == "haunts" for l in lines))
+        self.assertEqual(self.field(obj, "vars"), vars_after)
+        self.assertEqual(self.field(obj, "fields"), fields)
+        self.assertIn("of porch", self.card(self.say(KIM, obj, "")))
 
     def test_a_legacy_phrase_is_not_shown_as_the_place_on_other_inhabitants(self):
         phrase = "wherever a word was just finished"
@@ -268,6 +331,13 @@ class Inhabitants(test_scenarios.Arc):
                 card = self.card(self.say(KIM, obj, ""))
                 self.assertIn("haunts nowhere you can walk to yet", card)
                 self.assertNotIn(phrase, card)
+                owner = KIM if obj == inhabitant else OPENER
+                self.admitted(owner, obj, "delvetalk %s set / haunts: porch" % obj)
+                self.deliver()
+                self.assertEqual(self.field(obj, "fields"), legacy)
+                self.assertIn(record(name=label("haunts"), value=label("porch")), self.field(obj, "vars")["items"])
+                self.assertFalse(any(l["verb"] == "haunts" for l in self.lines(obj)))
+                self.assertIn("of porch", self.card(self.say(KIM, obj, "")))
 
     def tide_spell(self, kind, tide="tide", action="make"):
         fields = TIDE_FIELDS[kind] + [("tide", tide)]
@@ -351,15 +421,15 @@ class Inhabitants(test_scenarios.Arc):
                 self.assertEqual(self.field(obj, "fields"), legacy)
                 before_rules = {r["name"]: r["placed"] for r in self.rules("tide")
                                 if r["then"].startswith("delvetalk %s " % obj)}
-                seed = self.field(obj, "vars") if kind == "register" else None
+                vars_before = self.field(obj, "vars")["items"]
                 self.admitted(OPENER, obj, "delvetalk %s set / tide: tide" % obj)
                 self.deliver()
-                self.assertEqual(self.field(obj, "fields"), listing(fields))
+                self.assertEqual(self.field(obj, "fields"), legacy)
+                self.assertEqual(self.field(obj, "vars"), listing(vars_before + [record(name=label("tide"), value=label("tide"))]))
+                self.assertFalse(any(l["verb"] == "tide" for l in self.lines(obj)))
                 card = self.card(self.say(KIM, obj, ""))
                 self.assertNotIn("keeps hours by no tide you can reach yet", card)
                 self.assertIn("delvetalk tide rules", card)
-                if kind == "register":
-                    self.assertEqual(self.field(obj, "vars"), seed)
                 if kind != "inhabitant":
                     after_rules = {r["name"]: r["placed"] for r in self.rules("tide")
                                    if r["then"].startswith("delvetalk %s " % obj)}

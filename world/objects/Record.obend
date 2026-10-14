@@ -23,9 +23,8 @@ import ./Harmony.obend as Harmony
 # older lines are dropped, and two writers who read one `next` both stand. `pending` holds the
 # numbers of a kept record's lines its keeper has not admitted, dropped as their lines are;
 # `admitted` holds the keeper's admissions by number;
-# `marks` the record's named moments, each once (a bell's `rung`). `head`, `kind`,
+# `marks` the record's named moments, each once (a bell's `rung`). `head`, `kind`, `fields`,
 # `maker`, `makerHandle` and `post` are set when it is made (KIND's `make`) and never after.
-# Its body exposes `fields` to its owner through lenses.
 #
 # Where a record stands is what it cites and what it makes. `cites` are its doors (the card's
 # word): `{label, to}` rows the owner hangs, eight at most. What it makes is its body's to say
@@ -36,7 +35,8 @@ import ./Harmony.obend as Harmony
 # A room is a record whose body (world/bodies/room.obend) reads the rest: `start`, `passages`,
 # `cooldown` and `requires` are its scene (world/lib/Scenes.obend), set when it is made and
 # changed only by its owner's reprogram; `presence` who is in it and at which passage; `vars`
-# what its choices set, `mine` what they set for one reader (`my.<name>`); `left` when each reader last left; `things` what lies in it; `chose` the
+# the thing's named values, set by its choices or its owner's lenses; `mine` what choices set
+# for one reader (`my.<name>`); `left` when each reader last left; `things` what lies in it; `chose` the
 # last choice taken here, `<passage>.<n>`, which the rules its scene's casts are read (Scenes.ruleText).
 #
 # A record is tended (`tend`, or its body's own attention: a bell's rain) at a clock minute
@@ -68,7 +68,7 @@ record State:
   keeperHandle: String
   head: fixed String
   kind: fixed String
-  fields: Lists.List<Rows.Field>
+  fields: fixed Lists.List<Rows.Field>
   maker: fixed String
   makerHandle: fixed String
   post: fixed String
@@ -263,9 +263,11 @@ def mark(state: State, name: String, context: Abi.Context) -> Activity<Bool>:
 def markWritten(m: Rows.Mark) -> Activity<Bool>:
   let written(_) = write {marks: insert m}
   true
-# A value the kind's form took when the record was made ("" when none).
+# A variable naming an object, else its making's value.
 def field(state: State, name: String) -> String:
-  fieldIn(state.fields, name)
+  match Lists.find(state.vars, fn(v: Scenes.Var) -> Bool: v.name == name):
+    case some(v): if Text.isObjectId(v.value.value) then v.value.value else fieldIn(state.fields, name)
+    case none(_): fieldIn(state.fields, name)
 def fieldIn(fields: Lists.List<Rows.Field>, name: String) -> String:
   match Lists.find(fields, fn(f: Rows.Field) -> Bool: f.name == name):
     case some(f): f.value.value
@@ -285,11 +287,11 @@ def setField(state: State, field: Form.Field, value: String, context: Abi.Contex
     case some(f): Card.refusing(Card.Replied.done({action: "set"}), {clause: f.value.clause, reading: f.value.reading}, context)
     case none(_): fieldSet(state, field.name, value, context)
 def fieldSet(state: State, name: String, value: String, context: Abi.Context) -> Activity<Card.Replied>:
-  let written(_) = world.write(extend(keep(), {fields: fieldEdit(state, name, value)}))
+  let written(_) = world.write(extend(keep(), {vars: fieldEdit(state.vars, name, value)}))
   if setArms() then fieldArmed(name, value, context) else fieldTold(name, value)
-def fieldEdit(state: State, name: String, value: String) -> Plans.Entries<Rows.Field, Rows.Field>:
-  match Lists.find(state.fields, fn(f: Rows.Field) -> Bool: f.name == name):
-    case some(f): Plans.Entries.amendItem({item: f.value, change: {name: name, value: value}})
+def fieldEdit(vars: Lists.List<Scenes.Var>, name: String, value: String) -> Plans.Entries<Scenes.Var, Scenes.Var>:
+  match Lists.find(vars, fn(v: Scenes.Var) -> Bool: v.name == name):
+    case some(v): Plans.Entries.amendItem({item: v.value, change: {name: name, value: value}})
     case none(_): Plans.Entries.append({item: {name: name, value: value}})
 def setArms() -> Bool:
   false

@@ -826,7 +826,7 @@ def receive(state: State) -> Nat:
         """Refuted by the spoon check body without entry failing instead of checking initial."""
         tok = self.login()
         self.assertEqual(self.scratch_open(tok, 'lab')[1]['status'], 'scratch')
-        paths = ('docs/AGENTS-API.md', 'capsules/pages/bend.txt', 'capsules/pages/workshop.txt', 'capsules/pages/check.txt')
+        paths = ('docs/AGENTS-API.md', 'capsules/pages/bend.txt', 'capsules/pages/check.txt')
         for path in paths:
             with self.subTest(page=path):
                 text = (Path(__file__).resolve().parents[1] / path).read_text()

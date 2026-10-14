@@ -598,8 +598,12 @@ An inhabitant's `haunts` and `tide` take `object 1..128`; its owner can set eith
 (`delvetalk <thing> set / haunts: <id>` or `set / tide: <id>`), which re-arms its haunt rule.
 Weather, fronts and registers also take an object id in `tide`; their owner's set sends their
 existing `arm` to re-place their rules. A register keeps the seed of its witness draw when re-armed. RECORD's
-form values stay in `fields`; its `set` checks the owner, and each body exposes
-the fields it allows through `lenses()`. A legacy haunt with another shape reads
+form values stay fixed in `fields`; each body exposes the fields it allows through `lenses()`.
+The owner's set writes the thing's variable under the field's name, amending it
+if present and appending it otherwise. RECORD's `field` reads that variable for every body
+when its value is an object id, else the making's value. Variables survive line retention;
+the set adds no line, pending admission or tending. The `methods` law keeps variables
+changeable only by spells, never proposals. A legacy haunt with another shape reads
 "haunts nowhere you can walk to yet" and supplies no walk spell until repaired.
 A legacy tide reads "keeps hours by no tide you can reach yet" and supplies no tide spell until repaired.
 `?`, `inspect`'s forms and a

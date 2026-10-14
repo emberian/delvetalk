@@ -9,3 +9,4 @@ hob: three replies and a tick; at the end the tide has your rule, and it fired.
   » turned fired at that tick; your avatar has "the tide turned"
 Changed: your rule on the tide; a note on your avatar at every tick.
 NAMING A TIDE  inhabitants, regulars, planchettes, weather, fronts and registers take tide: object 1..128: an id, never a phrase. Their owner repairs it: delvetalk <thing> set / tide: <id>. That arms their rules again. A stored phrase reads “keeps hours by no tide you can reach yet” and gives no tide spell until repaired.
+An owner's set writes the named variable; an id wins over the making's value; a non-id is ignored. Variables survive line retention.

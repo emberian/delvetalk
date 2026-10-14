@@ -1,4 +1,4 @@
-hob: each kind, and a spell that makes one; its card says the rest.
+hob: each kind and its make spell.
 record: lines anyone writes
   delvetalk kind/record make
 bell: rings at its seventh rain
@@ -9,7 +9,7 @@ room: a place to enter and talk in (a porch is one)
   delvetalk kind/room make / name: the roost
 garden: plants bells and digs cisterns
   delvetalk kind/garden make / name: the yard
-weather: rains daily on a visited place's bells
+weather: daily rain on visited bells
   delvetalk kind/weather make / over: porch / tide: tide
 door: opens at its first knock
   delvetalk kind/door make / name: sluice
@@ -19,6 +19,6 @@ bond: last signer amends; refused? make a new bond
   delvetalk kind/bond make / parties: kestrel, yue / terms: share / amends: / law:
 errand: pays when done
   delvetalk kind/errand make / asks: rain / on: bell/1 / done: new.next >= 2 / pays: delvetalk door/1 knock
-front: a clock that fills while a condition holds, moves when full
+front: a clock that fills while a condition holds; moves when full
   delvetalk kind/front make / name: drought / fills: new.ticks % 24 == 0 / segments: 3 / move: delvetalk door/1 knock / tide: tide
-amends/on/door/haunts/tide/desk/over: object ids
+An owner's set writes a named variable; an id wins over the making's value; a non-id is ignored.

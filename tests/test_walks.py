@@ -107,6 +107,18 @@ class Walks(unittest.TestCase):
                 self.assertTrue(all(claim for _, _, claim in steps), steps)
                 self.assertTrue(set(re.findall(r"page: (\w+)", body)) <= shelved, body)
 
+    def test_the_check_page_keeps_two_checks_before_draft_adopt_and_propose(self):
+        first, steps, changed = walk("check")
+        self.assertEqual([spell.split()[2] for _, spell, _ in steps],
+                         ["check", "check", "draft", "adopt", "propose"])
+        self.assertTrue(first.startswith("hob: "), first)
+        self.assertTrue(changed, "check needs its Changed: line")
+        self.assertTrue(all(claim for _, _, claim in steps), steps)
+        _, text = self.say(WALKER, steps[0][1])
+        self.assertIn("Checked: it compiles.", text)
+        _, text = self.say(WALKER, steps[1][1])
+        self.assertRegex(text, r"Checked: 1 problem\.\n\n- Checked:\d+: .*\n  hint: ")
+
     def test_make_a_bell_rain_on_it_place_a_rule_and_hear_the_ring(self):
         W, O = WALKER, OTHER
         (_, make, _), (_, rain, _), (_, rule, _), (_, theirs, _), (_, ring, _) = self.steps("bell")
