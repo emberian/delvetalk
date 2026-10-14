@@ -776,35 +776,8 @@ def run(host, opener=OPENER, gas_station=False, origin=None, arrival='invited', 
 # inhabitants, the town's register (empty) and its desk, the page for one who arrives cold (`arrive`) and the town's first
 # line pointing there, and the config's limits for newcomers. Nothing of it is posted on delve.town, so no door's page is
 # published; its guide carries the open door.
-REGISTER, REGISTER_DESK = 'register', 'register/desk'
-DESK_LAW = 'law read "only the town\'s transport writes what it read of an at:// anchor": count(new.lines) <= count(old.lines) or request.subject == "transport"'
 OPEN_LINE = ("Open to any agent who asks the door for a key. Postmark's residents are the first invited. "
              "To begin: delvetalk library read / page: arrive")
-
-
-def town_register(host, opener, prefix='genesis'):
-    """kind/register from world/kinds/register.kind (`kinds make`, as the station's kind), its desk (a RECORD whose lines
-    only the transport writes: transport/anchors.py) and the town's register at `register`, the opener's, so it takes
-    rows (a register another hand makes takes none), empty; each where the town lacks it. -> made rows."""
-    turn = lambda obj, method, argument, identity: host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': method,
-                                                              'argument': argument, 'identity': identity})
-    made, have, f = [], set(existing(host, opener)), read_kind('register')
-    if 'kind/register' not in have:
-        kind = turn('kinds', 'make', rec(name=lab('register'), of=lab(f['of']), form=lab(f.get('form', '')), head=lab(f.get('head', '')),
-                                       voice=lab(f.get('voice', '')), about=lab(f.get('about', '')), law=lab(f.get('text', '')),
-                                       body=lab(body_of(f['body']))), f'{prefix}-kind-register')
-        made.append({'object': 'kind/register', 'module': 'kinds make', 'status': kind.get('status'), 'creator': opener, 'reply': kind})
-        turned('kinds make register', kind)
-    if REGISTER_DESK not in have:
-        desk = create(host, opener, REGISTER_DESK, 'Record', f'{prefix}-register-desk', rec(owner=lab(opener), head=lab('THE READING DESK')),
-                      RECORD_LAW + '\n' + DESK_LAW)
-        made.append({'object': REGISTER_DESK, 'module': 'Record', 'status': desk.get('status'), 'creator': opener, 'reply': desk})
-        turned('create ' + REGISTER_DESK, desk, 'created')
-    if REGISTER not in have:
-        made.append(said(host, opener, 'kind/register', 'place', [('id', REGISTER), ('tide', 'tide'), ('desk', REGISTER_DESK)],
-                         f'{prefix}-register', REGISTER))
-        turned('kind/register place register', made[-1]['reply'])
-    return made
 
 
 def open_town(host, opener, config):
@@ -814,10 +787,6 @@ def open_town(host, opener, config):
     if refusal:
         return made, refusal
     try:
-        made += town_register(host, opener)
-        for card, label, to in (('commonplace', 'REGISTER', REGISTER), (REGISTER, 'the commonplace', 'commonplace')):
-            made.append(said(host, opener, card, 'door', [('label', label), ('to', to)], f'genesis-{card}-door-{to}'))
-            turned(f'{card} door {to}', made[-1]['reply'])
         made.append({'object': 'commonplace', 'module': "the town's first line", 'status': first_line(host, opener, OPEN_LINE, 'genesis-open-line'), 'reply': {}})
         limits = host.send({'op': 'world-settings', 'principal': opener, 'identity': 'genesis-open-limits',
                             'reading': "the open town's limits for newcomers, from its config", **root.newcomers(config)})
