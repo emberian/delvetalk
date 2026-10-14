@@ -773,10 +773,6 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             bound.append(host.send({'op': 'bounds'})['host']['mentionsAddressed'])
         queue_mentions(st, host, obs, authors, handles, bound[0], at)
 
-    for uri in observe.owed(st):  # an edition-19 store's reached post whose mention turns had no receipt
-        if uri in known and known[uri].get('mentions'):
-            mention(known[uri])
-        observe.pay(st, uri)
     for obs in observed:
         if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists() or \
                 (obs['kind'] == 'request' and answer_path(st, request_source(obs)).exists()):

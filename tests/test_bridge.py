@@ -787,18 +787,6 @@ class Mentions(BridgeCase):
         self.assertIn(f"{post['uri']}#mention:{self.KIMI}", self.state.skipped.read_text().split())
         self.assertEqual([x['failed'] for x in r], [[], []])
 
-    def test_a_legacy_owed_post_is_queued_and_told(self):
-        """Refuted by an `owed` row (an edition-19 store: a reached post whose mention turn had no receipt) left unsent."""
-        post = mk(2, 'hello @glm.delve.town')
-        self.observe([self.glm(), post])
-        observe.owe(self.state, post['uri'])
-        self.state.append(self.state.skipped, post['uri'])  # its reach was asked and answered before
-        stub = Stub()
-        self.hour(stub)
-        (turn,) = self.told(stub)
-        self.assertEqual([n['post'] for n in self.notes(turn)], [post['uri']])
-        self.assertEqual(observe.owed(self.state), set())
-
     def test_the_town_tells_a_real_avatar_and_a_resident_cannot(self):
         """Through a real host: the avatar keeps the town's notes in its inbox, each from its post's author with the
         post's URI; the same turn by a resident (a forged note) is refused by name and writes nothing."""

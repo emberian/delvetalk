@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, u
 CREATE TABLE IF NOT EXISTS gone(h BLOB PRIMARY KEY) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS chain(uri TEXT PRIMARY KEY, author TEXT, reply_to TEXT, created REAL) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS authors(did TEXT PRIMARY KEY, handle TEXT, seen INTEGER) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS owed(uri TEXT PRIMARY KEY) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS mentions(seq INTEGER PRIMARY KEY AUTOINCREMENT, uri TEXT, did TEXT, author TEXT, handle TEXT, text TEXT,
   queued REAL, UNIQUE(uri, did));
 CREATE TRIGGER IF NOT EXISTS observed_author AFTER INSERT ON observations
@@ -209,32 +208,6 @@ def stubs(st):
     return {u: {'uri': u, 'author': {'did': a}, 'replyTo': r} for u, a, r in read(st, 'SELECT uri, author, reply_to FROM chain')}
 
 
-def owed(st):
-    """The URIs an edition-19 store owes mention turns for (`owed`: a reached post whose turn had no receipt), which the
-    bridge queues as notes once (`queue`, then `pay`)."""
-    return {u for (u,) in read(st, 'SELECT uri FROM owed')}
-
-
-def owe(st, uri):
-    """An edition-19 store's row: the reached post's mention turns are owed."""
-    if st.observed.exists():
-        db = connect(st)
-        try:
-            db.execute('INSERT OR IGNORE INTO owed VALUES(?)', (uri,))
-        finally:
-            db.close()
-
-
-def pay(st, uri):
-    """The legacy row is queued as notes."""
-    if st.observed.exists():
-        db = connect(st)
-        try:
-            db.execute('DELETE FROM owed WHERE uri=?', (uri,))
-        finally:
-            db.close()
-
-
 def queue(st, uri, author, handle, text, dids, at):
     """Queue the post's note for each of `dids` (arrived residents it mentions), once a (post, resident), at `at`."""
     db = connect(st)
@@ -312,7 +285,6 @@ def prune(st, skipped, answered, at, keep=()):
         for o, skip in drop:
             uri = o['uri']
             db.execute('DELETE FROM observations WHERE uri=?', (uri,))
-            db.execute('DELETE FROM owed WHERE uri=?', (uri,))
             db.execute('INSERT OR IGNORE INTO gone VALUES(?)', (uri_key(uri),))
             if uri in keep:
                 db.execute("UPDATE posts SET cid='', hash='', body='' WHERE uri=?", (uri,))

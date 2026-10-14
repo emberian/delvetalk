@@ -235,4 +235,4 @@ class Keeping(unittest.TestCase):
         db.execute('CREATE TABLE observations(seq INTEGER PRIMARY KEY, uri TEXT UNIQUE, json TEXT)')
         db.commit()
         db.close()
-        self.assertEqual((observe.authors(self.st), observe.stubs(self.st), observe.owed(self.st)), ([], {}, set()))
+        self.assertEqual((observe.authors(self.st), observe.stubs(self.st)), ([], {}))

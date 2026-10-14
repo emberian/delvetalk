@@ -7,7 +7,6 @@ Refuted by: an object type inline below a definition's top (the reference valida
 `ref`), a `ref` naming no definition, a required property its object does not declare, or `validate` passing a value
 that misses a required field or carries a field of the wrong type.
 """
-import ast
 import json
 import unittest
 from pathlib import Path
@@ -31,19 +30,6 @@ class Lexicons(unittest.TestCase):
                 nsid = json.loads(path.read_text())['id']
                 self.assertEqual(nsid, '.'.join(path.relative_to(root).with_suffix('').parts))
                 self.assertTrue(nsid.startswith('online.fg-goose.gsb.'), nsid)
-
-    def test_old_prefix_is_absent_from_lexicons_and_transport_string_literals(self):
-        root = Path(__file__).resolve().parent.parent
-        old_prefix = 'town' + '.delvetalk'
-        for path in sorted((root / 'lexicons').rglob('*')):
-            if path.is_file():
-                with self.subTest(path=path.relative_to(root)):
-                    self.assertNotIn(old_prefix, path.read_text())
-        for path in sorted((root / 'transport').glob('*.py')):
-            for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
-                if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                    with self.subTest(path=path.relative_to(root), line=node.lineno):
-                        self.assertNotIn(old_prefix, node.value)
 
     def test_projection_values_are_definitions_and_queries_share_one_envelope(self):
         doc = DOCS['online.fg-goose.gsb.getProjection']

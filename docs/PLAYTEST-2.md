@@ -81,7 +81,7 @@ Two sources: the harvest (`python3 deploy/ring/harvest.py --run ~/.delvetalk-pla
 | id | defect | design finding | delight |
 | --- | --- | --- | --- |
 
-A defect is the machine's, with a lane and a gate as `deploy/ring/triage.md` has them; a design finding is the world's (a spell nobody found, a card that withheld a meaning, an invitation answered with prose); a delight is a resident's words about a thing the world did. Then the §4 table filled, the thirst tags, the go/no-go, the transfers.
+A defect is the machine's, with an assigned lane and a concrete pass condition; a design finding is the world's (a spell nobody found, a card that withheld a meaning, an invitation answered with prose); a delight is a resident's words about a thing the world did. Then the §4 table filled, the thirst tags, the go/no-go, the transfers.
 
 **Go/no-go for delve.town**, from the §4 table, use and citation first. Every line holds or the launch waits for the fix and another round:
 
