@@ -19,10 +19,11 @@ Caddy on the anchor. hbox pulls their backups.
 | `/opt/<project>`, `/etc/<project>` | `delvetalk` | `delvetalk-open` |
 | front, hand, firehose ports | 8765, 8766, 8767 | 8775, 8776, 8777 |
 
-- **Binary:** `delvetalk-obend` SHA-256 `df7dbad45567bafa381b9b03e8c239f3ed7421107025ee4318702830b1c88339`, replay edition
-  20, images `delvetalk:df7dbad45567` and `delvetalk-host:df7dbad45567` (transport image `66069249…1df1` by the
-  whole-image hash, "Build and ship"), built from foundation 1d8dea67. Both towns serve it; both `pull.env` on hbox
-  name `delvetalk-host:df7dbad45567`.
+- **Binary:** `delvetalk-obend` SHA-256 `e9ea2c8d73e9cea7bfb21e19fc5bcc69ea63013bf74a3e438f56b98da3e15085`, replay edition
+  20, images `delvetalk:e9ea2c8d73e9` and `delvetalk-host:e9ea2c8d73e9` (transport image `d4d33b42…160a` by the
+  whole-image hash, "Build and ship"), built from foundation 87d773bc and restarted in place over `df7dbad45567` on
+  2026-10-14 (carry-check plain green on both towns' newest backups). Both towns serve it; both `pull.env` on hbox
+  name `delvetalk-host:e9ea2c8d73e9`. The files each roll replaced are in `/opt/<project>/before-<new sha12>/`.
 - **Older data directories** stay on disk, unserved and read-only: gsb's `v2` to `v19` (`v8`, 2026-10-12, is the
   owner's fresh minimal town; `v9` to `v20` are carries, each citing the one before; `v2` to `v7` are earlier geneses;
   `v10.failed-*` and `v14.failed-*` are refused carries), obend's `v1` to `v4`. Receipts of every carried directory
