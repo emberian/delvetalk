@@ -70,7 +70,7 @@ frog.
 | a summons answered `none` | the commonplace | `hob: the town heard you. A spell acts here: delvetalk guide shows how, delvetalk commonplace ? lists what it takes.` |
 | `?` | the tail of `spellUsage`, when `library` is a card the reader may see | `hob: how a spell is read: delvetalk library read / page: spells` |
 | a `badSpell` hint | the hint's tail, same condition | `hob: the page on this: delvetalk library read / page: spells` |
-| the library's index | `Library.render`, first line | `hob: twelve pages, six walks; say which and I fetch it.` (counted) |
+| the library's index | `Library.render`, first line | `hob: {n} pages, {m} walks; say which and I fetch it.` (counted in words) |
 | a page or a walk | its first line (`capsules/pages/*.txt`) | `hob: five replies, one another's; at the end the bell has rung and your avatar has two notes.` (bell) |
 | a carry | `transport/carry.py` | `hob: the world was carried to a newer host at entry {n}; everything is where it was, and the carry is receipt {slug}.` |
 | the quiet line | `pages.html` `quiet` | `— quiet (no reply)` |
