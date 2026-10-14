@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 from tests import test_policy
 from tests.host import Host, binary, served
@@ -377,6 +378,29 @@ class Carry(Reflection):
             got = again.send(op="world-resolve", principal="ember", slug=slug(e["hash"]))
             self.assertEqual((got["status"], got["carried"]["height"]), ("resolved", e["height"]), got)
         self.assertEqual(self.plant("kim", "later", again)["receipt"]["height"], at + 2)
+
+    def test_the_hands_overview_reads_the_day_across_the_carry(self):
+        """obend 10-14: after the 09:00 carry the hand's overview said nobody had arrived in the last day (kren, maw and mm
+        had) and its busiest hands began at the carry: it read the carried journal alone. It follows each carried
+        genesis's `carriedFrom.world` back, as the host does, while the journal is on the disk."""
+        from transport import overview
+        self.assertEqual(self.host.send(op="world-principal", principal="ember", did="kren", handle="kren")["status"], "principal")
+        self.assertEqual(self.plant("kren", "kren-before")["status"], "admitted")
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(overview.ancestors(out), [Path(self.path)])
+        led = overview.Ledger(out).read()
+        self.assertEqual([a["handle"] for a in led.arrivals], ["kren"])
+        self.assertIn(("kren", "admitted"), {(r[2], r[3]) for r in led.rows})
+        self.assertEqual(led.rows[-1][3], "carried")  # the carried genesis, after every row of the world before
+        heights = [r[0] for r in led.rows]
+        self.assertEqual(heights, sorted(heights))
+        # A chain whose ancestor is not on this disk is the journal alone, as before; a journal citing itself ends.
+        moved = self.path + ".gone"
+        os.rename(self.path, moved)
+        self.assertEqual(overview.ancestors(out), [])
+        self.assertEqual(overview.Ledger(out).read().arrivals, [])
+        os.rename(moved, self.path)
 
     def test_an_object_left_is_carried_retired_at_its_state(self):
         before = self.objects(self.host)
