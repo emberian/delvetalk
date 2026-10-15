@@ -656,6 +656,40 @@ def register_door(host, opener, prefix):
     return [row]
 
 
+def door_texts(host, opener):
+    """The commonplace's genesis doors brought to the lines genesis gives them today (a carried gsb said "two bells"
+    at PORCH after the green bell made three): a door is the town's when its label and object are a `DOORS` row's,
+    and its examples and description are rewritten to that row's; any other door (one its owner hung since, one
+    genesis never made) is never touched. One opener's proposal lifts the doors from the first stale one on and lays
+    them back in order, as `register_door` lays REGISTER, so the card's clipping order holds. -> no row without a
+    commonplace, else one row: `current`
+    when every genesis door already reads as today, else `refreshed` naming the doors, or the host's status."""
+    from transport.host import door_rows, plain
+    view = host.send({'op': 'world-view', 'principal': opener, 'object': 'commonplace'})
+    if view.get('status') != 'viewed':  # a world without the town's first card has no doors of genesis's
+        return []
+    today = {(label, to): door(label, to, examples) for label, to, examples in DOORS}
+    items = next((f['value'] for f in view['state'].get('fields', []) if f['name'] == 'cites'), {}).get('items', [])
+    stale = []
+    for k, item in enumerate(items):
+        d = plain(item)
+        key = (d.get('label'), (d.get('to') or {}).get('object'))
+        if (d.get('to') or {}).get('world', '') == '' and key in today and plain(today[key]) != d:
+            stale.append(k)
+    if not stale:
+        return [{'object': 'commonplace', 'slot': 'doors', 'status': 'current'}]
+    at = stale[0]
+    laid = [today[(plain(i)['label'], plain(i)['to']['object'])] if k in stale else i for k, i in enumerate(items) if k >= at]
+    edit = lambda verb, item: rec(cites={'tag': 'variant', 'label': verb, 'payload': rec(item=item)})  # noqa: E731
+    edits = [edit('removeItem', i) for i in items[at:]] + [edit('append', i) for i in laid]
+    record = host.send({'op': 'world-object', 'principal': opener, 'object': 'commonplace'}).get('record') or {}
+    version = int(record.get('version', 0))
+    reply = host.send({'op': 'world-propose', 'principal': opener, 'identity': f'refresh-commonplace-door-texts-{version}',
+                       'roots': [{'object': 'commonplace', 'version': version}], 'writes': [{'object': 'commonplace', 'edits': edits}]})
+    names = ', '.join(plain(items[k])['label'] for k in stale)
+    return [{'object': 'commonplace', 'slot': 'doors', **done(reply), 'reading': f'door lines: {names}'}]
+
+
 # The mending basket (world/objects/Mending.obend; docs/MENDING.md): where a resident reports what is broken, rough or
 # wrong, by `delvetalk report <words>` from anywhere, and the town's hands answer it in the reporter's inbox. Its drawer,
 # `mending/drawer`, is the same package made with a read policy of the opener alone: what a resident confides (a way in,
@@ -1160,6 +1194,7 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
     out += harmonic(host, opener, have)
     out += placed_register(host, opener)
+    out += door_texts(host, opener)
     out += placed_mending(host, opener)
     out += first_lined(host, opener)
     out += repaired(host, opener)
