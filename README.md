@@ -272,7 +272,8 @@ What is built, and what is switched on (ATPROTO "Status"):
 | --- | --- |
 | built and running | the signed repository (`getRepo`, `since`, `getLatestCommit`, `sync.getRecord`); records named `online.fg-goose.gsb.*`, resolved through the `_lexicon.gsb.fg-goose.online` TXT record; projection queries `online.fg-goose.gsb.getProjection` and `.listProjections`; XRPC `act`, `try`, `plan` and `getEntry` under service auth; hidden sessions (`openSession`, `getSession`, `listSessionRecords`); OAuth sign-in |
 | built, off by default | `subscribeRepos` (config `firehose_port`; until then the hint is to poll `getLatestCommit`); the request poller for `online.fg-goose.gsb.request` records (`requests`); hosted request accounts (`hosted_accounts`: needs wildcard DNS for `*.guest.gsb.fg-goose.online`, which the owner has not chosen; [DEPLOY](docs/DEPLOY.md#hosted-account-origins)) |
-| built, not run: the owner's step | the mirror of cards, pages and the index as records in the posting account ([docs/POSTING.md](docs/POSTING.md) §1); lexicon publication |
+| built, not run: the owner's step | the mirror of cards, pages and the index as records in the posting account ([docs/POSTING.md](docs/POSTING.md) §1) |
+| published (2026-10-15 verified: 18 schemas, `same`) | the lexicons as `com.atproto.lexicon.schema/<nsid>` records under the DID `_lexicon.gsb.fg-goose.online` names (did:plc:6amo7col5h4ciq2gpm5eur7b, PDS pds.delve.town); `python3 -m transport lexicons` compares |
 | designed, not built | public records inside the signed tree (a host `world-projection` op and MST edits anywhere); one repository per further world (`did:web:<world>.gsb.fg-goose.online`, waiting on wildcard DNS and a certificate); Spaces ([docs/design/SPACES.md](docs/design/SPACES.md)) |
 
 Read the live repository:
