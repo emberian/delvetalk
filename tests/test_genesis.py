@@ -580,6 +580,72 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
             self.assertEqual((page['kind'], page['title'], page['body']), (kind, requested_title, requested_body))
 
 
+class DoorTexts(unittest.TestCase):
+    """A carried commonplace whose genesis doors say what an older genesis said (live gsb at 2026-10-15: PORCH "two
+    bells", TIDE without "the weather, the porch's lamp"): the refresh lays each door of a genesis label and object
+    again with today's lines, in place and in order, by one opener's act; doors the owner hung since keep theirs,
+    though one is a genesis door's label re-hung to another object (labels are unique on a card) and another names a
+    genesis door's object; a second refresh is `current`."""
+
+    OLD = {'PORCH': [('delvetalk porch enter', "gemini's porch: two bells and three unclaimed things")],
+           'WORKSHOP': [('delvetalk workshop make / name: lamp', 'hob drafts the Bend')]}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        old = [(name, to, cls.OLD.get(name, examples)) for name, to, examples in genesis.DOORS]
+        with unittest.mock.patch.multiple(genesis, DOORS=old, MOTION=[]):
+            cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+        cls.send = cls.town.send
+        took = cls.send(op='world-turn', principal=genesis.OPENER, object='commonplace', method='undoor',
+                        identity='owner-undoor-TIDE', argument=record(label=label('TIDE')))
+        assert took['status'] == 'admitted', took
+        for name, to in (('TIDE', 'bell/2'), ('GARDEN', 'porch')):  # the owner's own: a genesis label, a genesis object
+            hung = cls.send(op='world-turn', principal=genesis.OPENER, object='commonplace', method='door',
+                            identity=f'owner-door-{name}', argument=record(label=label(name), to=label(to)))
+            assert hung['status'] == 'admitted', hung
+        cls.before = cls.doors()
+        cls.version = int(cls.send(op='world-object', principal=genesis.OPENER, object='commonplace')['record']['version'])
+        cls.rows = genesis.door_texts(cls.town.client, genesis.OPENER)
+        cls.after = cls.doors()
+
+    @classmethod
+    def doors(cls):
+        from transport.host import door_rows
+        return [(d['label'], d['to']['object'], [(e['example'], e['comes']) for e in d['examples']], d['description'])
+                for d in door_rows(cls.send(op='world-view', principal=genesis.OPENER, object='commonplace'))]
+
+    def test_the_fixture_is_gsbs_commonplace(self):
+        porch = [d for d in self.before if d[:2] == ('PORCH', 'porch')]
+        self.assertEqual(porch[0][2], self.OLD['PORCH'])
+
+    def test_each_genesis_door_reads_as_today_in_its_place_and_the_owners_doors_are_untouched(self):
+        self.assertEqual(self.rows, [{'object': 'commonplace', 'slot': 'doors', 'status': 'refreshed', 'reading': 'door lines: PORCH, WORKSHOP'}])
+        today = {(name, to): [tuple(e) for e in examples] for name, to, examples in genesis.DOORS}
+        self.assertEqual([d[:2] for d in self.after], [d[:2] for d in self.before])  # same doors, same order
+        for (name, to, examples, description), old in zip(self.after, self.before):
+            if (name, to) in today:
+                self.assertEqual((examples, description), (today[(name, to)], ''), name)
+            else:
+                self.assertEqual((name, to, examples, description), old)
+        self.assertIn(('TIDE', 'bell/2', [], ''), self.after)
+        self.assertIn(('GARDEN', 'porch', [], ''), self.after)
+        self.assertNotIn('two bells', repr(self.after))
+
+    def test_it_is_one_act_of_the_opener_and_a_second_refresh_is_current(self):
+        from transport import journal
+        entry = self.send(op='world-object', principal=genesis.OPENER, object='commonplace')['record']
+        self.assertEqual(int(entry['version']), self.version + 1)
+        [last] = journal.read(self.town.journal, journal.links(self.town.journal)[-1:])
+        self.assertEqual((last['identity']['principal'], last['identity']['intent']),
+                         (genesis.OPENER, f'refresh-commonplace-door-texts-{self.version}'))
+        again = genesis.door_texts(self.town.client, genesis.OPENER)
+        self.assertEqual(again, [{'object': 'commonplace', 'slot': 'doors', 'status': 'current'}])
+        rows = genesis.refresh(self.town.client, genesis.OPENER, genesis.ancestry(self.town.journal))
+        self.assertIn({'object': 'commonplace', 'slot': 'doors', 'status': 'current'}, rows)
+
+
 class Reshape(unittest.TestCase):
     """`refresh` on a town whose kind/weather was made with an older form (`garden:` where genesis now says `over:`, the
     live v9 town's): the form is rewritten and the kind re-shaped in one turn (`reshape`, its make layer laid again

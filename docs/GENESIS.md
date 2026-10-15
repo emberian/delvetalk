@@ -186,6 +186,13 @@ is drawn and passed), the `world` page's DOORS line, the guide's section "The to
   the doors after it and lays them back; a refresh that finds them reads `current`. A refused step fails the refresh by
   name.
 
+**The commonplace's door lines** (`door_texts`, after `placed_register`): a carried commonplace keeps the lines the
+genesis that made it gave its doors (gsb's PORCH said "two bells" after the green bell made three). Each door whose
+label and object are a `DOORS` row's is laid again with that row's examples and description, by one opener's proposal
+(`refresh-commonplace-door-texts-<version>`) that lifts the doors from the first stale one and lays them back in
+order; a door the owner hung since, or one genesis re-hung elsewhere under its label, keeps its own. A commonplace
+whose genesis doors already read as today is `current`, and a world without one gives no row.
+
 ## The all-night station (`--with-gas-station`, off by default)
 
 For the owner's word only: `deploy/genesis.py --with-gas-station` runs `gas_station` after the rest.
