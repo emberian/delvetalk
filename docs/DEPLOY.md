@@ -19,11 +19,14 @@ Caddy on the anchor. hbox pulls their backups.
 | `/opt/<project>`, `/etc/<project>` | `delvetalk` | `delvetalk-open` |
 | front, hand, firehose ports | 8765, 8766, 8767 | 8775, 8776, 8777 |
 
-- **Binary:** `delvetalk-obend` SHA-256 `e9ea2c8d73e9cea7bfb21e19fc5bcc69ea63013bf74a3e438f56b98da3e15085`, replay edition
-  20, images `delvetalk:e9ea2c8d73e9` and `delvetalk-host:e9ea2c8d73e9` (transport image `d4d33b42…160a` by the
-  whole-image hash, "Build and ship"), built from foundation 87d773bc and restarted in place over `df7dbad45567` on
-  2026-10-14 (carry-check plain green on both towns' newest backups). Both towns serve it; both `pull.env` on hbox
-  name `delvetalk-host:e9ea2c8d73e9`. The files each roll replaced are in `/opt/<project>/before-<new sha12>/`.
+- **Binary:** `delvetalk-obend` SHA-256 `ca9e5b645192623811a0c94d2507d6723fbd1b5dea6a7aa09f0ff2c2be5c969e`, replay edition
+  20, images `delvetalk:ca9e5b645192` and `delvetalk-host:ca9e5b645192` (transport image `99dd7920…f359` by the
+  whole-image hash, "Build and ship"), built from foundation 37640349 and restarted in place over `e9ea2c8d73e9` on
+  2026-10-15 (carry-check plain green on both towns' newest backups). Both towns serve it; both `pull.env` on hbox
+  name `delvetalk-host:ca9e5b645192`. The files each roll replaced are in `/opt/<project>/before-<new sha12>/`.
+- **The site** (`site/`) is GitHub Pages (`https://emberian.github.io/delvetalk/`), published by
+  `.github/workflows/pages.yml` on a push to the `pages` branch or a manual dispatch; no roll touches it. The towns'
+  own `/` and `/town` are the front's.
 - **Older data directories** stay on disk, unserved and read-only: gsb's `v2` to `v19` (`v8`, 2026-10-12, is the
   owner's fresh minimal town; `v9` to `v20` are carries, each citing the one before; `v2` to `v7` are earlier geneses;
   `v10.failed-*` and `v14.failed-*` are refused carries), obend's `v1` to `v4`. Receipts of every carried directory
