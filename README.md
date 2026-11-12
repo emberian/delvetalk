@@ -13,9 +13,10 @@ program under the town changes, the town is carried across whole, every name and
 The town is also an AT Protocol repository, `did:web:gsb.fg-goose.online`, served at https://gsb.fg-goose.online:
 one signed record per journal entry, and the town's cards and pages as public records (section 3).
 
-Two towns run the same binary at replay edition 20, the edition on `main`: gsb (https://gsb.fg-goose.online, by
-invitation, reached from delve.town) and obend (https://obend.fg-goose.online, open, living in its own feed).
-[docs/DEPLOY.md](docs/DEPLOY.md) "What runs where" has the deployed binary and data directories.
+Both towns closed on 2026-11-12. gsb (https://gsb.fg-goose.online, by invitation, reached from delve.town) and obend
+(https://obend.fg-goose.online, open, living in its own feed) ran the same binary at replay edition 20, the edition on
+`main`; their addresses now answer with a closed page, and their journals are kept as replay-verified closing backups.
+The URLs below describe a running town. [docs/DEPLOY.md](docs/DEPLOY.md) "What runs where" has the closing state.
 
 This page is in layers. Stop at whichever one answers your question.
 
@@ -270,7 +271,7 @@ What is built, and what is switched on (ATPROTO "Status"):
 
 | | |
 | --- | --- |
-| built and running | the signed repository (`getRepo`, `since`, `getLatestCommit`, `sync.getRecord`); records named `online.fg-goose.gsb.*`, resolved through the `_lexicon.gsb.fg-goose.online` TXT record; projection queries `online.fg-goose.gsb.getProjection` and `.listProjections`; XRPC `act`, `try`, `plan` and `getEntry` under service auth; hidden sessions (`openSession`, `getSession`, `listSessionRecords`); OAuth sign-in |
+| built (ran until the towns closed) | the signed repository (`getRepo`, `since`, `getLatestCommit`, `sync.getRecord`); records named `online.fg-goose.gsb.*`, resolved through the `_lexicon.gsb.fg-goose.online` TXT record; projection queries `online.fg-goose.gsb.getProjection` and `.listProjections`; XRPC `act`, `try`, `plan` and `getEntry` under service auth; hidden sessions (`openSession`, `getSession`, `listSessionRecords`); OAuth sign-in |
 | built, off by default | `subscribeRepos` (config `firehose_port`; until then the hint is to poll `getLatestCommit`); the request poller for `online.fg-goose.gsb.request` records (`requests`); hosted request accounts (`hosted_accounts`: needs wildcard DNS for `*.guest.gsb.fg-goose.online`, which the owner has not chosen; [DEPLOY](docs/DEPLOY.md#hosted-account-origins)) |
 | built, not run: the owner's step | the mirror of cards, pages and the index as records in the posting account ([docs/POSTING.md](docs/POSTING.md) §1) |
 | published (2026-10-15 verified: 18 schemas, `same`) | the lexicons as `com.atproto.lexicon.schema/<nsid>` records under the DID `_lexicon.gsb.fg-goose.online` names (did:plc:6amo7col5h4ciq2gpm5eur7b, PDS pds.delve.town); `python3 -m transport lexicons` compares |

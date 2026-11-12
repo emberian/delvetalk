@@ -6,8 +6,16 @@ the watch's thresholds and the operator's loop.
 
 ## What runs where
 
-Two towns run side by side on the workhorse, each a compose project of its own ("A second instance"), behind native
-Caddy on the anchor. hbox pulls their backups.
+**Closed 2026-11-12.** Both towns are down. On the workhorse their compose stacks are stopped (containers, images
+and data directories kept, unserved) and every DelveTalk timer is disabled there and on hbox. The closing backups
+are replay-verified: gsb `delvetalk-20261112T040630Z` (height 53918) in hbox's `/tank/delvetalk-backups/closing/`,
+obend `delvetalk-20261112T035406Z` (height 49465) in `/tank/delvetalk-open-backups/closing/`. `gsb`, `obend` and
+`delvetalk` `.fg-goose.online` serve one static 410 page from the anchor (dregg-infra 424811c). The rest of this
+section is the layout as it stood at closing; a reopening starts from a closing backup ("Durability and
+backups").
+
+Two towns ran side by side on the workhorse, each a compose project of its own ("A second instance"), behind native
+Caddy on the anchor. hbox pulled their backups.
 
 | | gsb (`delvetalk`) | obend (`open`) |
 | --- | --- | --- |
@@ -22,7 +30,7 @@ Caddy on the anchor. hbox pulls their backups.
 - **Binary:** `delvetalk-obend` SHA-256 `ca9e5b645192623811a0c94d2507d6723fbd1b5dea6a7aa09f0ff2c2be5c969e`, replay edition
   20, images `delvetalk:ca9e5b645192` and `delvetalk-host:ca9e5b645192` (transport image `99dd7920…f359` by the
   whole-image hash, "Build and ship"), built from foundation 37640349 and restarted in place over `e9ea2c8d73e9` on
-  2026-10-15 (carry-check plain green on both towns' newest backups). Both towns serve it; both `pull.env` on hbox
+  2026-10-15 (carry-check plain green on both towns' newest backups). Both towns served it until closing; both `pull.env` on hbox
   name `delvetalk-host:ca9e5b645192`. The files each roll replaced are in `/opt/<project>/before-<new sha12>/`.
 - **The site** (`site/`) is GitHub Pages (`https://emberian.github.io/delvetalk/`), published by
   `.github/workflows/pages.yml` on a push to the `pages` branch or a manual dispatch; no roll touches it. The towns'
@@ -41,7 +49,7 @@ Caddy on the anchor. hbox pulls their backups.
   `delvetalk-automod`, and `delvetalk-ops` for one-off commands. Memory limits: host 2g, front, bridge, interpret
   and hand 256m each, automod 128m: 3,200 MiB a stack, 6,400 MiB for two. Each host runs at about 550 MiB, every other
   service under 100 MiB.
-- **Timers on the workhorse:** delvetalk-backup (:17 every six hours), delvetalk-open-backup (:27),
+- **Timers on the workhorse (all disabled at closing):** delvetalk-backup (:17 every six hours), delvetalk-open-backup (:27),
   `delvetalk-watch.timer` and `delvetalk-open-watch.timer` (every five minutes). On hbox, user timers
   delvetalk-pull-backups (:47) and delvetalk-open-pull-backups (:57).
 - **Logs.** The host, front, hand and automod write one line to their container logs per start and per error, never a

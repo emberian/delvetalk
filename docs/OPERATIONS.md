@@ -1,5 +1,8 @@
 # Operations
 
+Both towns closed on 2026-11-12 (docs/DEPLOY.md "What runs where"): nothing below is running. It is the design a
+reopened town would run.
+
 The transport's shape, the production tooling around it, and the bounds that would end a town. docs/DEPLOY.md is the
 procedure: build, ship, carry, backups, the playbooks.
 
